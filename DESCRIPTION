@@ -1,0 +1,33 @@
+Package: quickNet
+Type: Package
+Title: For quick network construction
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Lei",
+           family = "Guo",
+           role = c("aut", "cre"),
+           email = "guolei0812@yeah.net")
+Maintainer: Lei Guo <guolei0812@yeah.net>
+Description: quick network construction
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.3
+Imports: 
+    ape,
+    bootnet,
+    dplyr,
+    forcats,
+    fs,
+    ggplot2,
+    magrittr,
+    mgm,
+    NetworkComparisonTest,
+    NetworkToolbox,
+    networktools,
+    purrr,
+    qgraph,
+    reshape2,
+    scales,
+    stringr,
+    tidyr
