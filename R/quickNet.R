@@ -26,7 +26,7 @@ quickNet <- function(data, layout = 'spring', pie = TRUE, maximum = 0.47, groups
   network <- estimateNetwork(data,default = "EBICglasso")
 
   if (pie) {
-    fit_mgm <- mgm(na.omit(data), type=rep('g', ncol(data)) , lev=rep(1,ncol(data)))
+    fit_mgm <- mgm(as.matrix(na.omit(data)), type=rep('g', ncol(data)) , lev=rep(1,ncol(data)))
     pred_mgm <- predict(fit_mgm, na.omit(data))
   } else {
     pred_mgm <- NULL
