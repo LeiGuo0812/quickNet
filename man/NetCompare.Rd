@@ -9,10 +9,18 @@ NetCompare(
   data2,
   it = 5000,
   binary.data = FALSE,
+  paired = FALSE,
+  weighted = TRUE,
+  AND = TRUE,
+  abs_edge = TRUE,
   test.edges = TRUE,
   edges = "all",
   progressbar = TRUE,
+  make.positive.definite = TRUE,
+  p.adjust.methods = "none",
   test.centrality = TRUE,
+  centrality = "all",
+  nodes = "all",
   add.bridge = FALSE,
   communities = NULL,
   useCommunities = "all",
@@ -29,11 +37,21 @@ NetCompare(
 
 \item{binary.data}{Logical. Can be TRUE or FALSE to indicate whether the data is binary or not. If binary.data is FALSE, the data is regarded gaussian.}
 
+\item{paired}{Logical. Can be TRUE of FALSE to indicate whether the samples are dependent or not. If paired is TRUE, relabeling is performed within each pair of observations. If paired is FALSE, relabeling is not restricted to pairs of observations. Note that, currently, dependent data is assumed to entail one group measured twice.}
+
+\item{weighted}{Logical. Can be TRUE of FALSE to indicate whether the networks to be compared should be weighted of not. If not, the estimated networks are dichotomized. Defaults to TRUE.}
+
+\item{AND}{Logical. Can be TRUE of FALSE to indicate whether the AND-rule or the OR-rule should be used to define the edges in the network. Defaults to TRUE. Only necessary for binary data.}
+
 \item{test.edges}{Logical. Can be TRUE of FALSE to indicate whether or not differences in individual edges should be tested.}
 
 \item{edges}{Character or list. When 'all', differences between all individual edges are tested. When provided a list with one or more pairs of indices referring to variables, the provided edges are tested.}
 
 \item{progressbar}{Logical. Should the pbar be plotted in order to see the progress of the estimation procedure? Defaults to TRUE.}
+
+\item{make.positive.definite}{If \code{make.positive.definite = TRUE}, the covariance matrices used for the glasso are projected to the nearest positive definite matrices, if they are not yet positive definite. This is useful for small n, for which it is very likely that at least one of the bootstrap comparisons involves a covariance matrix that is not positive definite.}
+
+\item{p.adjust.methods}{Character. Can be one of "holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr", or "none". To control (or not) for testing of multiple edges. Defaults to "none".}
 
 \item{add.bridge}{a logical value to calculate the difference of  bridge coefficients or not. If the value is TRUE, "bridgeStrength", "bridgeCloseness", "bridgeBetweenness", "bridgeExpectedInfluence" will be added to the results.}
 
@@ -44,6 +62,8 @@ NetCompare(
 \item{sig.level}{significance level of the test, this only affect the output of diff_sig_nw1>nw2 and diff_sig_nw1<nw2.}
 
 \item{...}{other paramaters from \code{NetworkComparisonTest::NCT}}
+
+\item{abs}{Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?}
 }
 \value{
 returns a 'NCT' object that contains the following items:\itemize{

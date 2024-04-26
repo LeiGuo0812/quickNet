@@ -30,4 +30,7 @@ Imports:
     reshape2,
     scales,
     stringr,
-    tidyr
+    tidyr,
+	IsingFit,
+	Matrix,
+	methods

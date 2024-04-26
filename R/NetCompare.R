@@ -1,15 +1,20 @@
 #' @title Statistical Comparison of Two Networks Based on Three Invariance Measures
 #' @description a wrapper of \code{NetworkComparisonTest::NCT}
-#' @importFrom NetworkComparisonTest NCT
 #' @importFrom magrittr %>%
 #' @importFrom reshape2 melt
 #' @param data1 One of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be the result of estimateNetwork from the bootnet package.
 #' @param data2 The other of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be the result of estimateNetwork from the bootnet package.
 #' @param it The number of iterations (permutations).
 #' @param binary.data Logical. Can be TRUE or FALSE to indicate whether the data is binary or not. If binary.data is FALSE, the data is regarded gaussian.
+#' @param paired Logical. Can be TRUE of FALSE to indicate whether the samples are dependent or not. If paired is TRUE, relabeling is performed within each pair of observations. If paired is FALSE, relabeling is not restricted to pairs of observations. Note that, currently, dependent data is assumed to entail one group measured twice.
+#' @param weighted Logical. Can be TRUE of FALSE to indicate whether the networks to be compared should be weighted of not. If not, the estimated networks are dichotomized. Defaults to TRUE.
+#' @param AND Logical. Can be TRUE of FALSE to indicate whether the AND-rule or the OR-rule should be used to define the edges in the network. Defaults to TRUE. Only necessary for binary data.
+#' @param abs Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?
 #' @param test.edges Logical. Can be TRUE of FALSE to indicate whether or not differences in individual edges should be tested.
 #' @param edges Character or list. When 'all', differences between all individual edges are tested. When provided a list with one or more pairs of indices referring to variables, the provided edges are tested.
 #' @param progressbar Logical. Should the pbar be plotted in order to see the progress of the estimation procedure? Defaults to TRUE.
+#' @param make.positive.definite If \code{make.positive.definite = TRUE}, the covariance matrices used for the glasso are projected to the nearest positive definite matrices, if they are not yet positive definite. This is useful for small n, for which it is very likely that at least one of the bootstrap comparisons involves a covariance matrix that is not positive definite.
+#' @param p.adjust.methods Character. Can be one of "holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr", or "none". To control (or not) for testing of multiple edges. Defaults to "none".
 #' @param add.bridge a logical value to calculate the difference of  bridge coefficients or not. If the value is TRUE, "bridgeStrength", "bridgeCloseness", "bridgeBetweenness", "bridgeExpectedInfluence" will be added to the results.
 #' @param communities used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. Note: should only be a numeric vector with the same length of nodes, the number indicates the community that each community belongs to.
 #' @param useCommunities character vector specifying which communities should be included. Default set to "all".
@@ -45,7 +50,7 @@
 #'
 #' NetCompare(mtcars, mtcars^3, it = 100, add.bridge = TRUE, communities = c(rep(1,4),rep(2,4),rep(3,3)), useCommunities = c(1,2))
 #'
-NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE,test.edges=TRUE, edges='all', progressbar=TRUE, test.centrality = TRUE, add.bridge = FALSE, communities = NULL, useCommunities = 'all', sig.level = 0.05, ...){
+NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=TRUE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = TRUE, centrality = 'all', nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, ...){
 
   if (!is.logical(add.bridge)) {
     stop("Error: add.bridge should be logical.")
@@ -56,11 +61,15 @@ NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE,test.edges=TRU
 
   if (add.bridge) {
 
-    results <- NCT(data1,data2, it= it, binary.data=binary.data, test.edges=test.edges, edges=edges, progressbar=progressbar, test.centrality = test.centrality, centrality = 'all', communities = communities, useCommunities = useCommunities, ...)
+    results <- NCT_gl(data1,data2, it= it, binary.data=binary.data, paired = paired, weighted = weighted, AND = AND, abs = abs_edge, test.edges=test.edges, edges=edges, progressbar=progressbar, make.positive.definite = make.positive.definite, p.adjust.methods = p.adjust.methods, test.centrality = test.centrality, centrality = 'all', communities = communities, useCommunities = useCommunities, ...)
+
+    results$info$call$abs = abs_edge
 
   } else {
 
-    results <- NCT(data1,data2, it= it, binary.data=binary.data, test.edges=test.edges, edges=edges, progressbar=progressbar, test.centrality = test.centrality, centrality = c("closeness", "betweenness", "strength", "expectedInfluence"), ...)
+    results <- NCT_gl(data1,data2, it= it, binary.data=binary.data, paired = paired, weighted = weighted, AND = AND, abs = abs_edge, test.edges=test.edges, edges=edges, progressbar=progressbar, make.positive.definite = make.positive.definite, p.adjust.methods = p.adjust.methods, test.centrality = test.centrality, centrality = c("closeness", "betweenness", "strength", "expectedInfluence"), ...)
+
+    results$info$call$abs = abs_edge
 
   }
 
@@ -84,7 +93,7 @@ NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE,test.edges=TRU
 
   } else {
 
-    pvals <- results$einv.pvals
+    pvals <- results$einv.pvals[c('Var1', 'Var2', 'p-value')]
 
   }
 
