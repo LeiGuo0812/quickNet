@@ -24,12 +24,15 @@ globalCoeff <- function(x, list = FALSE){
   }
 
   network <- quicknet_network_matrix(x)
+  diag(network) <- 0
+  directed <- inherits(x, "quicknet_fit") && isTRUE(x$meta$directed)
 
-  globalStrength <- sum(abs(network[upper.tri(network)]))
+  edge_values <- if (directed) network[row(network) != col(network)] else network[upper.tri(network)]
+  globalStrength <- sum(abs(edge_values), na.rm = TRUE)
 
   nNodes <- dim(network)[1]
 
-  AGS <- globalStrength / (nNodes * (nNodes - 1) / 2)
+  AGS <- globalStrength / length(edge_values)
   ASPL <- pathlengths(network)[[1]]
   CC <- clustcoeff(network)[[1]]
 

@@ -1,15 +1,20 @@
 #' Extract report-ready model information
 #'
-#' @param fit A \code{quicknet_fit} object.
+#' @param fit A \code{quicknet_fit} or \code{quicknet_perturbation} object.
 #' @param digits Number of digits used in the plain-text summary.
 #' @param threshold Absolute edge-weight threshold used to count nonzero edges.
 #'
-#' @return A \code{quicknet_report} object containing sample, estimation,
-#' network, edge, node, and model-specific reporting tables.
+#' @return A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
+#' contains sample, estimation, network, edge, node, and model-specific tables.
+#' For \code{quicknet_perturbation} inputs it contains perturbation settings,
+#' metrics, rankings, and a short text summary.
 #' @export
 quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
+  if (inherits(fit, "quicknet_perturbation")) {
+    return(quicknet_report_perturbation(fit, digits = digits))
+  }
   if (!inherits(fit, "quicknet_fit")) {
-    stop("fit must be a quicknet_fit object.", call. = FALSE)
+    stop("fit must be a quicknet_fit or quicknet_perturbation object.", call. = FALSE)
   }
 
   report <- list(
@@ -21,6 +26,49 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     nodes = fit$nodes,
     model_specific = quicknet_report_model_specific(fit),
     text = quicknet_report_text(fit, digits = digits, threshold = threshold)
+  )
+  class(report) <- "quicknet_report"
+  report
+}
+
+quicknet_report_perturbation <- function(fit, digits = 3) {
+  metrics <- fit$metrics
+  if ("burden_reduction" %in% names(metrics)) {
+    best <- metrics[order(-metrics$burden_reduction), , drop = FALSE][1, ]
+    text <- paste0(
+      "Perturbation: ", fit$method, " for ", fit$model, ". ",
+      "Best target/configuration: ", best$target[[1]], ", burden reduction = ",
+      round(best$burden_reduction[[1]], digits), ". Results are model-implied in silico simulations."
+    )
+  } else if ("activity_reduction" %in% names(metrics)) {
+    best <- metrics[order(-metrics$activity_reduction), , drop = FALSE][1, ]
+    text <- paste0(
+      "Perturbation: ", fit$method, " for ", fit$model, ". ",
+      "Best target/configuration: ", best$target[[1]], ", activity reduction = ",
+      round(best$activity_reduction[[1]], digits), ". Results are model-implied in silico simulations."
+    )
+  } else if ("spillover_blocked" %in% names(metrics)) {
+    best <- metrics[order(-metrics$spillover_blocked), , drop = FALSE][1, ]
+    text <- paste0(
+      "Perturbation: ", fit$method, " for ", fit$model, ". ",
+      "Best blocked edge: ", best$blocked_edge[[1]], ", spillover blocked = ",
+      round(best$spillover_blocked[[1]], digits), ". Results are model-implied in silico simulations."
+    )
+  } else {
+    text <- fit$report
+  }
+
+  report <- list(
+    model = fit$model,
+    method = fit$method,
+    settings = data.frame(
+      parameter = names(fit$settings),
+      value = vapply(fit$settings, quicknet_report_collapse, character(1)),
+      stringsAsFactors = FALSE
+    ),
+    metrics = fit$metrics,
+    rankings = fit$rankings,
+    text = text
   )
   class(report) <- "quicknet_report"
   report
@@ -125,17 +173,7 @@ quicknet_report_estimation <- function(fit) {
 }
 
 quicknet_report_networks <- function(fit, threshold = 1e-10) {
-  rows <- lapply(names(fit$networks), function(network_name) {
-    directed <- quicknet_report_is_directed(fit, network_name)
-    out <- quicknet_network_summary(
-      fit$networks[[network_name]],
-      threshold = threshold,
-      directed = directed
-    )
-    out$network <- network_name
-    out[, c("network", setdiff(names(out), "network")), drop = FALSE]
-  })
-  do.call(rbind, rows)
+  quicknet_network_summary_list(fit$networks, model = fit$model, meta = fit$meta, threshold = threshold)
 }
 
 quicknet_report_edges <- function(fit, threshold = 1e-10) {
@@ -146,16 +184,21 @@ quicknet_report_edges <- function(fit, threshold = 1e-10) {
   networks <- unique(edges$network)
   rows <- lapply(networks, function(network_name) {
     net_edges <- edges[edges$network == network_name, , drop = FALSE]
-    nonzero <- abs(net_edges$weight) > threshold
+    self_edge <- net_edges$from == net_edges$to
+    report_edges <- net_edges[!self_edge, , drop = FALSE]
+    nonzero <- abs(report_edges$weight) > threshold
     data.frame(
       network = network_name,
-      possible_edges = nrow(net_edges),
+      possible_edges = nrow(report_edges),
+      self_edges = sum(self_edge, na.rm = TRUE),
+      nonzero_self_edges = sum(abs(net_edges$weight[self_edge]) > threshold, na.rm = TRUE),
+      total_edges_in_table = nrow(net_edges),
       nonzero_edges = sum(nonzero, na.rm = TRUE),
-      positive_edges = sum(net_edges$weight > threshold, na.rm = TRUE),
-      negative_edges = sum(net_edges$weight < -threshold, na.rm = TRUE),
+      positive_edges = sum(report_edges$weight > threshold, na.rm = TRUE),
+      negative_edges = sum(report_edges$weight < -threshold, na.rm = TRUE),
       density = mean(nonzero, na.rm = TRUE),
-      mean_abs_weight = ifelse(any(nonzero, na.rm = TRUE), mean(abs(net_edges$weight[nonzero]), na.rm = TRUE), 0),
-      max_abs_weight = ifelse(any(nonzero, na.rm = TRUE), max(abs(net_edges$weight[nonzero]), na.rm = TRUE), 0),
+      mean_abs_weight = ifelse(any(nonzero, na.rm = TRUE), mean(abs(report_edges$weight[nonzero]), na.rm = TRUE), 0),
+      max_abs_weight = ifelse(any(nonzero, na.rm = TRUE), max(abs(report_edges$weight[nonzero]), na.rm = TRUE), 0),
       stringsAsFactors = FALSE
     )
   })
@@ -229,11 +272,7 @@ quicknet_report_text <- function(fit, digits = 3, threshold = 1e-10) {
 }
 
 quicknet_report_is_directed <- function(fit, network_name) {
-  if (fit$model == "clpn") return(TRUE)
-  if (fit$model %in% c("graphicalVAR", "mlVAR")) {
-    return(network_name %in% c("default", "temporal"))
-  }
-  isTRUE(fit$meta$directed)
+  quicknet_network_summary_is_directed(fit$model, fit$meta, network_name)
 }
 
 quicknet_report_collapse <- function(x) {

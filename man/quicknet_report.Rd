@@ -7,15 +7,17 @@
 quicknet_report(fit, digits = 3, threshold = 1e-10)
 }
 \arguments{
-\item{fit}{A \code{quicknet_fit} object.}
+\item{fit}{A \code{quicknet_fit} or \code{quicknet_perturbation} object.}
 
 \item{digits}{Number of digits used in the plain-text summary.}
 
 \item{threshold}{Absolute edge-weight threshold used to count nonzero edges.}
 }
 \value{
-A \code{quicknet_report} object containing sample, estimation,
-network, edge, node, and model-specific reporting tables.
+A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
+contains sample, estimation, network, edge, node, and model-specific tables.
+For \code{quicknet_perturbation} inputs it contains perturbation settings,
+metrics, rankings, and a short text summary.
 }
 \description{
 Extract report-ready model information

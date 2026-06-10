@@ -23,7 +23,8 @@ test_that("cross-sectional models share the same quicknet_fit interface", {
   expect_true(nrow(cor_fit$edges) > 0)
   expect_true(all(c("node", "strength", "expected_influence") %in% names(cor_fit$nodes)))
   expect_true("predictability_R2" %in% names(cor_fit$nodes))
-  expect_true(all(c("nodes", "possible_edges", "density") %in% names(summary(cor_fit))))
+  expect_true(all(c("network", "nodes", "possible_edges", "density") %in% names(summary(cor_fit))))
+  expect_equal(summary(cor_fit)$network, "default")
 })
 
 test_that("quicknet_report returns academic reporting tables for cross-sectional models", {

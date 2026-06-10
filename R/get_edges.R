@@ -21,7 +21,10 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
 
   if (is.null(net2)) {
 
-    edge_data <- quicknet_edgelist(quicknet_network_matrix(net1)) %>% as.data.frame()
+    edge_data <- quicknet_edgelist(
+      quicknet_network_matrix(net1),
+      directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
+    ) %>% as.data.frame()
 
     edges <- list()
 
@@ -31,9 +34,15 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
 
     } else {
 
-        edge_data1 <- quicknet_edgelist(quicknet_network_matrix(net1)) %>% as.data.frame() %>%
+        edge_data1 <- quicknet_edgelist(
+          quicknet_network_matrix(net1),
+          directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
+        ) %>% as.data.frame() %>%
           mutate(pair = paste(from,to,sep = '_'))
-        edge_data2 <- quicknet_edgelist(quicknet_network_matrix(net2)) %>% as.data.frame()%>%
+        edge_data2 <- quicknet_edgelist(
+          quicknet_network_matrix(net2),
+          directed = inherits(net2, "quicknet_fit") && isTRUE(net2$meta$directed)
+        ) %>% as.data.frame()%>%
           mutate(pair = paste(from,to,sep = '_'))
 
         if (!(method %in% c('union','intersect'))) {

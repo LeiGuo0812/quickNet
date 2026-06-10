@@ -18,12 +18,19 @@ test_that("PanelNet returns a directed quicknet_fit object", {
   expect_true(all(c("in_expected_influence", "out_expected_influence", "cv_r_squared") %in% names(fit$nodes)))
   expect_true(all(c("from", "to", "edge_type", "directed") %in% names(fit$edges)))
   expect_true(any(fit$edges$edge_type == "autoregressive"))
-  expect_equal(fit$network_summary$possible_edges, 6)
+  expect_true(all(c("default", "cross_lagged") %in% fit$network_summary$network))
+  expect_true(all(fit$network_summary$possible_edges == 6))
+  nonzero_cross_lagged <- sum(abs(fit$networks$cross_lagged) > 1e-10)
+  expect_equal(nrow(fit$Edgelist), nonzero_cross_lagged)
+  expect_equal(nrow(get_edges_df(fit)), nonzero_cross_lagged)
+  expect_true(is.finite(globalCoeff(fit)$globalStrength))
 
   report <- quicknet_report(fit)
   expect_s3_class(report, "quicknet_report")
   expect_true(all(c("subjects", "waves", "transitions") %in% names(report$sample)))
   expect_true("lambda_rule" %in% report$estimation$parameter)
+  expect_equal(report$edges$possible_edges[report$edges$network == "default"], 6)
+  expect_equal(report$edges$self_edges[report$edges$network == "default"], 3)
   expect_true("edge_type" %in% names(attr(report$edges, "by_edge_type")))
   expect_true("cv_r_squared" %in% names(report$model_specific))
 
@@ -60,6 +67,7 @@ test_that("LongitudinalNet returns graphicalVAR network layers", {
   expect_equal(fit$model, "graphicalVAR")
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(fit$networks)))
   expect_true(all(c("temporal", "contemporaneous", "between") %in% unique(fit$edges$network)))
+  expect_true(all(c("default", "temporal", "contemporaneous", "between") %in% summary(fit)$network))
 
   report <- quicknet_report(fit)
   expect_true(all(c("temporal", "contemporaneous", "between") %in% report$networks$network))
@@ -99,6 +107,7 @@ test_that("LongitudinalNet supports mlVAR", {
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "mlVAR")
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(fit$networks)))
+  expect_true(all(c("default", "temporal", "contemporaneous", "between") %in% summary(fit)$network))
 
   report <- quicknet_report(fit)
   expect_true("estimator" %in% report$estimation$parameter)

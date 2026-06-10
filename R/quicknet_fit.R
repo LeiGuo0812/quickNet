@@ -35,7 +35,7 @@ quicknet_fit <- function(model,
   edge_table <- if (is.null(edges)) quicknet_edge_table(default_network) else edges
   node_table <- if (is.null(nodes)) quicknet_node_table(default_network) else nodes
   summary_table <- if (is.null(network_summary)) {
-    quicknet_network_summary(default_network, directed = isTRUE(meta$directed))
+    quicknet_network_summary_list(networks, model = model, meta = meta)
   } else {
     network_summary
   }
@@ -53,7 +53,7 @@ quicknet_fit <- function(model,
       network_summary = summary_table,
       graph = default_network,
       graphData = list(graph = default_network),
-      Edgelist = quicknet_edgelist(default_network)
+      Edgelist = quicknet_edgelist(default_network, directed = isTRUE(meta$directed))
     ),
     class = "quicknet_fit"
   )
@@ -100,6 +100,24 @@ quicknet_network_summary <- function(weight_matrix, threshold = 1e-10, directed 
     directed = directed,
     stringsAsFactors = FALSE
   )
+}
+
+quicknet_network_summary_list <- function(networks, model, meta, threshold = 1e-10) {
+  rows <- lapply(names(networks), function(network_name) {
+    directed <- quicknet_network_summary_is_directed(model, meta, network_name)
+    summary <- quicknet_network_summary(networks[[network_name]], threshold = threshold, directed = directed)
+    summary$network <- network_name
+    summary[, c("network", setdiff(names(summary), "network")), drop = FALSE]
+  })
+  do.call(rbind, rows)
+}
+
+quicknet_network_summary_is_directed <- function(model, meta, network_name) {
+  if (model == "clpn") return(TRUE)
+  if (model %in% c("graphicalVAR", "mlVAR")) {
+    return(network_name %in% c("default", "temporal"))
+  }
+  isTRUE(meta$directed)
 }
 
 quicknet_network_matrix <- function(x, network = "default") {
@@ -163,8 +181,14 @@ quicknet_edge_table <- function(weight_matrix,
   out[order(-out$abs_weight, out$from_index, out$to_index), , drop = FALSE]
 }
 
-quicknet_edgelist <- function(weight_matrix, threshold = 1e-10) {
-  edges <- quicknet_edge_table(weight_matrix, drop_zero = TRUE, threshold = threshold)
+quicknet_edgelist <- function(weight_matrix, threshold = 1e-10, directed = FALSE, include_diag = FALSE) {
+  edges <- quicknet_edge_table(
+    weight_matrix,
+    directed = directed,
+    include_diag = include_diag,
+    drop_zero = TRUE,
+    threshold = threshold
+  )
   data.frame(
     from = edges$from_index,
     to = edges$to_index,

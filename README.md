@@ -61,6 +61,8 @@ plot(fit)             # Quick network plot
 
 `EBICglassoNet()` is retained as a convenience wrapper for the cross-sectional `model = "EBICglasso"` workflow.
 
+For academic use, cite the methods that match the models and analyses you report. The essential references are listed in [References](#references).
+
 ## Minimal Examples
 
 ### 1. EBICglasso Cross-Sectional Network
@@ -302,6 +304,63 @@ report$model_specific  # Model-specific report fields
 report$text            # Short plain-language summary
 ```
 
+### Virtual Perturbation and Intervention Simulation
+
+Use `Perturbation()` for model-implied in silico perturbation analyses. These results are useful for hypothesis generation and candidate target screening, but they should not be interpreted as causal intervention effects.
+
+```r
+fit <- quickNet(mtcars[, 1:6], model = "partial", pie = FALSE)
+
+dosage <- Perturbation(
+  fit,
+  method = "dosage",
+  targets = c("mpg", "cyl"),
+  dose = c(0.25, 0.50, 1.00)
+)
+
+dosage$metrics
+dosage$rankings
+quicknet_report(dosage)$text
+
+plot(dosage)
+get_perturbation_plot(dosage, type = "rank")
+get_perturbation_plot(dosage, type = "dose_response")
+get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1)
+```
+
+Continuous networks support Gaussian conditioning, virtual knockout, virtual knockdown, precision-edge blocking, combination perturbation, and greedy sequence optimization:
+
+```r
+Perturbation(fit, method = "knockout", targets = "mpg")
+Perturbation(fit, method = "knockdown", targets = "mpg", remaining_strength = 0.50)
+blocked <- Perturbation(fit, method = "edge_block", targets = "mpg")
+Perturbation(fit, method = "combination", targets = c("mpg", "cyl", "disp"))
+sequence <- Perturbation(fit, method = "sequence", targets = c("mpg", "cyl", "disp"), steps = 2)
+
+get_perturbation_plot(blocked, type = "edge_block")
+get_perturbation_plot(sequence, type = "sequence")
+```
+
+For Ising models, use NIRA-style threshold perturbation:
+
+```r
+ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
+
+ising_result <- Perturbation(
+  ising_fit,
+  method = "ising_threshold",
+  targets = c("b1", "b2"),
+  threshold_shift = -0.5
+)
+
+get_perturbation_plot(ising_result, type = "rank")
+get_perturbation_plot(ising_result, type = "node_change", target = "b1")
+```
+
+Perturbation plots are intentionally conservative. They display only computed simulation summaries: target ranking, dosage response, node-level state or activity change, edge-block spillover summaries, and greedy sequence steps. They do not imply clinical efficacy or causal treatment effects.
+
+This interpretation follows the network intervention and simulation literature, while also respecting cautions that centrality or model-implied perturbation rankings should not be treated as direct causal treatment effects without a suitable causal design.
+
 ### Network Comparison
 
 ```r
@@ -322,6 +381,25 @@ get_edges_df(fit)
 globalCoeff(fit)
 ```
 
+## References
+
+If you use `quickNet` in academic work, cite the package and the method references relevant to the models or helper functions used:
+
+- Cross-sectional psychological network estimation and visualization: Epskamp, S., Cramer, A. O. J., Waldorp, L. J., Schmittmann, V. D., & Borsboom, D. (2012). `qgraph`: Network visualizations of relationships in psychometric data. *Journal of Statistical Software, 48*(4), 1-18. https://doi.org/10.18637/jss.v048.i04
+- Network estimation, accuracy, and stability: Epskamp, S., Borsboom, D., & Fried, E. I. (2018). Estimating psychological networks and their accuracy: A tutorial paper. *Behavior Research Methods, 50*, 195-212. https://doi.org/10.3758/s13428-017-0862-1
+- EBIC model selection for Gaussian graphical models: Foygel, R., & Drton, M. (2010). Extended Bayesian information criteria for Gaussian graphical models. *Advances in Neural Information Processing Systems, 23*. https://proceedings.neurips.cc/paper/2010/hash/072b030ba126b2f4b2374f342be9ed44-Abstract.html
+- Regularized generalized linear models used by panel-network backends: Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization paths for generalized linear models via coordinate descent. *Journal of Statistical Software, 33*(1), 1-22. https://doi.org/10.18637/jss.v033.i01
+- Binary Ising networks: van Borkulo, C. D., Borsboom, D., Epskamp, S., Blanken, T. F., Boschloo, L., Schoevers, R. A., & Waldorp, L. J. (2014). A new method for constructing networks from binary data. *Scientific Reports, 4*, 5918. https://doi.org/10.1038/srep05918
+- Mixed Graphical Models: Haslbeck, J. M. B., & Waldorp, L. J. (2020). `mgm`: Estimating time-varying mixed graphical models in high-dimensional data. *Journal of Statistical Software, 93*(8), 1-46. https://doi.org/10.18637/jss.v093.i08
+- Cross-sectional and time-series Gaussian graphical models, including graphicalVAR-style models: Epskamp, S., Waldorp, L. J., Mõttus, R., & Borsboom, D. (2018). The Gaussian graphical model in cross-sectional and time-series data. *Multivariate Behavioral Research, 53*(4), 453-480. https://doi.org/10.1080/00273171.2018.1454823
+- Longitudinal psychopathology networks and vector autoregression: Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
+- Predictability in network models: Haslbeck, J. M. B., & Waldorp, L. J. (2018). How well do network models predict observations? On the importance of predictability in network models. *Behavior Research Methods, 50*, 853-861. https://doi.org/10.3758/s13428-017-0910-x
+- Bridge centrality: Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
+- Network comparison testing: van Borkulo, C. D., van Bork, R., Boschloo, L., Kossakowski, J. J., Tio, P., Schoevers, R. A., Borsboom, D., & Waldorp, L. J. (2023). Comparing network structures on three aspects: A permutation test. *Psychological Methods, 28*(6), 1273-1285. https://doi.org/10.1037/met0000476
+- Network Intervention Analysis: Blanken, T. F., van der Zweerde, T., van Straten, A., van Someren, E. J. W., Borsboom, D., & Lancee, J. (2019). Introducing Network Intervention Analysis to investigate sequential, symptom-specific treatment effects: A demonstration in co-occurring insomnia and depression. *Psychotherapy and Psychosomatics, 88*(1), 52-54. https://doi.org/10.1159/000495045
+- Simulation-based intervention target evaluation: Lunansky, G., van Borkulo, C. D., & Borsboom, D. (2021). Intervening on psychopathology networks: Evaluating intervention targets through simulations. *PsyArXiv*. https://doi.org/10.31234/osf.io/sqhje
+- Interpreting centrality cautiously: Bringmann, L. F., Elmer, T., Epskamp, S., Krause, R. W., Schoch, D., Wichers, M., Wigman, J. T. W., & Snippe, E. (2019). What do centrality measures measure in psychological networks? *Journal of Abnormal Psychology, 128*(8), 892-903. https://doi.org/10.1037/abn0000446
+
 ## Changelog
 
 ### Development version
@@ -330,6 +408,9 @@ globalCoeff(fit)
 - Extended cross-sectional support to EBICglasso, correlation, partial correlation, Ising, ordinal, and MGM networks through a consistent `quickNet()` interface.
 - Added longitudinal modeling interfaces: `PanelNet()` for cross-lagged panel networks and `LongitudinalNet()` for `graphicalVAR` and `mlVAR` models.
 - Added model-agnostic edge tables, node tables, network summaries, centrality helpers, and stability summaries.
+- Added virtual perturbation and intervention simulation helpers for Gaussian-style networks and Ising threshold perturbation.
+- Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and greedy sequence summaries.
+- Added essential method references for supported network models, stability, bridge centrality, network comparison, and perturbation analyses.
 - Updated legacy helper functions so they work with the new `quicknet_fit` object.
 - Added testthat coverage for cross-sectional and longitudinal workflows.
 - Cleaned package documentation, examples, spelling, and R CMD check issues.
