@@ -23,17 +23,8 @@
 #'
 netCor <- function(x1, x2, nperm = 1000, graph = TRUE, alternative = 'two.sided',...){
 
-  if (sum(class(x1) == 'qgraph') > 0) {
-    matrix1 <- x1$graphData$graph
-  } else if (is.matrix(x1)) {
-    matrix1 <- x1
-  }
-
-  if (sum(class(x2) == 'qgraph') > 0) {
-    matrix2 <- x2$graphData$graph
-  } else if (is.matrix(x2)) {
-    matrix2 <- x2
-  }
+  matrix1 <- quicknet_network_matrix(x1)
+  matrix2 <- quicknet_network_matrix(x2)
 
   return(ape::mantel.test(matrix1, matrix2, nperm = nperm, graph = graph, alternative = alternative, ...))
 

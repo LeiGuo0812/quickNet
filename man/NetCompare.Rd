@@ -43,6 +43,8 @@ NetCompare(
 
 \item{AND}{Logical. Can be TRUE of FALSE to indicate whether the AND-rule or the OR-rule should be used to define the edges in the network. Defaults to TRUE. Only necessary for binary data.}
 
+\item{abs_edge}{Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?}
+
 \item{test.edges}{Logical. Can be TRUE of FALSE to indicate whether or not differences in individual edges should be tested.}
 
 \item{edges}{Character or list. When 'all', differences between all individual edges are tested. When provided a list with one or more pairs of indices referring to variables, the provided edges are tested.}
@@ -53,6 +55,12 @@ NetCompare(
 
 \item{p.adjust.methods}{Character. Can be one of "holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr", or "none". To control (or not) for testing of multiple edges. Defaults to "none".}
 
+\item{test.centrality}{Logical. Should centrality differences be tested?}
+
+\item{centrality}{Character vector specifying centrality statistics to test.}
+
+\item{nodes}{Character vector specifying nodes to test.}
+
 \item{add.bridge}{a logical value to calculate the difference of  bridge coefficients or not. If the value is TRUE, "bridgeStrength", "bridgeCloseness", "bridgeBetweenness", "bridgeExpectedInfluence" will be added to the results.}
 
 \item{communities}{used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. Note: should only be a numeric vector with the same length of nodes, the number indicates the community that each community belongs to.}
@@ -61,9 +69,7 @@ NetCompare(
 
 \item{sig.level}{significance level of the test, this only affect the output of diff_sig_nw1>nw2 and diff_sig_nw1<nw2.}
 
-\item{...}{other paramaters from \code{NetworkComparisonTest::NCT}}
-
-\item{abs}{Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?}
+\item{...}{other parameters from \code{NetworkComparisonTest::NCT}}
 }
 \value{
 returns a 'NCT' object that contains the following items:\itemize{
@@ -95,6 +101,11 @@ a wrapper of \code{NetworkComparisonTest::NCT}
 data('mtcars')
 NetCompare(mtcars, mtcars^3, it = 100)
 
-NetCompare(mtcars, mtcars^3, it = 100, add.bridge = TRUE, communities = c(rep(1,4),rep(2,4),rep(3,3)), useCommunities = c(1,2))
+NetCompare(
+  mtcars, mtcars^3, it = 100,
+  add.bridge = TRUE,
+  communities = c(rep(1, 4), rep(2, 4), rep(3, 3)),
+  useCommunities = c(1, 2)
+)
 
 }

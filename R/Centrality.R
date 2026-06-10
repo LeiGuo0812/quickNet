@@ -7,7 +7,7 @@
 #' @param ... other parameters from \code{qgraph::centralityPlot}, this only affect the output of Centrality$centralityPlot.
 #' @return a list contains the centrality information:\itemize{
 #' \item\code{centralityPlot:} the result of \code{qgraph::centralityPlot}.
-#' \item\code{centrailty_data:} the result of \code{qgraph::centrality}.}
+#' \item\code{centrality_data:} the result of \code{qgraph::centrality}.}
 #' @export
 #' @examples
 #' data('mtcars')
@@ -17,9 +17,16 @@ Centrality <- function(network_G, include = 'all', ...){
 
   results <- list()
 
-  cp <- centralityPlot(network_G, include = include, ...)
+  network_matrix <- quicknet_network_matrix(network_G)
+  cp_input <- if (inherits(network_G, "quicknet_fit") && !is.null(network_G$plots$network)) {
+    network_G$plots$network
+  } else {
+    network_matrix
+  }
 
-  cp_data <- centrality(network_G)
+  cp <- centralityPlot(cp_input, include = include, ...)
+
+  cp_data <- centrality(cp_input)
 
   cp_data_scale <- cp_data[1:6] %>%
     map(~ as.numeric(scale(.x)) %>%
@@ -31,6 +38,7 @@ Centrality <- function(network_G, include = 'all', ...){
   results$centralityPlot <- cp
 
   results$centrality_data <- cp_data_all
+  results$node_table <- quicknet_node_table(network_matrix)
 
   return(results)
 }

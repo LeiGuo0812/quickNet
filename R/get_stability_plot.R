@@ -15,8 +15,8 @@
 #'
 #' @examples
 #'data('mtcars')
-#'stability <- Stability(mtcars,nboot = 100)
-#'get_stability_plot(stability,prefix = 'test')
+#'stability <- Stability(mtcars, nboot = 10)
+#'get_stability_plot(stability, prefix = 'test', path = tempdir())
 #'
 
 get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, get.table = TRUE, ...){
@@ -44,38 +44,38 @@ get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf
     print(stability$centrality_diff_plot)
     dev.off()
 
-    if (!is.null(stability$brige_stability_plot)) {
+    if (!is.null(stability$bridge_stability_plot)) {
       pdf(file = path_join(c(path, paste0(prefix,'bridge_stability_plot.pdf'))), width = width, height = height, ...)
-      print(stability$brige_stability_plot)
+      print(stability$bridge_stability_plot)
       dev.off()
     }
 
   } else if (device == 'svg'){
 
-    svg(file = path_join(c(path, paste0(prefix,'edge_weight_CI_plot.svg'))), width = width, height = height, ...)
+    svg(filename = path_join(c(path, paste0(prefix,'edge_weight_CI_plot.svg'))), width = width, height = height, ...)
     print(stability$edge_weight_CI_plot)
     dev.off()
 
-    svg(file = path_join(c(path, paste0(prefix,'edge_weight_diff_plot.svg'))), width = width, height = height, ...)
+    svg(filename = path_join(c(path, paste0(prefix,'edge_weight_diff_plot.svg'))), width = width, height = height, ...)
     try(print(stability$edge_weight_diff_plot))
     dev.off()
 
-    svg(file = path_join(c(path, paste0(prefix,'centrality_stability_plot.svg'))), width = width, height = height, ...)
+    svg(filename = path_join(c(path, paste0(prefix,'centrality_stability_plot.svg'))), width = width, height = height, ...)
     print(stability$centrality_stability_plot)
     dev.off()
 
-    svg(file = path_join(c(path, paste0(prefix,'centrality_diff_plot.svg'))), width = width, height = height, ...)
+    svg(filename = path_join(c(path, paste0(prefix,'centrality_diff_plot.svg'))), width = width, height = height, ...)
     print(stability$centrality_diff_plot)
     dev.off()
 
-    if (!is.null(stability$brige_stability_plot)) {
-      svg(file = path_join(c(path, paste0(prefix,'bridge_stability_plot.svg'))), width = width, height = height, ...)
-      print(stability$brige_stability_plot)
+    if (!is.null(stability$bridge_stability_plot)) {
+      svg(filename = path_join(c(path, paste0(prefix,'bridge_stability_plot.svg'))), width = width, height = height, ...)
+      print(stability$bridge_stability_plot)
       dev.off()
     }
   }
 
-  if (get.table) {
+  if (get.table && !is.null(stability$CS_coefficient)) {
     stability$CS_coefficient %>%
       as.data.frame() %>%
       `colnames<-`('CS-coefficient') %>%

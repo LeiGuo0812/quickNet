@@ -41,6 +41,6 @@ a wrapper function of \code{ggplot2::ggsave}
 \examples{
 data('mtcars')
 centrality <- Centrality(EBICglassoNet(mtcars))
-get_centrality_plot(centrality, prefix = 'test')
+get_centrality_plot(centrality, prefix = 'test', path = tempdir())
 
 }

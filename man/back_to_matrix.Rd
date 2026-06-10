@@ -19,7 +19,10 @@ Convert a 3-column result of edge difference back to matrix
 # uncomment to run
 # EBICglassoNet(mtcars) -> net1
 # EBICglassoNet(mtcars^3) -> net2
-# suppressMessages(NetworkComparisonTest::NCT(net1,net2,it=500, binary.data=FALSE,test.edges=TRUE, edges='all',progressbar = FALSE)) -> NCT
+# suppressMessages(NetworkComparisonTest::NCT(
+#   net1, net2, it = 500, binary.data = FALSE,
+#   test.edges = TRUE, edges = 'all', progressbar = FALSE
+# )) -> NCT
 # back_to_matrix(NCT$einv.pvals)
 
 }

@@ -21,7 +21,7 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
 
   if (is.null(net2)) {
 
-    edge_data <- net1$Edgelist %>% as.data.frame()
+    edge_data <- quicknet_edgelist(quicknet_network_matrix(net1)) %>% as.data.frame()
 
     edges <- list()
 
@@ -31,9 +31,9 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
 
     } else {
 
-        edge_data1 <- net1$Edgelist %>% as.data.frame() %>%
+        edge_data1 <- quicknet_edgelist(quicknet_network_matrix(net1)) %>% as.data.frame() %>%
           mutate(pair = paste(from,to,sep = '_'))
-        edge_data2 <- net2$Edgelist %>% as.data.frame()%>%
+        edge_data2 <- quicknet_edgelist(quicknet_network_matrix(net2)) %>% as.data.frame()%>%
           mutate(pair = paste(from,to,sep = '_'))
 
         if (!(method %in% c('union','intersect'))) {

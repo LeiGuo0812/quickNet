@@ -11,6 +11,7 @@
 #' @param output whether output the plots as pdf files.
 #' @param prefix the prefix of output plot files.
 #' @param path the path of output files, can be either a relative or absolute path.
+#' @param device 'pdf' or 'svg', deciding the output plot format.
 #' @param width the width of plot, in inch.
 #' @param height the height of plot, in inch. \itemize{
 #' \item the parameter prefix, path, width, and height only works when output is TRUE.
@@ -30,69 +31,82 @@
 get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = 'none', output = TRUE, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, ...){
 
   results <- list()
+  network_plot <- if (inherits(network_G, "quicknet_fit")) {
+    if (is.null(network_G$plots$network)) {
+      stop("network_G is a quicknet_fit object without a stored qgraph plot.", call. = FALSE)
+    }
+    network_G$plots$network
+  } else {
+    network_G
+  }
 
   if (!(use.mask %in% c('none','net1','net2','both'))) {
     stop('use.mask should be one of "none", "net1", "net2" and "both".')
   }
 
-  diff_net <- diff_pos_net <- diff_neg_net <- network_G$graphData
+  base_matrix <- quicknet_network_matrix(network_G)
+  graph_labels <- colnames(base_matrix)
 
   if (use.mask == 'none') {
-    diff_net$graph <- NetCompare$`diff_sig`
-    diff_pos_net$graph <- NetCompare$`diff_sig_nw1>nw2`
-    diff_neg_net$graph <- NetCompare$`diff_sig_nw1<nw2`
+    diff_net <- NetCompare$`diff_sig`
+    diff_pos_net <- NetCompare$`diff_sig_nw1>nw2`
+    diff_neg_net <- NetCompare$`diff_sig_nw1<nw2`
   } else if (use.mask == 'net1') {
-    diff_net$graph <- NetCompare$`diff_sig` * NetCompare$net1_mask
-    diff_pos_net$graph <- NetCompare$`diff_sig_nw1>nw2` * NetCompare$net1_mask
-    diff_neg_net$graph <- NetCompare$`diff_sig_nw1<nw2` * NetCompare$net1_mask
+    diff_net <- NetCompare$`diff_sig` * NetCompare$net1_mask
+    diff_pos_net <- NetCompare$`diff_sig_nw1>nw2` * NetCompare$net1_mask
+    diff_neg_net <- NetCompare$`diff_sig_nw1<nw2` * NetCompare$net1_mask
   } else if (use.mask == 'net2') {
-    diff_net$graph <- NetCompare$`diff_sig` * NetCompare$net2_mask
-    diff_pos_net$graph <- NetCompare$`diff_sig_nw1>nw2` * NetCompare$net2_mask
-    diff_neg_net$graph <- NetCompare$`diff_sig_nw1<nw2` * NetCompare$net2_mask
+    diff_net <- NetCompare$`diff_sig` * NetCompare$net2_mask
+    diff_pos_net <- NetCompare$`diff_sig_nw1>nw2` * NetCompare$net2_mask
+    diff_neg_net <- NetCompare$`diff_sig_nw1<nw2` * NetCompare$net2_mask
   } else if (use.mask == 'both') {
-    diff_net$graph <- NetCompare$`diff_sig` * NetCompare$net1_mask * NetCompare$net2_mask
-    diff_pos_net$graph <- NetCompare$`diff_sig_nw1>nw2` * NetCompare$net1_mask * NetCompare$net2_mask
-    diff_neg_net$graph <- NetCompare$`diff_sig_nw1<nw2` * NetCompare$net1_mask * NetCompare$net2_mask
+    diff_net <- NetCompare$`diff_sig` * NetCompare$net1_mask * NetCompare$net2_mask
+    diff_pos_net <- NetCompare$`diff_sig_nw1>nw2` * NetCompare$net1_mask * NetCompare$net2_mask
+    diff_neg_net <- NetCompare$`diff_sig_nw1<nw2` * NetCompare$net1_mask * NetCompare$net2_mask
   }
 
-  results$diff_plot <- plot(diff_net, maximum= maximum)
-  results$diff_pos_plot <- plot(diff_pos_net, maximum= maximum)
-  results$diff_neg_plot <- plot(diff_neg_net, maximum= maximum)
+  colnames(diff_net) <- rownames(diff_net) <- graph_labels
+  colnames(diff_pos_net) <- rownames(diff_pos_net) <- graph_labels
+  colnames(diff_neg_net) <- rownames(diff_neg_net) <- graph_labels
 
-  results$diff_plot$Arguments <- network_G$Arguments
-  results$diff_plot$plotOptions <- network_G$plotOptions
-  results$diff_plot$graphAttributes$Nodes <- network_G$graphAttributes$Nodes
-  results$diff_plot$graphAttributes$Knots<- network_G$graphAttributes$Knots
-  results$diff_plot$graphAttributes$Edges$curve = rep(network_G$graphAttributes$Edges$curve[1], length(results$diff_plot$graphAttributes$Edges$labels))
-  results$diff_plot$graphAttributes$Edges$lty = rep(network_G$graphAttributes$Edges$lty[1], length(results$diff_plot$graphAttributes$Edges$labels))
-  results$diff_plot$layout <- network_G$layout
-  results$diff_plot$layout.orig <- network_G$layout.orig
+  results$diff_plot <- qgraph::qgraph(diff_net, maximum= maximum, layout = network_plot$layout, labels = graph_labels, DoNotPlot = TRUE)
+  results$diff_pos_plot <- qgraph::qgraph(diff_pos_net, maximum= maximum, layout = network_plot$layout, labels = graph_labels, DoNotPlot = TRUE)
+  results$diff_neg_plot <- qgraph::qgraph(diff_neg_net, maximum= maximum, layout = network_plot$layout, labels = graph_labels, DoNotPlot = TRUE)
+
+  results$diff_plot$Arguments <- network_plot$Arguments
+  results$diff_plot$plotOptions <- network_plot$plotOptions
+  results$diff_plot$graphAttributes$Nodes <- network_plot$graphAttributes$Nodes
+  results$diff_plot$graphAttributes$Knots<- network_plot$graphAttributes$Knots
+  results$diff_plot$graphAttributes$Edges$curve = rep(network_plot$graphAttributes$Edges$curve[1], length(results$diff_plot$graphAttributes$Edges$labels))
+  results$diff_plot$graphAttributes$Edges$lty = rep(network_plot$graphAttributes$Edges$lty[1], length(results$diff_plot$graphAttributes$Edges$labels))
+  results$diff_plot$layout <- network_plot$layout
+  results$diff_plot$layout.orig <- network_plot$layout.orig
 
   results$diff_plot$plotOptions$legend <- FALSE
   results$diff_plot$plotOptions$drawPies <- FALSE
   results$diff_plot$graphAttributes$Nodes$pie <- NULL
 
-  results$diff_pos_plot$Arguments <- network_G$Arguments
-  results$diff_pos_plot$plotOptions <- network_G$plotOptions
-  results$diff_pos_plot$graphAttributes$Nodes <- network_G$graphAttributes$Nodes
-  results$diff_pos_plot$graphAttributes$Knots<- network_G$graphAttributes$Knots
-  results$diff_pos_plot$graphAttributes$Edges$curve = rep(network_G$graphAttributes$Edges$curve[1], length(results$diff_pos_plot$graphAttributes$Edges$labels))
-  results$diff_pos_plot$graphAttributes$Edges$lty = rep(network_G$graphAttributes$Edges$lty[1], length(results$diff_pos_plot$graphAttributes$Edges$labels))
-  results$diff_pos_plot$layout <- network_G$layout
-  results$diff_pos_plot$layout.orig <- network_G$layout.orig
+  results$diff_pos_plot$Arguments <- network_plot$Arguments
+  results$diff_pos_plot$plotOptions <- network_plot$plotOptions
+  results$diff_pos_plot$graphAttributes$Nodes <- network_plot$graphAttributes$Nodes
+  results$diff_pos_plot$graphAttributes$Knots<- network_plot$graphAttributes$Knots
+  results$diff_pos_plot$graphAttributes$Edges$curve = rep(network_plot$graphAttributes$Edges$curve[1], length(results$diff_pos_plot$graphAttributes$Edges$labels))
+  results$diff_pos_plot$graphAttributes$Edges$lty = rep(network_plot$graphAttributes$Edges$lty[1], length(results$diff_pos_plot$graphAttributes$Edges$labels))
+  results$diff_pos_plot$layout <- network_plot$layout
+  results$diff_pos_plot$layout.orig <- network_plot$layout.orig
 
   results$diff_pos_plot$plotOptions$legend <- FALSE
   results$diff_pos_plot$plotOptions$drawPies <- FALSE
   results$diff_pos_plot$graphAttributes$Nodes$pie <- NULL
 
-  results$diff_neg_plot$Arguments <- network_G$Arguments
-  results$diff_neg_plot$plotOptions <- network_G$plotOptions
-  results$diff_neg_plot$graphAttributes$Nodes <- network_G$graphAttributes$Nodes
-  results$diff_neg_plot$graphAttributes$Knots<- network_G$graphAttributes$Knots
-  results$diff_neg_plot$graphAttributes$Edges$curve = rep(network_G$graphAttributes$Edges$curve[1], length(results$diff_neg_plot$graphAttributes$Edges$labels))
-  results$diff_neg_plot$graphAttributes$Edges$lty = rep(network_G$graphAttributes$Edges$lty[1], length(results$diff_neg_plot$graphAttributes$Edges$labels))
-  results$diff_neg_plot$layout <- network_G$layout
-  results$diff_neg_plot$layout.orig <- network_G$layout.orig
+  results$diff_neg_plot$Arguments <- network_plot$Arguments
+  results$diff_neg_plot$plotOptions <- network_plot$plotOptions
+  results$diff_neg_plot$graphAttributes$Nodes <- network_plot$graphAttributes$Nodes
+  results$diff_neg_plot$graphAttributes$Knots<- network_plot$graphAttributes$Knots
+  results$diff_neg_plot$graphAttributes$Edges$curve = rep(network_plot$graphAttributes$Edges$curve[1], length(results$diff_neg_plot$graphAttributes$Edges$labels))
+  results$diff_neg_plot$graphAttributes$Edges$lty = rep(network_plot$graphAttributes$Edges$lty[1], length(results$diff_neg_plot$graphAttributes$Edges$labels))
+  results$diff_neg_plot$layout <- network_plot$layout
+  results$diff_neg_plot$layout.orig <- network_plot$layout.orig
 
   results$diff_neg_plot$plotOptions$legend <- FALSE
   results$diff_neg_plot$plotOptions$drawPies <- FALSE
@@ -145,7 +159,7 @@ get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = '
       dev.off()
 
     } else if (device == 'svg') {
-      svg(file = path_join(c(path,
+      svg(filename = path_join(c(path,
                              paste0(prefix,
                                     'diff_network_plot.svg'))),
           width = width,
@@ -155,7 +169,7 @@ get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = '
 
       dev.off()
 
-      svg(file = path_join(c(path,
+      svg(filename = path_join(c(path,
                              paste0(prefix,
                                     'diff_pos_network_plot.svg'))),
           width = width,
@@ -165,7 +179,7 @@ get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = '
 
       dev.off()
 
-      svg(file = path_join(c(path,
+      svg(filename = path_join(c(path,
                              paste0(prefix,
                                     'diff_neg_network_plot.svg'))),
           width = width,

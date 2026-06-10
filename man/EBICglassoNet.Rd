@@ -4,15 +4,17 @@
 \alias{EBICglassoNet}
 \title{Gaussian Markov random field estimation using graphical LASSO and extended Bayesian information criterion}
 \usage{
-EBICglassoNet(data, ...)
+EBICglassoNet(data, gamma = 0.5, ...)
 }
 \arguments{
 \item{data}{a data frame, each column presents a node, there should be no miss values in the data frame.}
 
-\item{...}{paramaters from \code{bootnet::estimateNetwork}}
+\item{gamma}{EBIC tuning parameter.}
+
+\item{...}{Reserved for future extensions.}
 }
 \description{
-short version of botnet::estimateNetwork(data, default = 'EBICglasso')
+Estimate an EBICglasso network and return a quicknet_fit object.
 }
 \examples{
 data('mtcars')

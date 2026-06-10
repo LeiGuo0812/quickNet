@@ -16,7 +16,7 @@ Centrality(network_G, include = "all", ...)
 \value{
 a list contains the centrality information:\itemize{
 \item\code{centralityPlot:} the result of \code{qgraph::centralityPlot}.
-\item\code{centrailty_data:} the result of \code{qgraph::centrality}.}
+\item\code{centrality_data:} the result of \code{qgraph::centrality}.}
 }
 \description{
 estimate the node Strength, Betweenness and Closeness of a network

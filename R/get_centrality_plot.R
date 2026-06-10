@@ -20,7 +20,7 @@
 #' @examples
 #' data('mtcars')
 #' centrality <- Centrality(EBICglassoNet(mtcars))
-#' get_centrality_plot(centrality, prefix = 'test')
+#' get_centrality_plot(centrality, prefix = 'test', path = tempdir())
 #'
 
 get_centrality_plot <- function(centrality, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, get.table = TRUE,...) {

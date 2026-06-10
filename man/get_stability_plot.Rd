@@ -40,7 +40,7 @@ get stability plot from stability results.
 }
 \examples{
 data('mtcars')
-stability <- Stability(mtcars,nboot = 100)
-get_stability_plot(stability,prefix = 'test')
+stability <- Stability(mtcars, nboot = 10)
+get_stability_plot(stability, prefix = 'test', path = tempdir())
 
 }

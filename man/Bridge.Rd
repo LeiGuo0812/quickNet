@@ -29,7 +29,7 @@ Bridge(
 \value{
 a list contains the bridge coefficient information:\itemize{
 \item\code{bridgePlot:} the plot of bridge coefficients of each node.
-\item\code{centrailty_data:} the result of \code{networktools::bridge}.}
+\item\code{bridge_data:} the result of \code{networktools::bridge}.}
 }
 \description{
 Title Calculate Bridge Coefficients

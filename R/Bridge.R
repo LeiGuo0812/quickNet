@@ -14,7 +14,7 @@
 #'
 #' @return a list contains the bridge coefficient information:\itemize{
 #' \item\code{bridgePlot:} the plot of bridge coefficients of each node.
-#' \item\code{centrailty_data:} the result of \code{networktools::bridge}.}
+#' \item\code{bridge_data:} the result of \code{networktools::bridge}.}
 #' @export
 #'
 #' @examples
@@ -25,7 +25,13 @@ Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 
 
   results <- list()
 
-  bridge_data <- bridge(net_G, communities = communities, useCommunities = useCommunities, normalize = normalize,...)
+  bridge_input <- if (inherits(net_G, "quicknet_fit") && !is.null(net_G$plots$network)) {
+    net_G$plots$network
+  } else {
+    quicknet_network_matrix(net_G)
+  }
+
+  bridge_data <- bridge(bridge_input, communities = communities, useCommunities = useCommunities, normalize = normalize,...)
 
   plot_data <- suppressMessages(bridge_data %>%
     lapply(as.data.frame) %>%

@@ -1,6 +1,6 @@
 Package: quickNet
 Type: Package
-Title: For quick network construction
+Title: Quick Psychological Network Construction
 Version: 0.0.0.9000
 Authors@R: 
     person(given = "Lei",
@@ -8,11 +8,11 @@ Authors@R:
            role = c("aut", "cre"),
            email = "guolei0812@yeah.net")
 Maintainer: Lei Guo <guolei0812@yeah.net>
-Description: quick network construction
+Description: Provides a quick interface for estimating, visualizing, and comparing psychological networks.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.3
 Imports: 
     ape,
     bootnet,
@@ -22,15 +22,21 @@ Imports:
     ggplot2,
     magrittr,
     mgm,
-    NetworkComparisonTest,
     NetworkToolbox,
     networktools,
+    psych,
     purrr,
     qgraph,
     reshape2,
     scales,
     stringr,
     tidyr,
-	IsingFit,
-	Matrix,
-	methods
+    IsingFit,
+    Matrix,
+    methods
+Suggests:
+    glmnet,
+    graphicalVAR,
+    mlVAR,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

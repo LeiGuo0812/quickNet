@@ -38,6 +38,8 @@ get_compare_plot(
 
 \item{path}{the path of output files, can be either a relative or absolute path.}
 
+\item{device}{'pdf' or 'svg', deciding the output plot format.}
+
 \item{width}{the width of plot, in inch.}
 
 \item{height}{the height of plot, in inch. \itemize{

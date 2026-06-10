@@ -42,6 +42,6 @@ get network plot from qgraph objects.
 
 data('mtcars')
 network <- quickNet(mtcars)
-get_network_plot(network, prefix = 'test')
+get_network_plot(network, prefix = 'test', path = tempdir())
 
 }

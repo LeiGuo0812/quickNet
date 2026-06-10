@@ -23,11 +23,7 @@ globalCoeff <- function(x, list = FALSE){
     stop('list should be logical.')
   }
 
-  if (sum(class(x) == 'qgraph') > 0) {
-    network <- x$graphData$graph
-  } else if (is.matrix(x)) {
-    network <- x
-  }
+  network <- quicknet_network_matrix(x)
 
   globalStrength <- sum(abs(network[upper.tri(network)]))
 

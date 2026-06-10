@@ -21,7 +21,7 @@
 #' @examples
 #' data('mtcars')
 #' Bridge <- Bridge(quickNet(mtcars), communities = c(rep(1,5),rep(2,6)))
-#' get_bridge_plot(Bridge, prefix = 'test')
+#' get_bridge_plot(Bridge, prefix = 'test', path = tempdir())
 #'
 
 get_bridge_plot <- function(bridge, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, get.table = TRUE,...) {

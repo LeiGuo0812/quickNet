@@ -9,6 +9,15 @@ Stability(
   nboot = 1000,
   ncore = 1,
   labels = NULL,
+  model = "EBICglasso",
+  cor_method = "pearson",
+  missing = "listwise",
+  gamma = 0.5,
+  ordinal_method = "polychoric",
+  AND = TRUE,
+  types = NULL,
+  levels = NULL,
+  case.drop = c(0.1, 0.25, 0.5),
   add.bridge = FALSE,
   communities = NULL,
   useCommunities = "all",
@@ -16,7 +25,7 @@ Stability(
 )
 }
 \arguments{
-\item{data}{a data frame, each column presents a node, there should be no miss values in the data frame.}
+\item{data}{a data frame or \code{quicknet_fit} object.}
 
 \item{nboot}{number of bootstraps.}
 
@@ -24,23 +33,44 @@ Stability(
 
 \item{labels}{use self-specified node labels, typically the \code{labels} parameter you put in the \code{quickNet} function.}
 
+\item{model}{network model used when \code{data} is a data frame.}
+
+\item{cor_method}{correlation method used by correlation and partial models.}
+
+\item{missing}{missing-data handling.}
+
+\item{gamma}{EBIC tuning parameter.}
+
+\item{ordinal_method}{association method used by ordinal models.}
+
+\item{AND}{logical. Should the Ising model use the AND rule?}
+
+\item{types}{MGM variable types, one per variable.}
+
+\item{levels}{MGM variable levels, one per variable.}
+
+\item{case.drop}{proportions used for case-dropping centrality stability.}
+
 \item{add.bridge}{a logical value to determine whether to calculate bridge coefficients or not. If the value is TRUE, "bridgeStrength", "bridgeCloseness", "bridgeBetweenness" will be added to the results.}
 
-\item{communities}{used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. see \code{netowrktools::bridge}.}
+\item{communities}{used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. See \code{networktools::bridge}.}
 
 \item{useCommunities}{character vector specifying which communities should be included. Default set to "all".}
 
 \item{cor}{When calculating Correlation stability coefficient, (CS-coefficient), the correlation level to test at. Default is 0.7.}
 }
 \value{
-a list contains the stability test results of the netowrk\itemize{
-\item\code{boot_edge_weight_stabilty:} the bootstrap result of edge weight accuracy.
-\item\code{boot_centrality_stabilty:} the bootstrap result of centrality stability.
+a list contains the stability test results of the network\itemize{
+\item\code{boot_edge_weight_stability:} the bootstrap result of edge weight accuracy.
+\item\code{boot_centrality_stability:} the bootstrap result of centrality stability.
 \item\code{edge_weight_CI_plot:} the plot of edge weight CI.
 \item\code{edge_weight_diff_plot:} the plot of pair-wise edge difference.
 \item\code{centrality_stability_plot:} the plot of node centrality stability.
 \item\code{centrality_diff_plot:} the plot of pair-wise node centrality difference.
+\item\code{bridge_stability_plot:} the plot of bridge stability when \code{add.bridge = TRUE}.
 \item\code{CS_coefficient:} the Centrality stability coefficient (CS-coefficient) of all statistics.
+\item\code{edge_bootstrap_stability:} model-agnostic row bootstrap edge stability table.
+\item\code{case_drop_centrality_stability:} model-agnostic case-dropping centrality stability table.
 }
 }
 \description{
@@ -49,8 +79,13 @@ estimate the edge weight and node stability of a network.
 \examples{
 
 data('mtcars')
-Stability <- Stability(mtcars, nboot = 100)
+Stability <- Stability(mtcars, nboot = 10)
 
-Stability2 <- Stability(mtcars, nboot = 100, add.bridge = TRUE, communities = list(c1 = 1:5, c2 = 6:11))
+Stability2 <- Stability(
+  mtcars,
+  nboot = 10,
+  add.bridge = TRUE,
+  communities = list(c1 = 1:5, c2 = 6:11)
+)
 
 }

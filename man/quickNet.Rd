@@ -16,6 +16,14 @@ quickNet(
   nodeNames = NULL,
   border.width = 2,
   border.color = "#555555",
+  model = "EBICglasso",
+  cor_method = "pearson",
+  missing = "listwise",
+  gamma = 0.5,
+  ordinal_method = "polychoric",
+  AND = TRUE,
+  types = NULL,
+  levels = NULL,
   ...
 )
 }
@@ -36,12 +44,30 @@ quickNet(
 
 \item{nodeNames}{for each node, can be used to plot a legend next to the plot that links the node labels to node names.}
 
-\item{...}{parameters from \code{\link[qgraph]{qgraph}}}
+\item{border.width}{Node border width passed to \code{qgraph::qgraph}.}
 
-\item{labels}{If FALSE, no labels are plotted. If TRUE, order in weights matrix is used as labels. This can also be a vector with a label for each node. Defaults for graphs with less than 20 nodes to a 3 character abbreviation of the columnames and rownames if these are identical or else to TRUE. If a label contains an asterisk (e.g. "x1*") then the asterisk will be omitted and the label will be printed in symbol font (use this for Greek letters). Can also be a list with a label as each element, which can be expressions for more advanced mathematical annotation.}
+\item{border.color}{Node border color passed to \code{qgraph::qgraph}.}
+
+\item{model}{network model. One of "EBICglasso", "correlation", "partial", "ising", "ordinal", or "mgm".}
+
+\item{cor_method}{correlation method used by correlation and partial models.}
+
+\item{missing}{missing-data handling. The default "listwise" removes rows with missing values.}
+
+\item{gamma}{EBIC tuning parameter for EBICglasso, Ising, and MGM.}
+
+\item{ordinal_method}{association method used by ordinal models.}
+
+\item{AND}{logical. Should the Ising model use the AND rule?}
+
+\item{types}{MGM variable types, one per variable.}
+
+\item{levels}{MGM variable levels, one per variable.}
+
+\item{...}{parameters from \code{\link[qgraph]{qgraph}}}
 }
 \value{
-a qgraph object.
+a \code{quicknet_fit} object.
 }
 \description{
 This function provide a quick way to plot network graph

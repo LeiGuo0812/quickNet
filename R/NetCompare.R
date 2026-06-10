@@ -9,17 +9,20 @@
 #' @param paired Logical. Can be TRUE of FALSE to indicate whether the samples are dependent or not. If paired is TRUE, relabeling is performed within each pair of observations. If paired is FALSE, relabeling is not restricted to pairs of observations. Note that, currently, dependent data is assumed to entail one group measured twice.
 #' @param weighted Logical. Can be TRUE of FALSE to indicate whether the networks to be compared should be weighted of not. If not, the estimated networks are dichotomized. Defaults to TRUE.
 #' @param AND Logical. Can be TRUE of FALSE to indicate whether the AND-rule or the OR-rule should be used to define the edges in the network. Defaults to TRUE. Only necessary for binary data.
-#' @param abs Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?
+#' @param abs_edge Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?
 #' @param test.edges Logical. Can be TRUE of FALSE to indicate whether or not differences in individual edges should be tested.
 #' @param edges Character or list. When 'all', differences between all individual edges are tested. When provided a list with one or more pairs of indices referring to variables, the provided edges are tested.
 #' @param progressbar Logical. Should the pbar be plotted in order to see the progress of the estimation procedure? Defaults to TRUE.
 #' @param make.positive.definite If \code{make.positive.definite = TRUE}, the covariance matrices used for the glasso are projected to the nearest positive definite matrices, if they are not yet positive definite. This is useful for small n, for which it is very likely that at least one of the bootstrap comparisons involves a covariance matrix that is not positive definite.
 #' @param p.adjust.methods Character. Can be one of "holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr", or "none". To control (or not) for testing of multiple edges. Defaults to "none".
+#' @param test.centrality Logical. Should centrality differences be tested?
+#' @param centrality Character vector specifying centrality statistics to test.
+#' @param nodes Character vector specifying nodes to test.
 #' @param add.bridge a logical value to calculate the difference of  bridge coefficients or not. If the value is TRUE, "bridgeStrength", "bridgeCloseness", "bridgeBetweenness", "bridgeExpectedInfluence" will be added to the results.
 #' @param communities used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. Note: should only be a numeric vector with the same length of nodes, the number indicates the community that each community belongs to.
 #' @param useCommunities character vector specifying which communities should be included. Default set to "all".
 #' @param sig.level significance level of the test, this only affect the output of diff_sig_nw1>nw2 and diff_sig_nw1<nw2.
-#' @param ... other paramaters from \code{NetworkComparisonTest::NCT}
+#' @param ... other parameters from \code{NetworkComparisonTest::NCT}
 #'
 #' @return returns a 'NCT' object that contains the following items:\itemize{
 #' \item\code{glstrinv.real:} The difference in global strength between the networks of the observed data sets.
@@ -48,7 +51,12 @@
 #' data('mtcars')
 #' NetCompare(mtcars, mtcars^3, it = 100)
 #'
-#' NetCompare(mtcars, mtcars^3, it = 100, add.bridge = TRUE, communities = c(rep(1,4),rep(2,4),rep(3,3)), useCommunities = c(1,2))
+#' NetCompare(
+#'   mtcars, mtcars^3, it = 100,
+#'   add.bridge = TRUE,
+#'   communities = c(rep(1, 4), rep(2, 4), rep(3, 3)),
+#'   useCommunities = c(1, 2)
+#' )
 #'
 NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=TRUE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = TRUE, centrality = 'all', nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, ...){
 

@@ -41,6 +41,6 @@ a wrapper function of \code{ggplot2::ggsave}
 \examples{
 data('mtcars')
 Bridge <- Bridge(quickNet(mtcars), communities = c(rep(1,5),rep(2,6)))
-get_bridge_plot(Bridge, prefix = 'test')
+get_bridge_plot(Bridge, prefix = 'test', path = tempdir())
 
 }

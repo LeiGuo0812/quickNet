@@ -15,7 +15,7 @@
 #'
 #' data('mtcars')
 #' network <- quickNet(mtcars)
-#' get_network_plot(network, prefix = 'test')
+#' get_network_plot(network, prefix = 'test', path = tempdir())
 #'
 
 get_network_plot <- function(network, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, get.matrix = TRUE, ...){
@@ -40,7 +40,7 @@ get_network_plot <- function(network, prefix = '', path = '.', device = 'pdf', w
 
   } else if (device == 'svg'){
 
-    svg(file = path_join(c(path,
+    svg(filename = path_join(c(path,
                            paste0(prefix,
                                   'network_plot.svg'))),
         width = width,
@@ -53,7 +53,7 @@ get_network_plot <- function(network, prefix = '', path = '.', device = 'pdf', w
   }
 
   if (get.matrix) {
-    write.csv(network$graphData$graph, path_join(c(path,
+    write.csv(quicknet_network_matrix(network), path_join(c(path,
                                                    paste0(prefix,
                                                           'network_matrix.csv'))),
               row.names = TRUE)
