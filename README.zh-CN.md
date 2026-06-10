@@ -285,6 +285,23 @@ stability$case_drop_centrality_stability
 longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 100)
 ```
 
+### 学术汇报参数
+
+可以使用 `quicknet_report()` 从任意 `quicknet_fit` 对象中提取适合论文或学术汇报的样本信息、估计设置、网络摘要、边摘要、节点指标和模型特异参数。
+
+```r
+fit <- quickNet(mtcars[, 1:6], model = "EBICglasso", pie = FALSE)
+report <- quicknet_report(fit)
+
+report$sample          # 样本量和节点数
+report$estimation      # 估计器和调参信息
+report$networks        # 各网络层的密度和边权摘要
+report$edges           # 正边、负边和非零边数量
+report$nodes           # 节点中心性和预测性
+report$model_specific  # 模型特异汇报字段
+report$text            # 简短文字摘要
+```
+
 ### 网络比较
 
 ```r

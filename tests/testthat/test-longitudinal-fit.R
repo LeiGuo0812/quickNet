@@ -20,6 +20,13 @@ test_that("PanelNet returns a directed quicknet_fit object", {
   expect_true(any(fit$edges$edge_type == "autoregressive"))
   expect_equal(fit$network_summary$possible_edges, 6)
 
+  report <- quicknet_report(fit)
+  expect_s3_class(report, "quicknet_report")
+  expect_true(all(c("subjects", "waves", "transitions") %in% names(report$sample)))
+  expect_true("lambda_rule" %in% report$estimation$parameter)
+  expect_true("edge_type" %in% names(attr(report$edges, "by_edge_type")))
+  expect_true("cv_r_squared" %in% names(report$model_specific))
+
   stability <- LongitudinalStability(fit, nboot = 1, nfolds = 5)
   expect_true("default" %in% names(stability))
   expect_true(nrow(stability$default) > 0)
@@ -53,6 +60,10 @@ test_that("LongitudinalNet returns graphicalVAR network layers", {
   expect_equal(fit$model, "graphicalVAR")
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(fit$networks)))
   expect_true(all(c("temporal", "contemporaneous", "between") %in% unique(fit$edges$network)))
+
+  report <- quicknet_report(fit)
+  expect_true(all(c("temporal", "contemporaneous", "between") %in% report$networks$network))
+  expect_true("gamma" %in% report$estimation$parameter)
 
   stability <- suppressWarnings(LongitudinalStability(fit, nboot = 1))
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(stability)))
@@ -88,4 +99,8 @@ test_that("LongitudinalNet supports mlVAR", {
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "mlVAR")
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(fit$networks)))
+
+  report <- quicknet_report(fit)
+  expect_true("estimator" %in% report$estimation$parameter)
+  expect_true(all(c("temporal", "contemporaneous", "between") %in% report$networks$network))
 })

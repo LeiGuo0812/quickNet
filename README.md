@@ -285,6 +285,23 @@ Longitudinal network:
 longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 100)
 ```
 
+### Academic Reporting Parameters
+
+Use `quicknet_report()` to extract report-ready sample information, estimation settings, network summaries, edge summaries, node-level indices, and model-specific parameters from any `quicknet_fit` object.
+
+```r
+fit <- quickNet(mtcars[, 1:6], model = "EBICglasso", pie = FALSE)
+report <- quicknet_report(fit)
+
+report$sample          # Sample size and node count
+report$estimation      # Estimator and tuning parameters
+report$networks        # Density and edge-weight summary by network layer
+report$edges           # Positive/negative/nonzero edge counts
+report$nodes           # Node-level centrality and predictability
+report$model_specific  # Model-specific report fields
+report$text            # Short plain-language summary
+```
+
 ### Network Comparison
 
 ```r

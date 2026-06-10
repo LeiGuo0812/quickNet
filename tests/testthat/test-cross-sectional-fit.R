@@ -1,5 +1,5 @@
 test_that("quickNet returns a quicknet_fit object for EBICglasso", {
-  fit <- suppressWarnings(quickNet(mtcars[, 1:5], pie = FALSE, legend = FALSE))
+  fit <- suppressWarnings(quickNet(mtcars[, 1:5], pie = FALSE, legend = FALSE, DoNotPlot = TRUE))
 
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "EBICglasso")
@@ -10,8 +10,8 @@ test_that("quickNet returns a quicknet_fit object for EBICglasso", {
 })
 
 test_that("cross-sectional models share the same quicknet_fit interface", {
-  cor_fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE)
-  partial_fit <- quickNet(mtcars[, 1:5], model = "partial", pie = FALSE, legend = FALSE)
+  cor_fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE, DoNotPlot = TRUE)
+  partial_fit <- quickNet(mtcars[, 1:5], model = "partial", pie = FALSE, legend = FALSE, DoNotPlot = TRUE)
   ebic_fit <- suppressWarnings(EBICglassoNet(mtcars[, 1:5]))
 
   expect_s3_class(cor_fit, "quicknet_fit")
@@ -26,8 +26,21 @@ test_that("cross-sectional models share the same quicknet_fit interface", {
   expect_true(all(c("nodes", "possible_edges", "density") %in% names(summary(cor_fit))))
 })
 
+test_that("quicknet_report returns academic reporting tables for cross-sectional models", {
+  cor_fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE, DoNotPlot = TRUE)
+  report <- quicknet_report(cor_fit)
+
+  expect_s3_class(report, "quicknet_report")
+  expect_true(all(c("sample", "estimation", "networks", "edges", "nodes", "model_specific", "text") %in% names(report)))
+  expect_true(all(c("parameter", "value") %in% names(report$estimation)))
+  expect_true(all(c("network", "nodes", "possible_edges", "nonzero_edges", "density") %in% names(report$networks)))
+  expect_true(all(c("network", "possible_edges", "nonzero_edges", "positive_edges", "negative_edges") %in% names(report$edges)))
+  expect_true("predictability_R2" %in% names(report$model_specific))
+  expect_match(report$text, "Model: correlation")
+})
+
 test_that("legacy extractors accept quicknet_fit", {
-  fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE)
+  fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE, DoNotPlot = TRUE)
 
   edges <- get_edges(fit)
   edges_df <- get_edges_df(fit)
@@ -60,15 +73,16 @@ test_that("new cross-sectional models return quicknet_fit objects", {
     d2 = sample(1:2, 120, replace = TRUE)
   )
 
-  ising_fit <- quickNet(binary_data, model = "ising", pie = FALSE, gamma = 0.25)
-  ordinal_fit <- quickNet(ordinal_data, model = "ordinal", pie = FALSE)
+  ising_fit <- quickNet(binary_data, model = "ising", pie = FALSE, gamma = 0.25, DoNotPlot = TRUE)
+  ordinal_fit <- quickNet(ordinal_data, model = "ordinal", pie = FALSE, DoNotPlot = TRUE)
   mgm_fit <- quickNet(
     mixed_data,
     model = "mgm",
     pie = FALSE,
     gamma = 0.25,
     types = c("g", "g", "c", "c"),
-    levels = c(1, 1, 2, 2)
+    levels = c(1, 1, 2, 2),
+    DoNotPlot = TRUE
   )
 
   expect_s3_class(ising_fit, "quicknet_fit")
@@ -81,10 +95,15 @@ test_that("new cross-sectional models return quicknet_fit objects", {
   expect_true(all(c("prevalence", "accuracy", "accuracy_gain") %in% names(ising_fit$nodes)))
   expect_true("predictability_R2" %in% names(ordinal_fit$nodes))
   expect_true(all(c("type", "level") %in% names(mgm_fit$nodes)))
+
+  ising_report <- quicknet_report(ising_fit)
+  mgm_report <- quicknet_report(mgm_fit)
+  expect_true(all(c("prevalence", "accuracy", "threshold") %in% names(ising_report$model_specific)))
+  expect_true(all(c("type", "level") %in% names(mgm_report$model_specific)))
 })
 
 test_that("Stability returns model-agnostic stability tables", {
-  fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE)
+  fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE, DoNotPlot = TRUE)
   stability <- Stability(fit, nboot = 3, case.drop = 0.10)
 
   expect_true(all(c("edge_bootstrap_stability", "case_drop_centrality_stability") %in% names(stability)))

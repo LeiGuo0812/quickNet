@@ -1,3 +1,5 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
+^README\.zh-CN\.md$
+^tests/testthat/Rplots\.pdf$
