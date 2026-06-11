@@ -10,7 +10,10 @@ utils::globalVariables(c(
   "incremental_burden_reduction",
   "node",
   "plot_label",
+  "plot_metric",
   "plot_value",
+  "achieved_probability",
+  "sample_size",
   "step",
   "target"
 ))

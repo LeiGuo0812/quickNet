@@ -31,6 +31,7 @@ devtools::install_local("quickNet-main.zip")
 ```
 
 Some models require optional backend packages: `PanelNet()` requires `glmnet`, `LongitudinalNet(model = "graphicalVAR")` requires `graphicalVAR`, and `LongitudinalNet(model = "mlVAR")` requires `mlVAR`.
+Additional optional modules use `powerly`, `psychonetrics`, `lavaan`, and `MASS` for sample size planning, confirmatory networks, latent networks, and SEM-based panel networks.
 
 ## Unified Output
 
@@ -56,8 +57,15 @@ plot(fit)             # Quick network plot
 | Cross-sectional ordinal data | `quickNet()` | `"ordinal"` | Ordinal association network based on polychoric-style correlations. Useful for Likert-type items. |
 | Cross-sectional mixed data | `quickNet()` | `"mgm"` | Mixed Graphical Model for combinations of Gaussian, categorical, and other variable types. |
 | Wide-format panel data | `PanelNet()` | `"clpn"` | Cross-lagged panel network. Edges are directed from previous-wave nodes to next-wave nodes. |
+| Wide-format panel data | `PanelSEMNet()` | `"panel_sem"` | SEM-based cross-lagged panel network with lavaan fit indices. |
 | Long-format intensive longitudinal data | `LongitudinalNet()` | `"graphicalVAR"` | Multilevel graphical VAR model returning temporal, contemporaneous, and between-person networks. |
 | Long-format intensive longitudinal data | `LongitudinalNet()` | `"mlVAR"` | Multilevel VAR model via `mlVAR`, also returning temporal, contemporaneous, and between-person networks. |
+| Time-ordered mixed data | `MixedVARNet()` | `"mixedVAR"` | Mixed vector autoregressive network for continuous and categorical time-series variables. |
+| Time-ordered mixed data | `TimeVaryingNet()` | `"time_varying_mvar"` | Time-varying mixed VAR networks estimated at user-defined time points. |
+| Cross-sectional continuous data | `ConfirmatoryNet()` | `"confirmatory_ggm"` | Confirmatory Gaussian graphical model with user-specified free and fixed edges. |
+| CFA/SEM data | `LatentNet()` | `"latent_network"` | Latent-variable correlation network and optional residual item network after CFA. |
+
+Sample size planning uses a separate `quicknet_power` object returned by `NetworkPower()` or its alias `SampleSize()`.
 
 `EBICglassoNet()` is retained as a convenience wrapper for the cross-sectional `model = "EBICglasso"` workflow.
 
@@ -252,6 +260,75 @@ mlvar_fit$edges
 mlvar_fit$nodes
 ```
 
+### 10. Network Power and Sample Size Planning
+
+```r
+power <- NetworkPower(
+  nodes = 8,
+  density = 0.30,
+  sample_sizes = c(100, 200, 400),
+  replications = 100,
+  target_metric = "sensitivity",
+  target_value = 0.60,
+  target_probability = 0.80
+)
+
+summary(power)
+plot(power)
+quicknet_report(power)$text
+```
+
+For `powerly`-based GGM planning:
+
+```r
+powerly_plan <- NetworkPower(
+  method = "powerly",
+  nodes = 8,
+  density = 0.30,
+  target_metric = "sensitivity",
+  target_value = 0.60,
+  target_probability = 0.80
+)
+```
+
+### 11. Confirmatory, Latent, and Dynamic Networks
+
+```r
+omega <- matrix(1, 6, 6)
+diag(omega) <- 0
+colnames(omega) <- rownames(omega) <- paste0("x", 1:6)
+
+confirmatory <- ConfirmatoryNet(data, vars = paste0("x", 1:6), omega = omega)
+```
+
+```r
+cfa_model <- "
+Depression =~ d1 + d2 + d3
+Anxiety    =~ a1 + a2 + a3
+"
+
+latent <- LatentNet(data, model = cfa_model)
+latent$networks$latent
+latent$networks$residual
+```
+
+```r
+panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
+
+mixed_var <- MixedVARNet(
+  time_data,
+  types = c("g", "g", "c"),
+  levels = c(1, 1, 2)
+)
+
+tv_mvar <- TimeVaryingNet(
+  time_data,
+  types = c("g", "g", "c"),
+  levels = c(1, 1, 2),
+  estpoints = c(0.25, 0.50, 0.75)
+)
+```
+
 ## Common Follow-Up Analyses
 
 ### Centrality and Bridge Centrality
@@ -393,6 +470,9 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Mixed Graphical Models: Haslbeck, J. M. B., & Waldorp, L. J. (2020). `mgm`: Estimating time-varying mixed graphical models in high-dimensional data. *Journal of Statistical Software, 93*(8), 1-46. https://doi.org/10.18637/jss.v093.i08
 - Cross-sectional and time-series Gaussian graphical models, including graphicalVAR-style models: Epskamp, S., Waldorp, L. J., Mõttus, R., & Borsboom, D. (2018). The Gaussian graphical model in cross-sectional and time-series data. *Multivariate Behavioral Research, 53*(4), 453-480. https://doi.org/10.1080/00273171.2018.1454823
 - Longitudinal psychopathology networks and vector autoregression: Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
+- Network sample size planning: Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2021). A general Monte Carlo method for sample size analysis in the context of network models. https://doi.org/10.31234/osf.io/j5v7u
+- Generalized network psychometrics and confirmatory network models: Epskamp, S., Rhemtulla, M., & Borsboom, D. (2017). Generalized network psychometrics: Combining network and latent variable models. *Psychometrika, 82*, 904-927. https://doi.org/10.1007/s11336-017-9557-x
+- SEM/CFA backend: Rosseel, Y. (2012). `lavaan`: An R package for structural equation modeling. *Journal of Statistical Software, 48*(2), 1-36. https://doi.org/10.18637/jss.v048.i02
 - Predictability in network models: Haslbeck, J. M. B., & Waldorp, L. J. (2018). How well do network models predict observations? On the importance of predictability in network models. *Behavior Research Methods, 50*, 853-861. https://doi.org/10.3758/s13428-017-0910-x
 - Bridge centrality: Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
 - Network comparison testing: van Borkulo, C. D., van Bork, R., Boschloo, L., Kossakowski, J. J., Tio, P., Schoevers, R. A., Borsboom, D., & Waldorp, L. J. (2023). Comparing network structures on three aspects: A permutation test. *Psychological Methods, 28*(6), 1273-1285. https://doi.org/10.1037/met0000476
@@ -410,6 +490,8 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Added model-agnostic edge tables, node tables, network summaries, centrality helpers, and stability summaries.
 - Added virtual perturbation and intervention simulation helpers for Gaussian-style networks and Ising threshold perturbation.
 - Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and greedy sequence summaries.
+- Added `NetworkPower()` / `SampleSize()` for simulation-based network sample size planning.
+- Added confirmatory, latent, SEM-panel, mixed VAR, and time-varying mixed VAR network wrappers.
 - Added essential method references for supported network models, stability, bridge centrality, network comparison, and perturbation analyses.
 - Updated legacy helper functions so they work with the new `quicknet_fit` object.
 - Added testthat coverage for cross-sectional and longitudinal workflows.

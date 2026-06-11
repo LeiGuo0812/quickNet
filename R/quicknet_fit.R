@@ -113,7 +113,7 @@ quicknet_network_summary_list <- function(networks, model, meta, threshold = 1e-
 }
 
 quicknet_network_summary_is_directed <- function(model, meta, network_name) {
-  if (model == "clpn") return(TRUE)
+  if (model %in% c("clpn", "panel_sem", "mixedVAR", "time_varying_mvar")) return(TRUE)
   if (model %in% c("graphicalVAR", "mlVAR")) {
     return(network_name %in% c("default", "temporal"))
   }

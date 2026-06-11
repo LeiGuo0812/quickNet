@@ -31,6 +31,7 @@ devtools::install_local("quickNet-main.zip")
 ```
 
 部分模型依赖可选后端包：`PanelNet()` 需要 `glmnet`，`LongitudinalNet(model = "graphicalVAR")` 需要 `graphicalVAR`，`LongitudinalNet(model = "mlVAR")` 需要 `mlVAR`。
+其他扩展模块会使用可选后端包：`powerly`、`psychonetrics`、`lavaan` 和 `MASS` 分别用于样本量规划、验证性网络、潜变量网络和 SEM 面板网络。
 
 ## 统一输出对象
 
@@ -56,8 +57,15 @@ plot(fit)             # 快速绘图
 | 横断面有序分类数据 | `quickNet()` | `"ordinal"` | 多分相关/有序变量网络 |
 | 横断面混合数据 | `quickNet()` | `"mgm"` | Mixed Graphical Model |
 | 宽格式面板数据 | `PanelNet()` | `"clpn"` | 横滞后面板网络，返回有向网络 |
+| 宽格式面板数据 | `PanelSEMNet()` | `"panel_sem"` | 基于 lavaan 的 SEM 横滞后面板网络，并返回模型拟合指标 |
 | 长格式密集纵向数据 | `LongitudinalNet()` | `"graphicalVAR"` | 基于 `graphicalVAR::mlGraphicalVAR()` 的 temporal、contemporaneous、between 网络 |
 | 长格式密集纵向数据 | `LongitudinalNet()` | `"mlVAR"` | 基于 `mlVAR::mlVAR()` 的 temporal、contemporaneous、between 网络 |
+| 时间序列混合数据 | `MixedVARNet()` | `"mixedVAR"` | 适用于连续和分类变量混合时间序列的 mixed VAR 网络 |
+| 时间序列混合数据 | `TimeVaryingNet()` | `"time_varying_mvar"` | 在用户指定时间点估计 time-varying mixed VAR 网络 |
+| 横断面连续数据 | `ConfirmatoryNet()` | `"confirmatory_ggm"` | 用户指定自由边/固定零边的验证性高斯图模型 |
+| CFA/SEM 数据 | `LatentNet()` | `"latent_network"` | CFA 后的潜变量相关网络和可选项目残差网络 |
+
+样本量规划使用单独的 `quicknet_power` 对象，由 `NetworkPower()` 或别名 `SampleSize()` 返回。
 
 `EBICglassoNet()` 是保留的便捷接口，等价于估计 `model = "EBICglasso"` 的横断面网络。
 
@@ -252,6 +260,75 @@ mlvar_fit$edges
 mlvar_fit$nodes
 ```
 
+### 10. 网络统计功效和样本量规划
+
+```r
+power <- NetworkPower(
+  nodes = 8,
+  density = 0.30,
+  sample_sizes = c(100, 200, 400),
+  replications = 100,
+  target_metric = "sensitivity",
+  target_value = 0.60,
+  target_probability = 0.80
+)
+
+summary(power)
+plot(power)
+quicknet_report(power)$text
+```
+
+也可以使用 `powerly` 后端进行 GGM 样本量规划：
+
+```r
+powerly_plan <- NetworkPower(
+  method = "powerly",
+  nodes = 8,
+  density = 0.30,
+  target_metric = "sensitivity",
+  target_value = 0.60,
+  target_probability = 0.80
+)
+```
+
+### 11. 验证性、潜变量和动态网络
+
+```r
+omega <- matrix(1, 6, 6)
+diag(omega) <- 0
+colnames(omega) <- rownames(omega) <- paste0("x", 1:6)
+
+confirmatory <- ConfirmatoryNet(data, vars = paste0("x", 1:6), omega = omega)
+```
+
+```r
+cfa_model <- "
+Depression =~ d1 + d2 + d3
+Anxiety    =~ a1 + a2 + a3
+"
+
+latent <- LatentNet(data, model = cfa_model)
+latent$networks$latent
+latent$networks$residual
+```
+
+```r
+panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
+
+mixed_var <- MixedVARNet(
+  time_data,
+  types = c("g", "g", "c"),
+  levels = c(1, 1, 2)
+)
+
+tv_mvar <- TimeVaryingNet(
+  time_data,
+  types = c("g", "g", "c"),
+  levels = c(1, 1, 2),
+  estpoints = c(0.25, 0.50, 0.75)
+)
+```
+
 ## 常用后续分析
 
 ### 中心性和桥接中心性
@@ -393,6 +470,9 @@ globalCoeff(fit)
 - 混合图模型：Haslbeck, J. M. B., & Waldorp, L. J. (2020). `mgm`: Estimating time-varying mixed graphical models in high-dimensional data. *Journal of Statistical Software, 93*(8), 1-46. https://doi.org/10.18637/jss.v093.i08
 - 横断面和时间序列高斯图模型，包括 graphicalVAR 类模型：Epskamp, S., Waldorp, L. J., Mõttus, R., & Borsboom, D. (2018). The Gaussian graphical model in cross-sectional and time-series data. *Multivariate Behavioral Research, 53*(4), 453-480. https://doi.org/10.1080/00273171.2018.1454823
 - 纵向心理病理网络和向量自回归：Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
+- 网络样本量规划：Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2021). A general Monte Carlo method for sample size analysis in the context of network models. https://doi.org/10.31234/osf.io/j5v7u
+- 广义网络心理计量和验证性网络模型：Epskamp, S., Rhemtulla, M., & Borsboom, D. (2017). Generalized network psychometrics: Combining network and latent variable models. *Psychometrika, 82*, 904-927. https://doi.org/10.1007/s11336-017-9557-x
+- SEM/CFA 后端：Rosseel, Y. (2012). `lavaan`: An R package for structural equation modeling. *Journal of Statistical Software, 48*(2), 1-36. https://doi.org/10.18637/jss.v048.i02
 - 网络模型预测性：Haslbeck, J. M. B., & Waldorp, L. J. (2018). How well do network models predict observations? On the importance of predictability in network models. *Behavior Research Methods, 50*, 853-861. https://doi.org/10.3758/s13428-017-0910-x
 - 桥接中心性：Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
 - 网络比较检验：van Borkulo, C. D., van Bork, R., Boschloo, L., Kossakowski, J. J., Tio, P., Schoevers, R. A., Borsboom, D., & Waldorp, L. J. (2023). Comparing network structures on three aspects: A permutation test. *Psychological Methods, 28*(6), 1273-1285. https://doi.org/10.1037/met0000476
@@ -410,6 +490,8 @@ globalCoeff(fit)
 - 新增模型通用的边表、节点表、网络摘要、中心性辅助结果和稳定性汇总。
 - 新增虚拟扰动与干预模拟辅助函数，支持 Gaussian-style 网络扰动和 Ising threshold perturbation。
 - 新增符合保守解释边界的扰动绘图辅助函数，支持排序、剂量-响应、节点变化、边阻断和贪婪序列摘要。
+- 新增 `NetworkPower()` / `SampleSize()`，用于基于模拟的网络样本量规划。
+- 新增验证性网络、潜变量网络、SEM 面板网络、mixed VAR 和 time-varying mixed VAR 封装接口。
 - 新增支持模型、稳定性、桥接中心性、网络比较和扰动分析的必要方法参考文献。
 - 更新旧辅助函数，使其兼容新的 `quicknet_fit` 对象。
 - 添加横断面和纵向网络工作流的 testthat 测试。

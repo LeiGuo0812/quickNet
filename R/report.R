@@ -1,20 +1,26 @@
 #' Extract report-ready model information
 #'
-#' @param fit A \code{quicknet_fit} or \code{quicknet_perturbation} object.
+#' @param fit A \code{quicknet_fit}, \code{quicknet_perturbation}, or
+#' \code{quicknet_power} object.
 #' @param digits Number of digits used in the plain-text summary.
 #' @param threshold Absolute edge-weight threshold used to count nonzero edges.
 #'
 #' @return A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
 #' contains sample, estimation, network, edge, node, and model-specific tables.
 #' For \code{quicknet_perturbation} inputs it contains perturbation settings,
-#' metrics, rankings, and a short text summary.
+#' metrics, rankings, and a short text summary. For \code{quicknet_power}
+#' inputs it contains design settings, simulation summaries, and sample-size
+#' recommendations.
 #' @export
 quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
   if (inherits(fit, "quicknet_perturbation")) {
     return(quicknet_report_perturbation(fit, digits = digits))
   }
+  if (inherits(fit, "quicknet_power")) {
+    return(quicknet_report_power(fit, digits = digits))
+  }
   if (!inherits(fit, "quicknet_fit")) {
-    stop("fit must be a quicknet_fit or quicknet_perturbation object.", call. = FALSE)
+    stop("fit must be a quicknet_fit, quicknet_perturbation, or quicknet_power object.", call. = FALSE)
   }
 
   report <- list(
@@ -26,6 +32,30 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     nodes = fit$nodes,
     model_specific = quicknet_report_model_specific(fit),
     text = quicknet_report_text(fit, digits = digits, threshold = threshold)
+  )
+  class(report) <- "quicknet_report"
+  report
+}
+
+quicknet_report_power <- function(fit, digits = 3) {
+  settings <- data.frame(
+    parameter = names(fit$settings),
+    value = vapply(fit$settings, quicknet_report_collapse, character(1)),
+    stringsAsFactors = FALSE
+  )
+  summary <- fit$summary
+  numeric_columns <- vapply(summary, is.numeric, logical(1))
+  summary[numeric_columns] <- lapply(summary[numeric_columns], round, digits)
+  recommendation <- fit$recommendation
+  numeric_recommendation <- vapply(recommendation, is.numeric, logical(1))
+  recommendation[numeric_recommendation] <- lapply(recommendation[numeric_recommendation], round, digits)
+  report <- list(
+    model = fit$model,
+    method = fit$method,
+    settings = settings,
+    summary = summary,
+    recommendation = recommendation,
+    text = fit$report
   )
   class(report) <- "quicknet_report"
   report
@@ -118,11 +148,30 @@ quicknet_report_sample <- function(fit) {
     ))
   }
 
+  if (identical(data_type, "latent")) {
+    return(data.frame(
+      data_type = data_type,
+      observations = nrow(fit$data),
+      manifest_variables = fit$meta$p %||% ncol(fit$data),
+      latent_variables = ncol(fit$networks$latent),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  if (identical(data_type, "time_series")) {
+    return(data.frame(
+      data_type = data_type,
+      observations = nrow(fit$data),
+      variables = length(fit$meta$vars),
+      stringsAsFactors = FALSE
+    ))
+  }
+
   data.frame(data_type = data_type, stringsAsFactors = FALSE)
 }
 
 quicknet_report_estimation <- function(fit) {
-  backend <- switch(
+  backend <- fit$meta$backend %||% switch(
     fit$model,
     EBICglasso = "bootnet::estimateNetwork(default = 'EBICglasso')",
     correlation = "stats::cor",
@@ -131,6 +180,11 @@ quicknet_report_estimation <- function(fit) {
     ordinal = if (identical(fit$meta$ordinal_method, "polychoric")) "psych::polychoric" else "stats::cor",
     mgm = "mgm::mgm",
     clpn = "glmnet::cv.glmnet",
+    panel_sem = "lavaan::sem",
+    confirmatory_ggm = "psychonetrics::ggm",
+    latent_network = "lavaan::cfa",
+    mixedVAR = "mgm::mvar",
+    time_varying_mvar = "mgm::tvmvar",
     graphicalVAR = "graphicalVAR::mlGraphicalVAR",
     mlVAR = "mlVAR::mlVAR",
     NA_character_
@@ -146,7 +200,8 @@ quicknet_report_estimation <- function(fit) {
     "n", "p", "missing", "cor_method", "ordinal_method", "gamma", "AND",
     "alpha", "lambda_rule", "nfolds", "standardize", "scale",
     "centerWithin", "lags", "estimator", "temporal", "contemporaneous",
-    "nCores"
+    "nCores", "residual_cov", "lambdaSel", "bandwidth",
+    "std.lv", "signInfo"
   )
   for (key in report_keys) {
     value <- fit$meta[[key]]
@@ -240,7 +295,7 @@ quicknet_report_model_specific <- function(fit) {
     return(fit$nodes[, columns, drop = FALSE])
   }
 
-  if (fit$model %in% c("graphicalVAR", "mlVAR")) {
+  if (fit$model %in% c("graphicalVAR", "mlVAR", "confirmatory_ggm", "latent_network", "mixedVAR", "time_varying_mvar", "panel_sem")) {
     return(fit$nodes)
   }
 

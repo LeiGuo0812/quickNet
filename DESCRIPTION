@@ -37,6 +37,10 @@ Imports:
 Suggests:
     glmnet,
     graphicalVAR,
+    lavaan,
+    MASS,
     mlVAR,
+    powerly,
+    psychonetrics,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
