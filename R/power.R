@@ -47,6 +47,14 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
   method <- match.arg(method)
   target_metric <- match.arg(target_metric)
   estimator <- match.arg(estimator)
+  quicknet_validate_input(
+    model = "power",
+    nodes = nodes,
+    density = density,
+    sample_sizes = sample_sizes,
+    replications = replications,
+    warn = FALSE
+  )
   if (method == "powerly") {
     return(quicknet_power_powerly(
       nodes = nodes,

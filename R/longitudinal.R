@@ -27,6 +27,14 @@ PanelNet <- function(data,
     stop("Package 'glmnet' is required for PanelNet().", call. = FALSE)
   }
   lambda_rule <- match.arg(lambda_rule)
+  quicknet_validate_input(
+    data,
+    model = "clpn",
+    nodes = nodes,
+    waves = waves,
+    id = id,
+    prefix = prefix
+  )
   design <- quicknet_clpn_design(
     panel_data = data,
     nodes = nodes,
@@ -116,6 +124,14 @@ LongitudinalNet <- function(data,
   model <- match.arg(model, c("graphicalVAR", "mlVAR"))
   temporal_setting <- temporal
   contemporaneous_setting <- contemporaneous
+  quicknet_validate_input(
+    data,
+    model = model,
+    vars = vars,
+    id = id,
+    day = day,
+    beep = beep
+  )
   required <- c(vars, id, day, beep)
   missing_cols <- setdiff(required, colnames(data))
   if (length(missing_cols) > 0) {

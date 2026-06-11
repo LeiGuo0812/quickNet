@@ -56,6 +56,7 @@ Perturbation <- function(fit,
   } else {
     match.arg(method)
   }
+  quicknet_validate_input(fit = fit, model = "perturbation", method = method)
 
   if (method == "ising_threshold") {
     return(quicknet_perturb_ising(

@@ -71,6 +71,20 @@ Sample size planning uses a separate `quicknet_power` object returned by `Networ
 
 For academic use, cite the methods that match the models and analyses you report. The essential references are listed in [References](#references).
 
+## Input Requirements
+
+Each model has explicit input checks. Use `input_requirements()` to inspect expected input format, or `check_input()` to diagnose a dataset before fitting.
+
+```r
+input_requirements("ising")
+
+check_input(binary_data, model = "ising")
+check_input(panel_data, model = "clpn", nodes = c("x1", "x2", "x3"), waves = 1:3)
+check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
+```
+
+Model-fitting functions call the same validator internally. Clear format errors stop early; risk conditions such as very small samples or imbalanced binary variables are shown as warnings.
+
 ## Minimal Examples
 
 ### 1. EBICglasso Cross-Sectional Network
@@ -492,6 +506,7 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and greedy sequence summaries.
 - Added `NetworkPower()` / `SampleSize()` for simulation-based network sample size planning.
 - Added confirmatory, latent, SEM-panel, mixed VAR, and time-varying mixed VAR network wrappers.
+- Added model-specific input requirement helpers and automatic input validation for main fitting functions.
 - Added essential method references for supported network models, stability, bridge centrality, network comparison, and perturbation analyses.
 - Updated legacy helper functions so they work with the new `quicknet_fit` object.
 - Added testthat coverage for cross-sectional and longitudinal workflows.

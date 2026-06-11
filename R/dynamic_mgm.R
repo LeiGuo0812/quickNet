@@ -25,6 +25,7 @@ MixedVARNet <- function(data,
                         ...) {
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
+  quicknet_validate_input(dat, model = "mixedVAR", vars = vars, types = types, levels = levels)
   quicknet_dynamic_validate(dat, vars, types, levels)
   matrix_data <- as.matrix(dat[, vars, drop = FALSE])
   fit <- NULL
@@ -110,6 +111,15 @@ TimeVaryingNet <- function(data,
                            ...) {
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
+  quicknet_validate_input(
+    dat,
+    model = "time_varying_mvar",
+    vars = vars,
+    types = types,
+    levels = levels,
+    timepoints = timepoints,
+    estpoints = estpoints
+  )
   quicknet_dynamic_validate(dat, vars, types, levels)
   matrix_data <- as.matrix(dat[, vars, drop = FALSE])
   if (is.null(timepoints)) {

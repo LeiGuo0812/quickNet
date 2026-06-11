@@ -71,6 +71,20 @@ plot(fit)             # 快速绘图
 
 在论文或学术汇报中使用本包时，应根据实际使用的模型和分析类型引用相应方法文献。必要参考文献见 [参考文献](#参考文献)。
 
+## 输入格式要求
+
+每个模型都有明确的输入检查。可以使用 `input_requirements()` 查看某个模型的输入格式，也可以在拟合前用 `check_input()` 诊断数据。
+
+```r
+input_requirements("ising")
+
+check_input(binary_data, model = "ising")
+check_input(panel_data, model = "clpn", nodes = c("x1", "x2", "x3"), waves = 1:3)
+check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
+```
+
+主要建模函数内部也会调用同一套校验器。明确的格式错误会提前停止；样本量过小、二分类变量极度不平衡等风险情况会以 warning 提醒。
+
 ## 最小使用示例
 
 ### 1. EBICglasso 横断面网络
@@ -492,6 +506,7 @@ globalCoeff(fit)
 - 新增符合保守解释边界的扰动绘图辅助函数，支持排序、剂量-响应、节点变化、边阻断和贪婪序列摘要。
 - 新增 `NetworkPower()` / `SampleSize()`，用于基于模拟的网络样本量规划。
 - 新增验证性网络、潜变量网络、SEM 面板网络、mixed VAR 和 time-varying mixed VAR 封装接口。
+- 新增模型特异输入格式提醒和主要建模函数的自动输入校验。
 - 新增支持模型、稳定性、桥接中心性、网络比较和扰动分析的必要方法参考文献。
 - 更新旧辅助函数，使其兼容新的 `quicknet_fit` 对象。
 - 添加横断面和纵向网络工作流的 testthat 测试。

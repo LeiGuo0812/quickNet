@@ -33,6 +33,13 @@
 quickNet <- function(data, layout = 'spring', pie = TRUE, maximum = 0.47, groups = NULL, color = c("#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2", "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1"), legend = FALSE, nodeNames = NULL, border.width=2, border.color='#555555', model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = 0.5, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, ...){
 
   model <- match.arg(model, c("EBICglasso", "correlation", "partial", "ising", "ordinal", "mgm"))
+  quicknet_validate_input(
+    data,
+    model = model,
+    types = types,
+    levels = levels,
+    missing = missing
+  )
   fit <- quicknet_fit_cross_sectional(
     data = data,
     model = model,

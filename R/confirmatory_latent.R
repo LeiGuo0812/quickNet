@@ -18,6 +18,7 @@ ConfirmatoryNet <- function(data,
   if (!requireNamespace("psychonetrics", quietly = TRUE)) {
     stop("Package 'psychonetrics' is required for ConfirmatoryNet().", call. = FALSE)
   }
+  quicknet_validate_input(data, model = "confirmatory_ggm", vars = vars, omega = omega)
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
   missing_cols <- setdiff(vars, colnames(dat))
@@ -86,6 +87,7 @@ LatentNet <- function(data,
   if (!requireNamespace("lavaan", quietly = TRUE)) {
     stop("Package 'lavaan' is required for LatentNet().", call. = FALSE)
   }
+  quicknet_validate_input(data, model = "latent_network", vars = vars, syntax = model)
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
   missing_cols <- setdiff(vars, colnames(dat))
@@ -157,6 +159,7 @@ PanelSEMNet <- function(data,
   if (!requireNamespace("lavaan", quietly = TRUE)) {
     stop("Package 'lavaan' is required for PanelSEMNet().", call. = FALSE)
   }
+  quicknet_validate_input(data, model = "panel_sem", nodes = nodes, waves = waves, id = id, prefix = prefix)
   if (length(waves) < 2) {
     stop("At least two waves are required for PanelSEMNet().", call. = FALSE)
   }
