@@ -14,7 +14,11 @@ PanelNet(
   alpha = 1,
   lambda_rule = c("lambda.1se", "lambda.min"),
   nfolds = 10,
-  seed = 20260502
+  seed = 20260502,
+  model = "clpn",
+  ri_type = c("ggm", "cov", "chol", "prec"),
+  stationary = NULL,
+  ...
 )
 }
 \arguments{
@@ -37,6 +41,16 @@ PanelNet(
 \item{nfolds}{Number of cross-validation folds.}
 
 \item{seed}{Random seed used for cross-validation folds.}
+
+\item{model}{Panel model. One of \code{"clpn"}, \code{"ri_clpm"},
+\code{"panel_gvar"}, or \code{"panel_var"}.}
+
+\item{ri_type}{Innovation structure used by \code{psychonetrics::ri_clpm()}.}
+
+\item{stationary}{Optional stationarity constraints passed to
+\code{psychonetrics::ri_clpm_stationary()}.}
+
+\item{...}{Additional arguments passed to psychonetrics panel backends.}
 }
 \value{
 A \code{quicknet_fit} object. The edge matrix uses rows as outcomes/to nodes and columns as predictors/from nodes.

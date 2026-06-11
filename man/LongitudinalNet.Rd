@@ -33,7 +33,8 @@ LongitudinalNet(
 
 \item{beep}{Beep or measurement-occasion variable within day.}
 
-\item{model}{Longitudinal model. One of \code{"graphicalVAR"} or \code{"mlVAR"}.}
+\item{model}{Longitudinal model. One of \code{"graphicalVAR"},
+\code{"mlVAR"}, or \code{"psychonetrics_gvar"}.}
 
 \item{gamma}{EBIC gamma used by \code{graphicalVAR::mlGraphicalVAR()}.}
 
@@ -51,7 +52,7 @@ LongitudinalNet(
 
 \item{nCores}{Number of cores used by \code{mlVAR}.}
 
-\item{...}{Additional arguments passed to \code{graphicalVAR::mlGraphicalVAR()}.}
+\item{...}{Additional arguments passed to the selected backend.}
 }
 \value{
 A \code{quicknet_fit} object with \code{temporal}, \code{contemporaneous}, and \code{between} networks.

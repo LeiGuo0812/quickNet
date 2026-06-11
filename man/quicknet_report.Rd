@@ -16,7 +16,9 @@ quicknet_report(fit, digits = 3, threshold = 1e-10)
 }
 \value{
 A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
-contains sample, estimation, network, edge, node, and model-specific tables.
+contains model registry metadata, sample, estimation, fit-index, parameter,
+modification-index, constraint, network, edge, node, and model-specific
+tables.
 For \code{quicknet_perturbation} inputs it contains perturbation settings,
 metrics, rankings, and a short text summary. For \code{quicknet_power}
 inputs it contains design settings, simulation summaries, and sample-size

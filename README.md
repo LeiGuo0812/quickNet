@@ -30,8 +30,8 @@ if (!require(devtools)) {
 devtools::install_local("quickNet-main.zip")
 ```
 
-Some models require optional backend packages: `PanelNet()` requires `glmnet`, `LongitudinalNet(model = "graphicalVAR")` requires `graphicalVAR`, and `LongitudinalNet(model = "mlVAR")` requires `mlVAR`.
-Additional optional modules use `powerly`, `psychonetrics`, `lavaan`, and `MASS` for sample size planning, confirmatory networks, latent networks, and SEM-based panel networks.
+Some models require optional backend packages: `PanelNet(model = "clpn")` requires `glmnet`, `PanelNet(model = "ri_clpm" / "panel_gvar" / "panel_var")` requires `psychonetrics`, `LongitudinalNet(model = "graphicalVAR")` requires `graphicalVAR`, `LongitudinalNet(model = "mlVAR")` requires `mlVAR`, and `LongitudinalNet(model = "psychonetrics_gvar")` requires `psychonetrics`.
+Additional optional modules use `powerly`, `psychonetrics`, `lavaan`, and `MASS` for sample size planning, confirmatory networks, latent/residual networks, and SEM-based panel networks.
 
 ## Unified Output
 
@@ -46,6 +46,20 @@ summary(fit)          # Network-level summary
 plot(fit)             # Quick network plot
 ```
 
+Use `model_registry()` to inspect the package-level model map, including the
+model family, backend, analysis type, network layers, reportable quantities,
+key references, and known limitations.
+
+```r
+model_registry()
+model_registry("ConfirmatoryNet")
+```
+
+`quicknet_report(fit)` returns academic reporting tables. For
+psychonetrics-backed models, the report includes `fit_indices`, `parameters`,
+`modification_indices`, and `constraints` in addition to the common sample,
+network, edge, and node summaries.
+
 ## Available Models
 
 | Data type | Function | Model name | Brief description |
@@ -57,13 +71,28 @@ plot(fit)             # Quick network plot
 | Cross-sectional ordinal data | `quickNet()` | `"ordinal"` | Ordinal association network based on polychoric-style correlations. Useful for Likert-type items. |
 | Cross-sectional mixed data | `quickNet()` | `"mgm"` | Mixed Graphical Model for combinations of Gaussian, categorical, and other variable types. |
 | Wide-format panel data | `PanelNet()` | `"clpn"` | Cross-lagged panel network. Edges are directed from previous-wave nodes to next-wave nodes. |
+| Wide-format panel data | `PanelNet()` | `"ri_clpm"` | Random-intercept cross-lagged panel model via `psychonetrics`, separating within-person dynamics from stable between-person differences. |
+| Wide-format panel data | `PanelNet()` | `"panel_gvar"` | Panel graphical VAR via `psychonetrics::panelgvar()`, returning temporal, within-person, and between-person network layers. |
+| Wide-format panel data | `PanelNet()` | `"panel_var"` | Panel VAR via `psychonetrics::panelvar()`, returning temporal and covariance-based within/between layers. |
 | Wide-format panel data | `PanelSEMNet()` | `"panel_sem"` | SEM-based cross-lagged panel network with lavaan fit indices. |
 | Long-format intensive longitudinal data | `LongitudinalNet()` | `"graphicalVAR"` | Multilevel graphical VAR model returning temporal, contemporaneous, and between-person networks. |
 | Long-format intensive longitudinal data | `LongitudinalNet()` | `"mlVAR"` | Multilevel VAR model via `mlVAR`, also returning temporal, contemporaneous, and between-person networks. |
+| Long-format intensive longitudinal data | `LongitudinalNet()` | `"psychonetrics_gvar"` | Lag-1 graphical VAR via `psychonetrics::gvar()`, returning temporal and contemporaneous networks. |
 | Time-ordered mixed data | `MixedVARNet()` | `"mixedVAR"` | Mixed vector autoregressive network for continuous and categorical time-series variables. |
 | Time-ordered mixed data | `TimeVaryingNet()` | `"time_varying_mvar"` | Time-varying mixed VAR networks estimated at user-defined time points. |
 | Cross-sectional continuous data | `ConfirmatoryNet()` | `"confirmatory_ggm"` | Confirmatory Gaussian graphical model with user-specified free and fixed edges. |
 | CFA/SEM data | `LatentNet()` | `"latent_network"` | Latent-variable correlation network and optional residual item network after CFA. |
+| CFA/SEM data | `LatentNet()` | `"lvm"` | Psychonetrics latent variable model with latent and residual covariance layers. |
+| CFA/SEM data | `LatentNet()` | `"lnm"` | Psychonetrics latent network model; the latent network is estimated as a GGM. |
+| CFA/SEM data | `LatentNet()` | `"rnm"` | Psychonetrics residual network model; the residual item network is estimated as a GGM. |
+| CFA/SEM data | `LatentNet()` | `"lrnm"` | Psychonetrics latent-and-residual network model with both GGM layers. |
+| Meta-analytic correlation/covariance data | `MetaNet()` | `"meta_ggm"` | Psychonetrics meta-analytic Gaussian graphical model from multiple study matrices or study-level raw data. |
+| Meta-analytic correlation/covariance data | `MetaNet()` | `"meta_cor"` | Psychonetrics meta-analytic pooled correlation network. |
+| Meta-analytic intensive longitudinal data | `MetaNet()` | `"meta_gvar"` | Psychonetrics single-stage meta-analytic GVAR with temporal and contemporaneous network layers. |
+| Confirmatory cross-sectional data | `ConfirmatoryNet()` | `"confirmatory_ising"` | Psychonetrics confirmatory Ising model for binary variables. |
+| Confirmatory cross-sectional data | `ConfirmatoryNet()` | `"confirmatory_cor"` | Psychonetrics confirmatory correlation model. |
+| Confirmatory cross-sectional data | `ConfirmatoryNet()` | `"confirmatory_covariance"` | Psychonetrics confirmatory covariance model. |
+| Confirmatory cross-sectional data | `ConfirmatoryNet()` | `"confirmatory_precision"` | Psychonetrics confirmatory precision-matrix model. |
 
 Sample size planning uses a separate `quicknet_power` object returned by `NetworkPower()` or its alias `SampleSize()`.
 
@@ -223,7 +252,32 @@ panel_fit$networks$cross_lagged  # Cross-lagged paths only
 panel_fit$edges
 ```
 
-### 8. graphicalVAR Intensive Longitudinal Network
+### 8. psychonetrics Panel Models
+
+The same wide panel format can be used for random-intercept CLPM and panel GVAR models.
+
+```r
+ri_fit <- PanelNet(
+  panel_data,
+  nodes = c("x1", "x2", "x3"),
+  waves = 1:3,
+  model = "ri_clpm"
+)
+
+panel_gvar <- PanelNet(
+  panel_data,
+  nodes = c("x1", "x2", "x3"),
+  waves = 1:3,
+  model = "panel_gvar"
+)
+
+ri_fit$networks$temporal
+ri_fit$networks$random_intercept
+panel_gvar$networks$within
+panel_gvar$networks$between
+```
+
+### 9. graphicalVAR Intensive Longitudinal Network
 
 `LongitudinalNet()` expects long-format data with a subject ID, a day/date variable, and a within-day measurement occasion variable.
 
@@ -255,7 +309,23 @@ gvar_fit$networks$contemporaneous
 gvar_fit$networks$between
 ```
 
-### 9. mlVAR Intensive Longitudinal Network
+### 10. psychonetrics GVAR Intensive Longitudinal Network
+
+```r
+psy_gvar <- LongitudinalNet(
+  esm_data,
+  vars = c("x1", "x2", "x3"),
+  id = "id",
+  day = "day",
+  beep = "beep",
+  model = "psychonetrics_gvar"
+)
+
+psy_gvar$networks$temporal
+psy_gvar$networks$contemporaneous
+```
+
+### 11. mlVAR Intensive Longitudinal Network
 
 ```r
 mlvar_fit <- LongitudinalNet(
@@ -274,7 +344,7 @@ mlvar_fit$edges
 mlvar_fit$nodes
 ```
 
-### 10. Network Power and Sample Size Planning
+### 12. Network Power and Sample Size Planning
 
 ```r
 power <- NetworkPower(
@@ -305,7 +375,7 @@ powerly_plan <- NetworkPower(
 )
 ```
 
-### 11. Confirmatory, Latent, and Dynamic Networks
+### 13. Confirmatory, Latent, and Dynamic Networks
 
 ```r
 omega <- matrix(1, 6, 6)
@@ -313,6 +383,14 @@ diag(omega) <- 0
 colnames(omega) <- rownames(omega) <- paste0("x", 1:6)
 
 confirmatory <- ConfirmatoryNet(data, vars = paste0("x", 1:6), omega = omega)
+
+confirmatory_cor <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "cor")
+confirmatory_precision <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "precision")
+```
+
+```r
+confirmatory_ising <- ConfirmatoryNet(binary_data, model = "ising")
+confirmatory_ising$networks$default
 ```
 
 ```r
@@ -324,6 +402,18 @@ Anxiety    =~ a1 + a2 + a3
 latent <- LatentNet(data, model = cfa_model)
 latent$networks$latent
 latent$networks$residual
+```
+
+```r
+lambda <- matrix(0, 6, 2, dimnames = list(paste0("x", 1:6), c("Depression", "Anxiety")))
+lambda[1:3, "Depression"] <- 1
+lambda[4:6, "Anxiety"] <- 1
+
+lnm <- LatentNet(data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
+lrnm <- LatentNet(data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
+
+lnm$networks$latent
+lrnm$networks$residual
 ```
 
 ```r
@@ -341,6 +431,42 @@ tv_mvar <- TimeVaryingNet(
   levels = c(1, 1, 2),
   estpoints = c(0.25, 0.50, 0.75)
 )
+```
+
+### 14. Meta-Analytic Networks
+
+`MetaNet()` estimates psychonetrics meta-analytic network models from multiple study correlation/covariance matrices or multi-study raw data.
+
+```r
+cors <- list(study1_cor, study2_cor, study3_cor)
+nobs <- c(150, 180, 220)
+
+meta_ggm <- MetaNet(
+  cors = cors,
+  nobs = nobs,
+  vars = c("x1", "x2", "x3"),
+  model = "meta_ggm"
+)
+
+meta_ggm$networks$default
+quicknet_report(meta_ggm)$sample
+```
+
+For multi-study intensive longitudinal data:
+
+```r
+meta_gvar <- MetaNet(
+  data = multi_study_esm,
+  studyvar = "study",
+  vars = c("x1", "x2", "x3"),
+  id = "id",
+  day = "day",
+  beep = "beep",
+  model = "meta_gvar"
+)
+
+meta_gvar$networks$temporal
+meta_gvar$networks$contemporaneous
 ```
 
 ## Common Follow-Up Analyses
@@ -486,6 +612,8 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Longitudinal psychopathology networks and vector autoregression: Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
 - Network sample size planning: Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2021). A general Monte Carlo method for sample size analysis in the context of network models. https://doi.org/10.31234/osf.io/j5v7u
 - Generalized network psychometrics and confirmatory network models: Epskamp, S., Rhemtulla, M., & Borsboom, D. (2017). Generalized network psychometrics: Combining network and latent variable models. *Psychometrika, 82*, 904-927. https://doi.org/10.1007/s11336-017-9557-x
+- Random-intercept cross-lagged panel models: Hamaker, E. L., Kuiper, R. M., & Grasman, R. P. P. P. (2015). A critique of the cross-lagged panel model. *Psychological Methods, 20*(1), 102-116. https://doi.org/10.1037/a0038889
+- Meta-analytic structural equation modeling: Jak, S., & Cheung, M. W.-L. (2020). Meta-analytic structural equation modeling with moderating effects on SEM parameters. *Psychological Methods, 25*(4), 430-455. https://doi.org/10.1037/met0000245
 - SEM/CFA backend: Rosseel, Y. (2012). `lavaan`: An R package for structural equation modeling. *Journal of Statistical Software, 48*(2), 1-36. https://doi.org/10.18637/jss.v048.i02
 - Predictability in network models: Haslbeck, J. M. B., & Waldorp, L. J. (2018). How well do network models predict observations? On the importance of predictability in network models. *Behavior Research Methods, 50*, 853-861. https://doi.org/10.3758/s13428-017-0910-x
 - Bridge centrality: Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
@@ -506,6 +634,10 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and greedy sequence summaries.
 - Added `NetworkPower()` / `SampleSize()` for simulation-based network sample size planning.
 - Added confirmatory, latent, SEM-panel, mixed VAR, and time-varying mixed VAR network wrappers.
+- Added psychonetrics-backed panel and longitudinal models: `PanelNet(model = "ri_clpm")`, `PanelNet(model = "panel_gvar")`, `PanelNet(model = "panel_var")`, and `LongitudinalNet(model = "psychonetrics_gvar")`.
+- Added psychonetrics latent/residual network models through `LatentNet(model = "lvm")`, `"lnm"`, `"rnm"`, and `"lrnm"`.
+- Added psychonetrics meta-analytic network models through `MetaNet(model = "meta_ggm")`, `"meta_cor"`, and `"meta_gvar"`.
+- Extended `ConfirmatoryNet()` to psychonetrics confirmatory Ising, correlation, covariance, and precision-matrix models.
 - Added model-specific input requirement helpers and automatic input validation for main fitting functions.
 - Added essential method references for supported network models, stability, bridge centrality, network comparison, and perturbation analyses.
 - Updated legacy helper functions so they work with the new `quicknet_fit` object.

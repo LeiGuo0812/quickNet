@@ -52,7 +52,7 @@ Perturbation <- function(fit,
     stop("fit must be a quicknet_fit object.", call. = FALSE)
   }
   method <- if (missing(method)) {
-    if (fit$model == "ising") "ising_threshold" else "dosage"
+    if (quicknet_is_ising_model(fit$model)) "ising_threshold" else "dosage"
   } else {
     match.arg(method)
   }
@@ -175,7 +175,7 @@ quicknet_perturb_continuous <- function(fit,
                                         spillover_nodes,
                                         threshold,
                                         seed) {
-  if (!fit$model %in% c("EBICglasso", "correlation", "partial", "ordinal")) {
+  if (!quicknet_supports_continuous_perturbation(fit$model)) {
     stop(
       "Continuous perturbation currently supports EBICglasso, correlation, partial, and ordinal fits. ",
       "Use method = 'ising_threshold' for Ising fits.",
@@ -303,7 +303,7 @@ quicknet_perturb_ising <- function(fit,
                                    burnin,
                                    thinning,
                                    seed) {
-  if (fit$model != "ising") {
+  if (!quicknet_is_ising_model(fit$model)) {
     stop("method = 'ising_threshold' requires an Ising fit.", call. = FALSE)
   }
   weight_matrix <- as.matrix(fit$graph)

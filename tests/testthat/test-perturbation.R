@@ -88,6 +88,38 @@ test_that("Perturbation supports Ising threshold perturbation", {
   expect_s3_class(get_perturbation_plot(perturbation, type = "node_change", target = "b1"), "ggplot")
 })
 
+test_that("Perturbation treats confirmatory Ising fits as Ising models", {
+  skip_if_not_installed("psychonetrics")
+  set.seed(43)
+  binary_data <- data.frame(
+    b1 = rbinom(120, 1, 0.5),
+    b2 = rbinom(120, 1, 0.45),
+    b3 = rbinom(120, 1, 0.55),
+    b4 = rbinom(120, 1, 0.5)
+  )
+
+  fit <- suppressWarnings(ConfirmatoryNet(binary_data, model = "ising"))
+  expect_equal(fit$model, "confirmatory_ising")
+  expect_true("threshold" %in% names(fit$nodes))
+
+  perturbation <- Perturbation(
+    fit,
+    targets = "b1",
+    threshold_shift = -0.5,
+    n_samples = 80,
+    burnin = 40,
+    thinning = 1,
+    seed = 11
+  )
+
+  expect_s3_class(perturbation, "quicknet_perturbation")
+  expect_equal(perturbation$method, "ising_threshold")
+  expect_equal(perturbation$model, "confirmatory_ising")
+  expect_true(all(c("baseline_activity", "perturbed_activity", "activity_reduction") %in% names(perturbation$metrics)))
+  expect_false(check_input(model = "perturbation", fit = fit, method = "dosage", quiet = TRUE)$ok)
+  expect_error(Perturbation(fit, method = "dosage"), "requires an EBICglasso")
+})
+
 test_that("Perturbation rejects unsupported model-method combinations", {
   fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE, legend = FALSE, DoNotPlot = TRUE)
 

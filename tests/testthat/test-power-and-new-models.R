@@ -30,12 +30,40 @@ test_that("ConfirmatoryNet returns a quicknet_fit object", {
   diag(omega) <- 0
 
   fit <- suppressWarnings(ConfirmatoryNet(dat, omega = omega))
+  report <- quicknet_report(fit)
 
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "confirmatory_ggm")
   expect_true("fit_indices" %in% names(fit$fit))
   expect_true(all(c("default") %in% names(fit$networks)))
-  expect_s3_class(quicknet_report(fit), "quicknet_report")
+  expect_s3_class(report, "quicknet_report")
+  expect_equal(report$model_info$model, "confirmatory_ggm")
+  expect_true(all(c("model_info", "fit_indices", "parameters", "modification_indices", "constraints") %in% names(report)))
+  expect_true(all(c("matrix", "est", "se", "ci_lower", "ci_upper") %in% names(report$parameters)))
+  expect_true(all(c("matrix", "parameters", "free_parameters", "fixed_parameters") %in% names(report$constraints)))
+})
+
+test_that("ConfirmatoryNet supports psychonetrics varcov and Ising backends", {
+  skip_if_not_installed("psychonetrics")
+  set.seed(121)
+  dat <- as.data.frame(matrix(rnorm(120 * 4), ncol = 4))
+  names(dat) <- paste0("x", 1:4)
+
+  cor_fit <- suppressWarnings(ConfirmatoryNet(dat, model = "cor"))
+  expect_s3_class(cor_fit, "quicknet_fit")
+  expect_equal(cor_fit$model, "confirmatory_cor")
+  expect_equal(cor_fit$meta$backend, "psychonetrics::varcov(type = 'cor')")
+
+  precision_fit <- suppressWarnings(ConfirmatoryNet(dat, model = "precision"))
+  expect_s3_class(precision_fit, "quicknet_fit")
+  expect_equal(precision_fit$model, "confirmatory_precision")
+
+  binary <- as.data.frame(matrix(rbinom(140 * 4, 1, 0.45), ncol = 4))
+  names(binary) <- paste0("b", 1:4)
+  ising_fit <- suppressWarnings(ConfirmatoryNet(binary, model = "ising"))
+  expect_s3_class(ising_fit, "quicknet_fit")
+  expect_equal(ising_fit$model, "confirmatory_ising")
+  expect_true("beta_model" %in% quicknet_report(ising_fit)$estimation$parameter)
 })
 
 test_that("LatentNet returns latent and residual network layers", {
@@ -57,6 +85,41 @@ test_that("LatentNet returns latent and residual network layers", {
   expect_true(all(c("latent", "residual") %in% names(fit$networks)))
   expect_true(all(c("fit_indices", "loadings") %in% names(fit$fit)))
   expect_true("latent_variables" %in% names(quicknet_report(fit)$sample))
+})
+
+test_that("LatentNet supports psychonetrics latent and residual network models", {
+  skip_if_not_installed("psychonetrics")
+  set.seed(131)
+  latent_1 <- rnorm(160)
+  latent_2 <- 0.35 * latent_1 + rnorm(160)
+  dat <- data.frame(
+    x1 = latent_1 + rnorm(160, sd = 0.4),
+    x2 = latent_1 + rnorm(160, sd = 0.4),
+    x3 = latent_1 + rnorm(160, sd = 0.4),
+    x4 = latent_2 + rnorm(160, sd = 0.4),
+    x5 = latent_2 + rnorm(160, sd = 0.4),
+    x6 = latent_2 + rnorm(160, sd = 0.4)
+  )
+  lambda <- matrix(0, 6, 2, dimnames = list(names(dat), c("F1", "F2")))
+  lambda[1:3, 1] <- 1
+  lambda[4:6, 2] <- 1
+
+  lnm_fit <- suppressWarnings(LatentNet(dat, model = "lnm", lambda = lambda))
+  expect_s3_class(lnm_fit, "quicknet_fit")
+  expect_equal(lnm_fit$model, "lnm")
+  expect_equal(lnm_fit$meta$backend, "psychonetrics::lnm")
+  expect_true(all(c("default", "latent") %in% names(lnm_fit$networks)))
+
+  rnm_fit <- suppressWarnings(LatentNet(dat, model = "rnm", lambda = lambda))
+  expect_s3_class(rnm_fit, "quicknet_fit")
+  expect_equal(rnm_fit$model, "rnm")
+  expect_equal(names(rnm_fit$networks)[[1]], "default")
+  expect_true(all(c("residual", "latent") %in% names(rnm_fit$networks)))
+
+  lrnm_fit <- suppressWarnings(LatentNet(dat, model = "lrnm", lambda = lambda))
+  expect_s3_class(lrnm_fit, "quicknet_fit")
+  expect_true(all(c("latent", "residual") %in% names(lrnm_fit$networks)))
+  expect_true("identification" %in% quicknet_report(lrnm_fit)$estimation$parameter)
 })
 
 test_that("PanelSEMNet returns a directed quicknet_fit object", {

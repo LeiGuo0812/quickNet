@@ -30,8 +30,8 @@ if (!require(devtools)) {
 devtools::install_local("quickNet-main.zip")
 ```
 
-部分模型依赖可选后端包：`PanelNet()` 需要 `glmnet`，`LongitudinalNet(model = "graphicalVAR")` 需要 `graphicalVAR`，`LongitudinalNet(model = "mlVAR")` 需要 `mlVAR`。
-其他扩展模块会使用可选后端包：`powerly`、`psychonetrics`、`lavaan` 和 `MASS` 分别用于样本量规划、验证性网络、潜变量网络和 SEM 面板网络。
+部分模型依赖可选后端包：`PanelNet(model = "clpn")` 需要 `glmnet`，`PanelNet(model = "ri_clpm" / "panel_gvar" / "panel_var")` 需要 `psychonetrics`，`LongitudinalNet(model = "graphicalVAR")` 需要 `graphicalVAR`，`LongitudinalNet(model = "mlVAR")` 需要 `mlVAR`，`LongitudinalNet(model = "psychonetrics_gvar")` 需要 `psychonetrics`。
+其他扩展模块会使用可选后端包：`powerly`、`psychonetrics`、`lavaan` 和 `MASS` 分别用于样本量规划、验证性网络、潜变量/残差网络和 SEM 面板网络。
 
 ## 统一输出对象
 
@@ -46,6 +46,19 @@ summary(fit)          # 网络层面的摘要
 plot(fit)             # 快速绘图
 ```
 
+使用 `model_registry()` 可以查看包级模型注册表，包括模型家族、后端、
+分析类型、网络层、可报告结果、关键参考文献和已知限制。
+
+```r
+model_registry()
+model_registry("ConfirmatoryNet")
+```
+
+`quicknet_report(fit)` 返回面向学术汇报的结果表。对于基于
+psychonetrics 的模型，报告会在常规样本、网络、边和节点摘要之外，
+额外包含 `fit_indices`、`parameters`、`modification_indices` 和
+`constraints`。
+
 ## 可用模型
 
 | 数据类型 | 函数 | 模型名称 | 说明 |
@@ -57,13 +70,28 @@ plot(fit)             # 快速绘图
 | 横断面有序分类数据 | `quickNet()` | `"ordinal"` | 多分相关/有序变量网络 |
 | 横断面混合数据 | `quickNet()` | `"mgm"` | Mixed Graphical Model |
 | 宽格式面板数据 | `PanelNet()` | `"clpn"` | 横滞后面板网络，返回有向网络 |
+| 宽格式面板数据 | `PanelNet()` | `"ri_clpm"` | 基于 `psychonetrics` 的随机截距横滞后面板模型，用于区分个体内动态和稳定个体间差异 |
+| 宽格式面板数据 | `PanelNet()` | `"panel_gvar"` | 基于 `psychonetrics::panelgvar()` 的 panel graphical VAR，返回 temporal、within 和 between 网络层 |
+| 宽格式面板数据 | `PanelNet()` | `"panel_var"` | 基于 `psychonetrics::panelvar()` 的 panel VAR，返回 temporal 和协方差型 within/between 网络层 |
 | 宽格式面板数据 | `PanelSEMNet()` | `"panel_sem"` | 基于 lavaan 的 SEM 横滞后面板网络，并返回模型拟合指标 |
 | 长格式密集纵向数据 | `LongitudinalNet()` | `"graphicalVAR"` | 基于 `graphicalVAR::mlGraphicalVAR()` 的 temporal、contemporaneous、between 网络 |
 | 长格式密集纵向数据 | `LongitudinalNet()` | `"mlVAR"` | 基于 `mlVAR::mlVAR()` 的 temporal、contemporaneous、between 网络 |
+| 长格式密集纵向数据 | `LongitudinalNet()` | `"psychonetrics_gvar"` | 基于 `psychonetrics::gvar()` 的 lag-1 graphical VAR，返回 temporal 和 contemporaneous 网络 |
 | 时间序列混合数据 | `MixedVARNet()` | `"mixedVAR"` | 适用于连续和分类变量混合时间序列的 mixed VAR 网络 |
 | 时间序列混合数据 | `TimeVaryingNet()` | `"time_varying_mvar"` | 在用户指定时间点估计 time-varying mixed VAR 网络 |
 | 横断面连续数据 | `ConfirmatoryNet()` | `"confirmatory_ggm"` | 用户指定自由边/固定零边的验证性高斯图模型 |
 | CFA/SEM 数据 | `LatentNet()` | `"latent_network"` | CFA 后的潜变量相关网络和可选项目残差网络 |
+| CFA/SEM 数据 | `LatentNet()` | `"lvm"` | psychonetrics 潜变量模型，返回潜变量和残差协方差层 |
+| CFA/SEM 数据 | `LatentNet()` | `"lnm"` | psychonetrics latent network model，潜变量网络以 GGM 估计 |
+| CFA/SEM 数据 | `LatentNet()` | `"rnm"` | psychonetrics residual network model，项目残差网络以 GGM 估计 |
+| CFA/SEM 数据 | `LatentNet()` | `"lrnm"` | psychonetrics latent-and-residual network model，同时返回潜变量和残差 GGM 层 |
+| 元分析相关/协方差数据 | `MetaNet()` | `"meta_ggm"` | 基于 psychonetrics 的元分析高斯图模型，可使用多个研究的相关/协方差矩阵或研究层原始数据 |
+| 元分析相关/协方差数据 | `MetaNet()` | `"meta_cor"` | 基于 psychonetrics 的元分析合并相关网络 |
+| 元分析密集纵向数据 | `MetaNet()` | `"meta_gvar"` | 基于 psychonetrics 的单阶段元分析 GVAR，返回 temporal 和 contemporaneous 网络层 |
+| 验证性横断面数据 | `ConfirmatoryNet()` | `"confirmatory_ising"` | 基于 psychonetrics 的验证性 Ising 模型，适用于二分类变量 |
+| 验证性横断面数据 | `ConfirmatoryNet()` | `"confirmatory_cor"` | 基于 psychonetrics 的验证性相关模型 |
+| 验证性横断面数据 | `ConfirmatoryNet()` | `"confirmatory_covariance"` | 基于 psychonetrics 的验证性协方差模型 |
+| 验证性横断面数据 | `ConfirmatoryNet()` | `"confirmatory_precision"` | 基于 psychonetrics 的验证性精度矩阵模型 |
 
 样本量规划使用单独的 `quicknet_power` 对象，由 `NetworkPower()` 或别名 `SampleSize()` 返回。
 
@@ -223,7 +251,32 @@ panel_fit$networks$cross_lagged  # 仅横滞后路径
 panel_fit$edges
 ```
 
-### 8. graphicalVAR 密集纵向网络
+### 8. psychonetrics 面板模型
+
+相同的宽格式面板数据也可以用于随机截距 CLPM 和 panel GVAR。
+
+```r
+ri_fit <- PanelNet(
+  panel_data,
+  nodes = c("x1", "x2", "x3"),
+  waves = 1:3,
+  model = "ri_clpm"
+)
+
+panel_gvar <- PanelNet(
+  panel_data,
+  nodes = c("x1", "x2", "x3"),
+  waves = 1:3,
+  model = "panel_gvar"
+)
+
+ri_fit$networks$temporal
+ri_fit$networks$random_intercept
+panel_gvar$networks$within
+panel_gvar$networks$between
+```
+
+### 9. graphicalVAR 密集纵向网络
 
 `LongitudinalNet()` 使用长格式数据，需要个体 ID、天数/日期变量和测量时点变量。
 
@@ -255,7 +308,23 @@ gvar_fit$networks$contemporaneous
 gvar_fit$networks$between
 ```
 
-### 9. mlVAR 密集纵向网络
+### 10. psychonetrics GVAR 密集纵向网络
+
+```r
+psy_gvar <- LongitudinalNet(
+  esm_data,
+  vars = c("x1", "x2", "x3"),
+  id = "id",
+  day = "day",
+  beep = "beep",
+  model = "psychonetrics_gvar"
+)
+
+psy_gvar$networks$temporal
+psy_gvar$networks$contemporaneous
+```
+
+### 11. mlVAR 密集纵向网络
 
 ```r
 mlvar_fit <- LongitudinalNet(
@@ -274,7 +343,7 @@ mlvar_fit$edges
 mlvar_fit$nodes
 ```
 
-### 10. 网络统计功效和样本量规划
+### 12. 网络统计功效和样本量规划
 
 ```r
 power <- NetworkPower(
@@ -305,7 +374,7 @@ powerly_plan <- NetworkPower(
 )
 ```
 
-### 11. 验证性、潜变量和动态网络
+### 13. 验证性、潜变量和动态网络
 
 ```r
 omega <- matrix(1, 6, 6)
@@ -313,6 +382,14 @@ diag(omega) <- 0
 colnames(omega) <- rownames(omega) <- paste0("x", 1:6)
 
 confirmatory <- ConfirmatoryNet(data, vars = paste0("x", 1:6), omega = omega)
+
+confirmatory_cor <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "cor")
+confirmatory_precision <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "precision")
+```
+
+```r
+confirmatory_ising <- ConfirmatoryNet(binary_data, model = "ising")
+confirmatory_ising$networks$default
 ```
 
 ```r
@@ -324,6 +401,18 @@ Anxiety    =~ a1 + a2 + a3
 latent <- LatentNet(data, model = cfa_model)
 latent$networks$latent
 latent$networks$residual
+```
+
+```r
+lambda <- matrix(0, 6, 2, dimnames = list(paste0("x", 1:6), c("Depression", "Anxiety")))
+lambda[1:3, "Depression"] <- 1
+lambda[4:6, "Anxiety"] <- 1
+
+lnm <- LatentNet(data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
+lrnm <- LatentNet(data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
+
+lnm$networks$latent
+lrnm$networks$residual
 ```
 
 ```r
@@ -341,6 +430,42 @@ tv_mvar <- TimeVaryingNet(
   levels = c(1, 1, 2),
   estpoints = c(0.25, 0.50, 0.75)
 )
+```
+
+### 14. 元分析网络
+
+`MetaNet()` 可基于多个研究的相关/协方差矩阵或多研究原始数据估计 psychonetrics 元分析网络模型。
+
+```r
+cors <- list(study1_cor, study2_cor, study3_cor)
+nobs <- c(150, 180, 220)
+
+meta_ggm <- MetaNet(
+  cors = cors,
+  nobs = nobs,
+  vars = c("x1", "x2", "x3"),
+  model = "meta_ggm"
+)
+
+meta_ggm$networks$default
+quicknet_report(meta_ggm)$sample
+```
+
+对于多研究密集纵向数据：
+
+```r
+meta_gvar <- MetaNet(
+  data = multi_study_esm,
+  studyvar = "study",
+  vars = c("x1", "x2", "x3"),
+  id = "id",
+  day = "day",
+  beep = "beep",
+  model = "meta_gvar"
+)
+
+meta_gvar$networks$temporal
+meta_gvar$networks$contemporaneous
 ```
 
 ## 常用后续分析
@@ -486,6 +611,8 @@ globalCoeff(fit)
 - 纵向心理病理网络和向量自回归：Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
 - 网络样本量规划：Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2021). A general Monte Carlo method for sample size analysis in the context of network models. https://doi.org/10.31234/osf.io/j5v7u
 - 广义网络心理计量和验证性网络模型：Epskamp, S., Rhemtulla, M., & Borsboom, D. (2017). Generalized network psychometrics: Combining network and latent variable models. *Psychometrika, 82*, 904-927. https://doi.org/10.1007/s11336-017-9557-x
+- 随机截距横滞后面板模型：Hamaker, E. L., Kuiper, R. M., & Grasman, R. P. P. P. (2015). A critique of the cross-lagged panel model. *Psychological Methods, 20*(1), 102-116. https://doi.org/10.1037/a0038889
+- 元分析结构方程模型：Jak, S., & Cheung, M. W.-L. (2020). Meta-analytic structural equation modeling with moderating effects on SEM parameters. *Psychological Methods, 25*(4), 430-455. https://doi.org/10.1037/met0000245
 - SEM/CFA 后端：Rosseel, Y. (2012). `lavaan`: An R package for structural equation modeling. *Journal of Statistical Software, 48*(2), 1-36. https://doi.org/10.18637/jss.v048.i02
 - 网络模型预测性：Haslbeck, J. M. B., & Waldorp, L. J. (2018). How well do network models predict observations? On the importance of predictability in network models. *Behavior Research Methods, 50*, 853-861. https://doi.org/10.3758/s13428-017-0910-x
 - 桥接中心性：Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
@@ -506,6 +633,10 @@ globalCoeff(fit)
 - 新增符合保守解释边界的扰动绘图辅助函数，支持排序、剂量-响应、节点变化、边阻断和贪婪序列摘要。
 - 新增 `NetworkPower()` / `SampleSize()`，用于基于模拟的网络样本量规划。
 - 新增验证性网络、潜变量网络、SEM 面板网络、mixed VAR 和 time-varying mixed VAR 封装接口。
+- 新增 psychonetrics 后端的面板和纵向模型：`PanelNet(model = "ri_clpm")`、`PanelNet(model = "panel_gvar")`、`PanelNet(model = "panel_var")` 和 `LongitudinalNet(model = "psychonetrics_gvar")`。
+- 通过 `LatentNet(model = "lvm")`、`"lnm"`、`"rnm"` 和 `"lrnm"` 新增 psychonetrics 潜变量/残差网络模型。
+- 通过 `MetaNet(model = "meta_ggm")`、`"meta_cor"` 和 `"meta_gvar"` 新增 psychonetrics 元分析网络模型。
+- 扩展 `ConfirmatoryNet()`，新增 psychonetrics 验证性 Ising、相关、协方差和精度矩阵模型。
 - 新增模型特异输入格式提醒和主要建模函数的自动输入校验。
 - 新增支持模型、稳定性、桥接中心性、网络比较和扰动分析的必要方法参考文献。
 - 更新旧辅助函数，使其兼容新的 `quicknet_fit` 对象。

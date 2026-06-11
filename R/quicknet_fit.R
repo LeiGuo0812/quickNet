@@ -114,8 +114,8 @@ quicknet_network_summary_list <- function(networks, model, meta, threshold = 1e-
 
 quicknet_network_summary_is_directed <- function(model, meta, network_name) {
   if (model %in% c("clpn", "panel_sem", "mixedVAR", "time_varying_mvar")) return(TRUE)
-  if (model %in% c("graphicalVAR", "mlVAR")) {
-    return(network_name %in% c("default", "temporal"))
+  if (model %in% c("graphicalVAR", "mlVAR", "psychonetrics_gvar", "ri_clpm", "panel_gvar", "panel_var", "meta_gvar")) {
+    return(network_name %in% c("default", "temporal", "cross_lagged"))
   }
   isTRUE(meta$directed)
 }
@@ -623,4 +623,12 @@ quicknet_matrix_bootstrap_summary <- function(original_matrix,
 
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
+}
+
+quicknet_is_ising_model <- function(model) {
+  model %in% c("ising", "confirmatory_ising")
+}
+
+quicknet_supports_continuous_perturbation <- function(model) {
+  model %in% c("EBICglasso", "correlation", "partial", "ordinal")
 }

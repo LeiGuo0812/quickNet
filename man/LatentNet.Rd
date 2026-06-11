@@ -2,7 +2,7 @@
 % Please edit documentation in R/confirmatory_latent.R
 \name{LatentNet}
 \alias{LatentNet}
-\title{Estimate latent and residual networks from a CFA model}
+\title{Estimate latent and residual networks}
 \usage{
 LatentNet(
   data,
@@ -10,26 +10,45 @@ LatentNet(
   vars = NULL,
   std.lv = TRUE,
   missing = "listwise",
-  residual = TRUE
+  residual = TRUE,
+  lambda = NULL,
+  latents = NULL,
+  estimator = "ML",
+  identification = c("loadings", "variance"),
+  ...
 )
 }
 \arguments{
 \item{data}{Data frame containing manifest variables.}
 
-\item{model}{Lavaan CFA model syntax.}
+\item{model}{Lavaan CFA model syntax, or one of \code{"lvm"},
+\code{"lnm"}, \code{"rnm"}, or \code{"lrnm"} for psychonetrics backends.}
 
 \item{vars}{Manifest variables used in the CFA. Defaults to variables found
 in \code{data}.}
 
 \item{std.lv}{Should latent variables be standardized in \code{lavaan::cfa()}?}
 
-\item{missing}{Missing-data handling passed to \code{lavaan::cfa()}.}
+\item{missing}{Missing-data handling passed to the backend.}
 
-\item{residual}{Should a residual item network be returned?}
+\item{residual}{Should a residual item network be returned for the lavaan
+backend?}
+
+\item{lambda}{Factor loading matrix used by psychonetrics latent-variable
+models.}
+
+\item{latents}{Optional latent variable names used by psychonetrics.}
+
+\item{estimator}{Estimator passed to psychonetrics latent-variable models.}
+
+\item{identification}{Identification method passed to
+\code{psychonetrics::lvm()}.}
+
+\item{...}{Additional arguments passed to the selected backend.}
 }
 \value{
 A \code{quicknet_fit} object with model \code{"latent_network"}.
 }
 \description{
-Estimate latent and residual networks from a CFA model
+Estimate latent and residual networks
 }

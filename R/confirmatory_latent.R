@@ -1,24 +1,63 @@
-#' Estimate a confirmatory Gaussian graphical model
+#' Estimate a confirmatory psychonetrics network model
 #'
 #' @param data Data frame containing network variables.
 #' @param vars Variables used as nodes. Defaults to all columns.
 #' @param omega Optional symmetric template matrix. Nonzero entries are freely
 #' estimated and zero entries are fixed to zero. If \code{NULL}, all off-diagonal
 #' edges are freely estimated.
-#' @param estimator Estimator passed to \code{psychonetrics::ggm()}.
-#' @param missing Missing-data handling passed to \code{psychonetrics::ggm()}.
+#' @param estimator Estimator passed to psychonetrics.
+#' @param missing Missing-data handling passed to psychonetrics.
+#' @param model Confirmatory model. One of \code{"ggm"}, \code{"ising"},
+#' \code{"cor"}, \code{"covariance"}, or \code{"precision"}.
+#' @param sigma Optional covariance template for \code{model = "covariance"}.
+#' @param kappa Optional precision template for \code{model = "precision"}.
+#' @param rho Optional correlation template for \code{model = "cor"}.
+#' @param tau Optional Ising threshold/intercept template.
+#' @param beta Optional Ising inverse-temperature template.
+#' @param beta_model Ising beta parameterization.
+#' @param responses Optional response labels passed to \code{psychonetrics::Ising()}.
+#' @param maxNodes Maximum number of Ising nodes passed to psychonetrics.
+#' @param ... Additional arguments passed to the selected psychonetrics backend.
 #'
-#' @return A \code{quicknet_fit} object with model \code{"confirmatory_ggm"}.
+#' @return A \code{quicknet_fit} object.
 #' @export
 ConfirmatoryNet <- function(data,
                             vars = NULL,
                             omega = NULL,
                             estimator = "ML",
-                            missing = "listwise") {
+                            missing = "listwise",
+                            model = c("ggm", "ising", "cor", "covariance", "precision"),
+                            sigma = NULL,
+                            kappa = NULL,
+                            rho = NULL,
+                            tau = NULL,
+                            beta = NULL,
+                            beta_model = c("beta", "log_beta"),
+                            responses = NULL,
+                            maxNodes = 20,
+                            ...) {
   if (!requireNamespace("psychonetrics", quietly = TRUE)) {
     stop("Package 'psychonetrics' is required for ConfirmatoryNet().", call. = FALSE)
   }
-  quicknet_validate_input(data, model = "confirmatory_ggm", vars = vars, omega = omega)
+  model <- match.arg(model)
+  beta_model <- match.arg(beta_model)
+  model_key <- switch(
+    model,
+    ggm = "confirmatory_ggm",
+    ising = "confirmatory_ising",
+    cor = "confirmatory_cor",
+    covariance = "confirmatory_covariance",
+    precision = "confirmatory_precision"
+  )
+  quicknet_validate_input(
+    data,
+    model = model_key,
+    vars = vars,
+    omega = omega,
+    sigma = sigma,
+    kappa = kappa,
+    rho = rho
+  )
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
   missing_cols <- setdiff(vars, colnames(dat))
@@ -28,37 +67,45 @@ ConfirmatoryNet <- function(data,
   dat <- dat[, vars, drop = FALSE]
   dat <- quicknet_complete_numeric_data(dat, missing = "listwise")
   node_names <- colnames(dat)
-  omega_template <- quicknet_confirmatory_template(omega, node_names)
-
-  model <- psychonetrics::ggm(
-    data = dat,
-    vars = node_names,
-    omega = omega_template,
+  fit <- quicknet_confirmatory_psychonetrics_fit(
+    dat = dat,
+    node_names = node_names,
+    model = model,
+    omega = omega,
+    sigma = sigma,
+    kappa = kappa,
+    rho = rho,
+    tau = tau,
+    beta = beta,
+    beta_model = beta_model,
+    responses = responses,
+    maxNodes = maxNodes,
     estimator = estimator,
-    missing = missing
+    missing = missing,
+    ...
   )
-  model <- psychonetrics::runmodel(model)
-  mat <- as.matrix(psychonetrics::getmatrix(model, "omega"))
+  mat <- as.matrix(psychonetrics::getmatrix(fit$model, fit$matrix_name))
   diag(mat) <- 0
   colnames(mat) <- rownames(mat) <- node_names
-  fit_object <- NULL
-  invisible(utils::capture.output({
-    fit_object <- psychonetrics::fit(model)
-  }))
-  fit_indices <- as.data.frame(fit_object)
+  node_table <- quicknet_node_table(mat)
+  if (model == "ising") {
+    node_table <- quicknet_add_psychonetrics_ising_nodes(node_table, fit$model, dat)
+  }
 
   quicknet_fit(
-    model = "confirmatory_ggm",
+    model = model_key,
     data = dat,
     networks = list(default = mat),
-    nodes = quicknet_node_table(mat),
-    fit = list(model = model, fit_indices = fit_indices, omega_template = omega_template),
+    nodes = node_table,
+    fit = list(model = fit$model, fit_indices = quicknet_psychonetrics_fit_indices(fit$model), template = fit$template),
     meta = list(
       data_type = "cross_sectional",
       directed = FALSE,
-      backend = "psychonetrics::ggm",
+      backend = fit$backend,
       estimator = estimator,
       missing = missing,
+      beta_model = if (model == "ising") beta_model else NULL,
+      maxNodes = if (model == "ising") maxNodes else NULL,
       n = nrow(dat),
       p = ncol(dat),
       call = match.call()
@@ -66,15 +113,129 @@ ConfirmatoryNet <- function(data,
   )
 }
 
-#' Estimate latent and residual networks from a CFA model
+quicknet_confirmatory_psychonetrics_fit <- function(dat,
+                                                    node_names,
+                                                    model,
+                                                    omega,
+                                                    sigma,
+                                                    kappa,
+                                                    rho,
+                                                    tau,
+                                                    beta,
+                                                    beta_model,
+                                                    responses,
+                                                    maxNodes,
+                                                    estimator,
+                                                    missing,
+                                                    ...) {
+  if (model == "ggm") {
+    template <- quicknet_confirmatory_template(omega, node_names, diag_value = 0)
+    raw <- psychonetrics::ggm(
+      data = dat,
+      vars = node_names,
+      omega = template,
+      estimator = estimator,
+      missing = missing,
+      verbose = FALSE,
+      ...
+    )
+    return(list(model = quicknet_psychonetrics_run(raw), matrix_name = "omega", template = template, backend = "psychonetrics::ggm"))
+  }
+
+  if (model == "ising") {
+    template <- quicknet_confirmatory_template(omega, node_names, diag_value = 0)
+    raw <- do.call(psychonetrics::Ising, quicknet_drop_nulls(list(
+      data = dat,
+      vars = node_names,
+      omega = template,
+      tau = tau,
+      beta = beta,
+      beta_model = beta_model,
+      responses = responses,
+      missing = missing,
+      estimator = estimator,
+      maxNodes = maxNodes,
+      verbose = FALSE,
+      ...
+    )))
+    return(list(model = quicknet_psychonetrics_run(raw), matrix_name = "omega", template = template, backend = "psychonetrics::Ising"))
+  }
+
+  if (model == "cor") {
+    template <- quicknet_confirmatory_template(rho, node_names, diag_value = 1)
+    raw <- psychonetrics::varcov(
+      data = dat,
+      type = "cor",
+      vars = node_names,
+      rho = template,
+      estimator = estimator,
+      missing = missing,
+      verbose = FALSE,
+      ...
+    )
+    return(list(model = quicknet_psychonetrics_run(raw), matrix_name = "rho", template = template, backend = "psychonetrics::varcov(type = 'cor')"))
+  }
+
+  if (model == "covariance") {
+    template <- quicknet_confirmatory_template(sigma, node_names, diag_value = 1)
+    raw <- psychonetrics::varcov(
+      data = dat,
+      type = "cov",
+      vars = node_names,
+      sigma = template,
+      estimator = estimator,
+      missing = missing,
+      verbose = FALSE,
+      ...
+    )
+    return(list(model = quicknet_psychonetrics_run(raw), matrix_name = "sigma", template = template, backend = "psychonetrics::varcov(type = 'cov')"))
+  }
+
+  template <- quicknet_confirmatory_template(kappa, node_names, diag_value = 1)
+  raw <- psychonetrics::varcov(
+    data = dat,
+    type = "prec",
+    vars = node_names,
+    kappa = template,
+    estimator = estimator,
+    missing = missing,
+    verbose = FALSE,
+    ...
+  )
+  list(model = quicknet_psychonetrics_run(raw), matrix_name = "kappa", template = template, backend = "psychonetrics::varcov(type = 'prec')")
+}
+
+quicknet_add_psychonetrics_ising_nodes <- function(node_table, model, dat) {
+  pred <- quicknet_binary_predictability(dat)
+  node_table <- merge(node_table, pred, by = "node", all.x = TRUE, sort = FALSE)
+  thresholds <- tryCatch(
+    as.numeric(psychonetrics::getmatrix(model, "tau")),
+    error = function(e) NULL
+  )
+  if (!is.null(thresholds) && length(thresholds) == nrow(node_table)) {
+    node_table$threshold <- thresholds[match(node_table$node, colnames(dat))]
+  }
+  node_table
+}
+
+#' Estimate latent and residual networks
 #'
 #' @param data Data frame containing manifest variables.
-#' @param model Lavaan CFA model syntax.
+#' @param model Lavaan CFA model syntax, or one of \code{"lvm"},
+#' \code{"lnm"}, \code{"rnm"}, or \code{"lrnm"} for psychonetrics backends.
 #' @param vars Manifest variables used in the CFA. Defaults to variables found
 #' in \code{data}.
 #' @param std.lv Should latent variables be standardized in \code{lavaan::cfa()}?
-#' @param missing Missing-data handling passed to \code{lavaan::cfa()}.
-#' @param residual Should a residual item network be returned?
+#' @param missing Missing-data handling passed to the backend.
+#' @param residual Should a residual item network be returned for the lavaan
+#' backend?
+#' @param lambda Factor loading matrix used by psychonetrics latent-variable
+#' models.
+#' @param latents Optional latent variable names used by psychonetrics.
+#' @param estimator Estimator passed to psychonetrics latent-variable models.
+#' @param identification Identification method passed to
+#' \code{psychonetrics::lvm()}.
+#' @param ... Additional arguments passed to the selected backend.
 #'
 #' @return A \code{quicknet_fit} object with model \code{"latent_network"}.
 #' @export
@@ -83,7 +244,29 @@ LatentNet <- function(data,
                       vars = NULL,
                       std.lv = TRUE,
                       missing = "listwise",
-                      residual = TRUE) {
+                      residual = TRUE,
+                      lambda = NULL,
+                      latents = NULL,
+                      estimator = "ML",
+                      identification = c("loadings", "variance"),
+                      ...) {
+  psychonetrics_models <- c("lvm", "lnm", "rnm", "lrnm")
+  if (length(model) == 1 && model %in% psychonetrics_models) {
+    identification <- match.arg(identification)
+    quicknet_validate_input(data, model = model, vars = vars, lambda = lambda)
+    return(quicknet_psychonetrics_latent_fit(
+      data = data,
+      model = model,
+      vars = vars,
+      lambda = lambda,
+      latents = latents,
+      missing = missing,
+      estimator = estimator,
+      identification = identification,
+      call = match.call(),
+      ...
+    ))
+  }
   if (!requireNamespace("lavaan", quietly = TRUE)) {
     stop("Package 'lavaan' is required for LatentNet().", call. = FALSE)
   }
@@ -97,7 +280,7 @@ LatentNet <- function(data,
   dat <- dat[, vars, drop = FALSE]
   dat <- quicknet_complete_numeric_data(dat, missing = "listwise")
 
-  fit <- lavaan::cfa(model = model, data = dat, std.lv = std.lv, missing = missing)
+  fit <- lavaan::cfa(model = model, data = dat, std.lv = std.lv, missing = missing, ...)
   latent <- as.matrix(lavaan::lavInspect(fit, "cor.lv"))
   diag(latent) <- 0
   latent_names <- colnames(latent)
@@ -132,6 +315,150 @@ LatentNet <- function(data,
       call = match.call()
     )
   )
+}
+
+quicknet_psychonetrics_latent_fit <- function(data,
+                                              model,
+                                              vars,
+                                              lambda,
+                                              latents,
+                                              missing,
+                                              estimator,
+                                              identification,
+                                              call,
+                                              ...) {
+  if (!requireNamespace("psychonetrics", quietly = TRUE)) {
+    stop("Package 'psychonetrics' is required for LatentNet(model = '", model, "').", call. = FALSE)
+  }
+  dat <- as.data.frame(data)
+  if (is.null(vars)) vars <- colnames(dat)
+  missing_cols <- setdiff(vars, colnames(dat))
+  if (length(missing_cols) > 0) {
+    stop("Missing variables: ", paste(missing_cols, collapse = ", "), call. = FALSE)
+  }
+  dat <- dat[, vars, drop = FALSE]
+  dat <- quicknet_complete_numeric_data(dat, missing = "listwise")
+  lambda <- as.matrix(lambda)
+  if (is.null(rownames(lambda))) rownames(lambda) <- vars
+  if (is.null(latents)) {
+    latents <- colnames(lambda) %||% paste0("F", seq_len(ncol(lambda)))
+  }
+  if (is.null(colnames(lambda))) colnames(lambda) <- latents
+  lambda <- lambda[vars, latents, drop = FALSE]
+
+  raw_model <- switch(
+    model,
+    lvm = psychonetrics::lvm(
+      data = dat,
+      lambda = lambda,
+      vars = vars,
+      latents = latents,
+      missing = missing,
+      estimator = estimator,
+      identification = identification,
+      verbose = FALSE,
+      ...
+    ),
+    lnm = psychonetrics::lnm(
+      data = dat,
+      lambda = lambda,
+      vars = vars,
+      latents = latents,
+      missing = missing,
+      estimator = estimator,
+      identification = identification,
+      verbose = FALSE,
+      ...
+    ),
+    rnm = psychonetrics::rnm(
+      data = dat,
+      lambda = lambda,
+      vars = vars,
+      latents = latents,
+      missing = missing,
+      estimator = estimator,
+      identification = identification,
+      verbose = FALSE,
+      ...
+    ),
+    lrnm = psychonetrics::lrnm(
+      data = dat,
+      lambda = lambda,
+      vars = vars,
+      latents = latents,
+      missing = missing,
+      estimator = estimator,
+      identification = identification,
+      verbose = FALSE,
+      ...
+    )
+  )
+  fit <- quicknet_psychonetrics_run(raw_model)
+
+  networks <- quicknet_psychonetrics_latent_networks(fit, model, vars = vars, latents = latents)
+  node_tables <- lapply(names(networks), function(network_name) {
+    quicknet_node_table(networks[[network_name]], network = network_name)
+  })
+  loadings <- quicknet_psychonetrics_loadings(fit)
+
+  quicknet_fit(
+    model = model,
+    data = dat,
+    networks = networks,
+    nodes = do.call(quicknet_bind_rows_fill, node_tables),
+    fit = list(
+      model = fit,
+      fit_indices = quicknet_psychonetrics_fit_indices(fit),
+      loadings = loadings,
+      lambda = lambda
+    ),
+    meta = list(
+      data_type = "latent",
+      directed = FALSE,
+      backend = paste0("psychonetrics::", model),
+      vars = vars,
+      latents = latents,
+      missing = missing,
+      estimator = estimator,
+      identification = identification,
+      n = nrow(dat),
+      p = ncol(dat),
+      call = call
+    )
+  )
+}
+
+quicknet_psychonetrics_latent_networks <- function(fit, model, vars, latents) {
+  latent_candidates <- if (model %in% c("lnm", "lrnm")) {
+    c("omega_zeta", "sigma_zeta", "kappa_zeta")
+  } else {
+    c("sigma_zeta", "omega_zeta", "kappa_zeta")
+  }
+  residual_candidates <- if (model %in% c("rnm", "lrnm")) {
+    c("omega_epsilon", "sigma_epsilon", "kappa_epsilon")
+  } else {
+    c("sigma_epsilon", "omega_epsilon", "kappa_epsilon")
+  }
+  latent <- quicknet_psychonetrics_first_matrix(fit, latent_candidates, latents)
+  residual <- quicknet_psychonetrics_first_matrix(fit, residual_candidates, vars)
+  networks <- if (model == "rnm") {
+    list(default = residual, residual = residual, latent = latent)
+  } else {
+    list(default = latent, latent = latent)
+  }
+  if (model %in% c("rnm", "lrnm", "lvm")) {
+    networks$residual <- residual
+  }
+  networks
+}
+
+quicknet_psychonetrics_loadings <- function(fit) {
+  pars <- data.frame()
+  invisible(utils::capture.output({
+    pars <- tryCatch(psychonetrics::parameters(fit), error = function(e) data.frame())
+  }))
+  if (!nrow(pars) || !"matrix" %in% names(pars)) return(data.frame())
+  pars[pars$matrix == "lambda", intersect(c("var1", "op", "var2", "est", "se", "p", "fixed"), names(pars)), drop = FALSE]
 }
 
 #' Estimate a SEM-based cross-lagged panel network
@@ -212,10 +539,10 @@ PanelSEMNet <- function(data,
   )
 }
 
-quicknet_confirmatory_template <- function(omega, node_names) {
+quicknet_confirmatory_template <- function(omega, node_names, diag_value = 0) {
   if (is.null(omega)) {
     omega <- matrix(1, length(node_names), length(node_names), dimnames = list(node_names, node_names))
-    diag(omega) <- 0
+    diag(omega) <- diag_value
     return(omega)
   }
   omega <- as.matrix(omega)
@@ -226,7 +553,7 @@ quicknet_confirmatory_template <- function(omega, node_names) {
   if (is.null(rownames(omega))) rownames(omega) <- node_names
   omega <- omega[node_names, node_names, drop = FALSE]
   omega[lower.tri(omega)] <- t(omega)[lower.tri(omega)]
-  diag(omega) <- 0
+  diag(omega) <- diag_value
   omega
 }
 

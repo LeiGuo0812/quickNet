@@ -2,14 +2,24 @@
 % Please edit documentation in R/confirmatory_latent.R
 \name{ConfirmatoryNet}
 \alias{ConfirmatoryNet}
-\title{Estimate a confirmatory Gaussian graphical model}
+\title{Estimate a confirmatory psychonetrics network model}
 \usage{
 ConfirmatoryNet(
   data,
   vars = NULL,
   omega = NULL,
   estimator = "ML",
-  missing = "listwise"
+  missing = "listwise",
+  model = c("ggm", "ising", "cor", "covariance", "precision"),
+  sigma = NULL,
+  kappa = NULL,
+  rho = NULL,
+  tau = NULL,
+  beta = NULL,
+  beta_model = c("beta", "log_beta"),
+  responses = NULL,
+  maxNodes = 20,
+  ...
 )
 }
 \arguments{
@@ -21,13 +31,34 @@ ConfirmatoryNet(
 estimated and zero entries are fixed to zero. If \code{NULL}, all off-diagonal
 edges are freely estimated.}
 
-\item{estimator}{Estimator passed to \code{psychonetrics::ggm()}.}
+\item{estimator}{Estimator passed to psychonetrics.}
 
-\item{missing}{Missing-data handling passed to \code{psychonetrics::ggm()}.}
+\item{missing}{Missing-data handling passed to psychonetrics.}
+
+\item{model}{Confirmatory model. One of \code{"ggm"}, \code{"ising"},
+\code{"cor"}, \code{"covariance"}, or \code{"precision"}.}
+
+\item{sigma}{Optional covariance template for \code{model = "covariance"}.}
+
+\item{kappa}{Optional precision template for \code{model = "precision"}.}
+
+\item{rho}{Optional correlation template for \code{model = "cor"}.}
+
+\item{tau}{Optional Ising threshold/intercept template.}
+
+\item{beta}{Optional Ising inverse-temperature template.}
+
+\item{beta_model}{Ising beta parameterization.}
+
+\item{responses}{Optional response labels passed to \code{psychonetrics::Ising()}.}
+
+\item{maxNodes}{Maximum number of Ising nodes passed to psychonetrics.}
+
+\item{...}{Additional arguments passed to the selected psychonetrics backend.}
 }
 \value{
-A \code{quicknet_fit} object with model \code{"confirmatory_ggm"}.
+A \code{quicknet_fit} object.
 }
 \description{
-Estimate a confirmatory Gaussian graphical model
+Estimate a confirmatory psychonetrics network model
 }

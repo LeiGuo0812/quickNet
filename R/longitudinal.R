@@ -10,6 +10,12 @@
 #' @param lambda_rule Lambda selection rule. One of \code{"lambda.1se"} or \code{"lambda.min"}.
 #' @param nfolds Number of cross-validation folds.
 #' @param seed Random seed used for cross-validation folds.
+#' @param model Panel model. One of \code{"clpn"}, \code{"ri_clpm"},
+#' \code{"panel_gvar"}, or \code{"panel_var"}.
+#' @param ri_type Innovation structure used by \code{psychonetrics::ri_clpm()}.
+#' @param stationary Optional stationarity constraints passed to
+#' \code{psychonetrics::ri_clpm_stationary()}.
+#' @param ... Additional arguments passed to psychonetrics panel backends.
 #'
 #' @return A \code{quicknet_fit} object. The edge matrix uses rows as outcomes/to nodes and columns as predictors/from nodes.
 #' @export
@@ -22,19 +28,40 @@ PanelNet <- function(data,
                      alpha = 1,
                      lambda_rule = c("lambda.1se", "lambda.min"),
                      nfolds = 10,
-                     seed = 20260502) {
-  if (!requireNamespace("glmnet", quietly = TRUE)) {
-    stop("Package 'glmnet' is required for PanelNet().", call. = FALSE)
-  }
+                     seed = 20260502,
+                     model = "clpn",
+                     ri_type = c("ggm", "cov", "chol", "prec"),
+                     stationary = NULL,
+                     ...) {
+  model <- match.arg(model, c("clpn", "ri_clpm", "panel_gvar", "panel_var"))
   lambda_rule <- match.arg(lambda_rule)
+  ri_type <- match.arg(ri_type)
   quicknet_validate_input(
     data,
-    model = "clpn",
+    model = model,
     nodes = nodes,
     waves = waves,
     id = id,
     prefix = prefix
   )
+  if (model != "clpn") {
+    return(quicknet_psychonetrics_panel_fit(
+      data = data,
+      nodes = nodes,
+      waves = waves,
+      id = id,
+      prefix = prefix,
+      model = model,
+      standardize = standardize,
+      ri_type = ri_type,
+      stationary = stationary,
+      call = match.call(),
+      ...
+    ))
+  }
+  if (!requireNamespace("glmnet", quietly = TRUE)) {
+    stop("Package 'glmnet' is required for PanelNet(model = 'clpn').", call. = FALSE)
+  }
   design <- quicknet_clpn_design(
     panel_data = data,
     nodes = nodes,
@@ -76,6 +103,7 @@ PanelNet <- function(data,
       waves = waves,
       id = id,
       prefix = prefix,
+      backend = "glmnet::cv.glmnet",
       standardize = standardize,
       alpha = alpha,
       lambda_rule = lambda_rule,
@@ -93,7 +121,8 @@ PanelNet <- function(data,
 #' @param id ID variable.
 #' @param day Day variable.
 #' @param beep Beep or measurement-occasion variable within day.
-#' @param model Longitudinal model. One of \code{"graphicalVAR"} or \code{"mlVAR"}.
+#' @param model Longitudinal model. One of \code{"graphicalVAR"},
+#' \code{"mlVAR"}, or \code{"psychonetrics_gvar"}.
 #' @param gamma EBIC gamma used by \code{graphicalVAR::mlGraphicalVAR()}.
 #' @param scale Should variables be scaled?
 #' @param centerWithin Should variables be person-mean centered?
@@ -102,7 +131,7 @@ PanelNet <- function(data,
 #' @param temporal Temporal effect structure used by \code{mlVAR}.
 #' @param contemporaneous Contemporaneous effect structure used by \code{mlVAR}.
 #' @param nCores Number of cores used by \code{mlVAR}.
-#' @param ... Additional arguments passed to \code{graphicalVAR::mlGraphicalVAR()}.
+#' @param ... Additional arguments passed to the selected backend.
 #'
 #' @return A \code{quicknet_fit} object with \code{temporal}, \code{contemporaneous}, and \code{between} networks.
 #' @export
@@ -121,7 +150,7 @@ LongitudinalNet <- function(data,
                             contemporaneous = "fixed",
                             nCores = 1,
                             ...) {
-  model <- match.arg(model, c("graphicalVAR", "mlVAR"))
+  model <- match.arg(model, c("graphicalVAR", "mlVAR", "psychonetrics_gvar"))
   temporal_setting <- temporal
   contemporaneous_setting <- contemporaneous
   quicknet_validate_input(
@@ -138,6 +167,22 @@ LongitudinalNet <- function(data,
     stop("Missing required columns: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
   dat <- data[order(data[[id]], data[[day]], data[[beep]]), , drop = FALSE]
+
+  if (model == "psychonetrics_gvar") {
+    if (!requireNamespace("psychonetrics", quietly = TRUE)) {
+      stop("Package 'psychonetrics' is required for LongitudinalNet(model = 'psychonetrics_gvar').", call. = FALSE)
+    }
+    return(quicknet_psychonetrics_gvar_fit(
+      data = dat,
+      vars = vars,
+      id = id,
+      day = day,
+      beep = beep,
+      scale = scale,
+      call = match.call(),
+      ...
+    ))
+  }
 
   if (model == "graphicalVAR") {
     if (!requireNamespace("graphicalVAR", quietly = TRUE)) {
@@ -243,8 +288,8 @@ LongitudinalStability <- function(fit, nboot = 100, seed = 20260502, nfolds = NU
   if (!inherits(fit, "quicknet_fit")) {
     stop("fit must be a quicknet_fit object.", call. = FALSE)
   }
-  if (!fit$model %in% c("clpn", "graphicalVAR", "mlVAR")) {
-    stop("LongitudinalStability() supports PanelNet(), graphicalVAR, and mlVAR fits.", call. = FALSE)
+  if (!fit$model %in% c("clpn", "graphicalVAR", "mlVAR", "psychonetrics_gvar")) {
+    stop("LongitudinalStability() supports CLPN, graphicalVAR, mlVAR, and psychonetrics_gvar fits.", call. = FALSE)
   }
   set.seed(seed)
   if (fit$model == "clpn") {
@@ -353,6 +398,288 @@ quicknet_clpn_glmnet <- function(predictors,
   }
 
   list(edge_matrix = edge_matrix, predictability = predictability, fits = fits, lambda_rule = lambda_rule)
+}
+
+quicknet_psychonetrics_panel_fit <- function(data,
+                                             nodes,
+                                             waves,
+                                             id,
+                                             prefix,
+                                             model,
+                                             standardize,
+                                             ri_type,
+                                             stationary,
+                                             call,
+                                             ...) {
+  if (!requireNamespace("psychonetrics", quietly = TRUE)) {
+    stop("Package 'psychonetrics' is required for PanelNet(model = '", model, "').", call. = FALSE)
+  }
+  dat <- quicknet_panel_psychonetrics_data(
+    data = data,
+    nodes = nodes,
+    waves = waves,
+    id = id,
+    prefix = prefix,
+    standardize = standardize
+  )
+  vars_matrix <- quicknet_panel_vars_matrix(nodes, waves, prefix)
+
+  raw_model <- switch(
+    model,
+    ri_clpm = psychonetrics::ri_clpm(dat$data, vars = vars_matrix, type = ri_type, verbose = FALSE, ...),
+    panel_gvar = psychonetrics::panelgvar(dat$data, vars = vars_matrix, verbose = FALSE, ...),
+    panel_var = psychonetrics::panelvar(dat$data, vars = vars_matrix, verbose = FALSE, ...)
+  )
+  if (model == "ri_clpm" && !is.null(stationary)) {
+    raw_model <- psychonetrics::ri_clpm_stationary(raw_model, stationary = stationary)
+  }
+  fit <- quicknet_psychonetrics_run(raw_model)
+
+  networks <- if (model == "ri_clpm") {
+    quicknet_ri_clpm_networks(fit, nodes = nodes, waves = waves, prefix = prefix)
+  } else {
+    temporal <- quicknet_psychonetrics_matrix(fit, "beta", nodes)
+    within <- quicknet_psychonetrics_first_matrix(
+      fit,
+      c("omega_zeta_within", "sigma_zeta_within", "kappa_zeta_within"),
+      nodes
+    )
+    between <- quicknet_psychonetrics_first_matrix(
+      fit,
+      c("omega_zeta_between", "sigma_zeta_between", "kappa_zeta_between"),
+      nodes
+    )
+    list(default = temporal, temporal = temporal, within = within, between = between)
+  }
+
+  edges <- quicknet_longitudinal_edges(networks)
+  node_tables <- lapply(names(networks), function(network_name) {
+    if (network_name %in% c("default", "temporal")) {
+      quicknet_directed_node_table(networks[[network_name]], network = network_name)
+    } else {
+      quicknet_node_table(networks[[network_name]], network = network_name)
+    }
+  })
+
+  quicknet_fit(
+    model = model,
+    data = dat$data,
+    networks = networks,
+    edges = edges,
+    nodes = do.call(quicknet_bind_rows_fill, node_tables),
+    fit = list(model = fit, fit_indices = quicknet_psychonetrics_fit_indices(fit)),
+    meta = list(
+      data_type = "panel",
+      directed = TRUE,
+      row_is = "to",
+      col_is = "from",
+      backend = paste0("psychonetrics::", switch(model, ri_clpm = "ri_clpm", panel_gvar = "panelgvar", panel_var = "panelvar")),
+      nodes = nodes,
+      waves = waves,
+      id = id,
+      prefix = prefix,
+      standardize = standardize,
+      ri_type = if (model == "ri_clpm") ri_type else NULL,
+      stationary = stationary,
+      call = call
+    )
+  )
+}
+
+quicknet_psychonetrics_gvar_fit <- function(data,
+                                            vars,
+                                            id,
+                                            day,
+                                            beep,
+                                            scale,
+                                            call,
+                                            ...) {
+  standardize <- if (isTRUE(scale)) "z" else "none"
+  raw_model <- psychonetrics::gvar(
+    data = data,
+    vars = vars,
+    idvar = id,
+    dayvar = day,
+    beepvar = beep,
+    standardize = standardize,
+    verbose = FALSE,
+    ...
+  )
+  fit <- quicknet_psychonetrics_run(raw_model)
+  temporal <- quicknet_psychonetrics_matrix(fit, "beta", vars)
+  contemporaneous <- quicknet_psychonetrics_first_matrix(fit, c("omega_zeta", "sigma_zeta", "kappa_zeta"), vars)
+  networks <- list(default = temporal, temporal = temporal, contemporaneous = contemporaneous)
+  edges <- quicknet_longitudinal_edges(networks)
+  nodes <- quicknet_bind_rows_fill(
+    quicknet_directed_node_table(temporal, network = "temporal"),
+    quicknet_node_table(contemporaneous, network = "contemporaneous")
+  )
+
+  quicknet_fit(
+    model = "psychonetrics_gvar",
+    data = data,
+    networks = networks,
+    edges = edges,
+    nodes = nodes,
+    fit = list(model = fit, fit_indices = quicknet_psychonetrics_fit_indices(fit)),
+    meta = list(
+      data_type = "intensive_longitudinal",
+      directed = TRUE,
+      row_is = "to",
+      col_is = "from",
+      backend = "psychonetrics::gvar",
+      vars = vars,
+      id = id,
+      day = day,
+      beep = beep,
+      scale = scale,
+      standardize = standardize,
+      call = call
+    )
+  )
+}
+
+quicknet_panel_psychonetrics_data <- function(data, nodes, waves, id, prefix, standardize) {
+  dat <- as.data.frame(data)
+  required_columns <- unlist(lapply(waves, function(wave) paste0(nodes, prefix, wave)))
+  if (!id %in% colnames(dat)) dat[[id]] <- seq_len(nrow(dat))
+  dat <- dat[, c(id, required_columns), drop = FALSE]
+  dat <- dat[stats::complete.cases(dat), , drop = FALSE]
+  if (isTRUE(standardize)) {
+    dat[required_columns] <- lapply(dat[required_columns], function(x) as.numeric(scale(x)))
+  }
+  list(data = dat, required_columns = required_columns)
+}
+
+quicknet_panel_vars_matrix <- function(nodes, waves, prefix) {
+  vars_matrix <- outer(nodes, waves, Vectorize(function(node, wave) paste0(node, prefix, wave)))
+  rownames(vars_matrix) <- nodes
+  colnames(vars_matrix) <- as.character(waves)
+  vars_matrix
+}
+
+quicknet_psychonetrics_run <- function(model) {
+  invisible(utils::capture.output({
+    out <- suppressMessages(psychonetrics::runmodel(model))
+  }))
+  out
+}
+
+quicknet_psychonetrics_fit_indices <- function(fit) {
+  out <- NULL
+  invisible(utils::capture.output({
+    out <- tryCatch(psychonetrics::fit(fit), error = function(e) NULL)
+  }))
+  if (is.null(out)) return(data.frame())
+  as.data.frame(out)
+}
+
+quicknet_psychonetrics_matrix <- function(fit, matrix_name, vars) {
+  mat <- tryCatch(psychonetrics::getmatrix(fit, matrix_name), error = function(e) NULL)
+  if (is.null(mat)) {
+    mat <- base::matrix(NA_real_, length(vars), length(vars))
+  }
+  mat <- as.matrix(mat)
+  if (!all(dim(mat) == c(length(vars), length(vars)))) {
+    mat <- mat[seq_len(length(vars)), seq_len(length(vars)), drop = FALSE]
+  }
+  colnames(mat) <- rownames(mat) <- vars
+  mat
+}
+
+quicknet_psychonetrics_first_matrix <- function(fit, candidates, vars) {
+  available <- tryCatch(fit@matrices$name, error = function(e) character())
+  for (candidate in candidates) {
+    if (candidate %in% available) {
+      mat <- quicknet_psychonetrics_matrix(fit, candidate, vars)
+      diag(mat) <- 0
+      return(mat)
+    }
+  }
+  base::matrix(NA_real_, length(vars), length(vars), dimnames = list(vars, vars))
+}
+
+quicknet_ri_clpm_networks <- function(fit, nodes, waves, prefix) {
+  pars <- data.frame()
+  invisible(utils::capture.output({
+    pars <- tryCatch(psychonetrics::parameters(fit), error = function(e) data.frame())
+  }))
+  temporal <- matrix(NA_real_, length(nodes), length(nodes), dimnames = list(nodes, nodes))
+  contemporaneous <- matrix(NA_real_, length(nodes), length(nodes), dimnames = list(nodes, nodes))
+  random_intercept <- matrix(NA_real_, length(nodes), length(nodes), dimnames = list(nodes, nodes))
+
+  for (from_node in nodes) {
+    for (to_node in nodes) {
+      values <- numeric()
+      for (wave_index in seq_len(length(waves) - 1)) {
+        from_name <- paste0("C_", from_node, prefix, waves[[wave_index]])
+        to_name <- paste0("C_", to_node, prefix, waves[[wave_index + 1]])
+        row <- pars[pars$matrix == "beta" & pars$var1 == to_name & pars$var2 == from_name, , drop = FALSE]
+        if (nrow(row) > 0) values <- c(values, row$est)
+      }
+      temporal[to_node, from_node] <- if (length(values) > 0) mean(values, na.rm = TRUE) else NA_real_
+    }
+  }
+
+  for (node_i in nodes) {
+    for (node_j in nodes) {
+      if (node_i == node_j) {
+        contemporaneous[node_i, node_j] <- 0
+        random_intercept[node_i, node_j] <- 0
+        next
+      }
+      innovation_values <- numeric()
+      for (wave in waves) {
+        name_i <- paste0("C_", node_i, prefix, wave)
+        name_j <- paste0("C_", node_j, prefix, wave)
+        row <- pars[
+          pars$matrix == "omega_zeta" &
+            ((pars$var1 == name_i & pars$var2 == name_j) | (pars$var1 == name_j & pars$var2 == name_i)),
+          ,
+          drop = FALSE
+        ]
+        if (nrow(row) > 0) innovation_values <- c(innovation_values, row$est)
+      }
+      contemporaneous[node_i, node_j] <- if (length(innovation_values) > 0) mean(innovation_values, na.rm = TRUE) else NA_real_
+      ri_i <- paste0("RI_", node_i)
+      ri_j <- paste0("RI_", node_j)
+      ri_row <- pars[
+        pars$matrix == "omega_zeta" &
+          ((pars$var1 == ri_i & pars$var2 == ri_j) | (pars$var1 == ri_j & pars$var2 == ri_i)),
+        ,
+        drop = FALSE
+      ]
+      random_intercept[node_i, node_j] <- if (nrow(ri_row) > 0) mean(ri_row$est, na.rm = TRUE) else NA_real_
+    }
+  }
+
+  cross_lagged <- temporal
+  diag(cross_lagged) <- 0
+  list(
+    default = temporal,
+    temporal = temporal,
+    cross_lagged = cross_lagged,
+    contemporaneous = contemporaneous,
+    random_intercept = random_intercept
+  )
+}
+
+quicknet_longitudinal_edges <- function(networks) {
+  rows <- lapply(names(networks), function(network_name) {
+    directed <- network_name %in% c("default", "temporal", "cross_lagged")
+    edge_table <- quicknet_edge_table(
+      networks[[network_name]],
+      network = network_name,
+      directed = directed,
+      drop_zero = FALSE,
+      include_diag = directed
+    )
+    if (directed) {
+      edge_table$edge_type <- ifelse(edge_table$from == edge_table$to, "autoregressive", "cross_lagged")
+    }
+    edge_table
+  })
+  do.call(quicknet_bind_rows_fill, rows)
 }
 
 quicknet_mlvar_get_net <- function(fit, type, vars) {

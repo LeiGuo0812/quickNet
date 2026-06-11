@@ -6,7 +6,9 @@
 #' @param threshold Absolute edge-weight threshold used to count nonzero edges.
 #'
 #' @return A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
-#' contains sample, estimation, network, edge, node, and model-specific tables.
+#' contains model registry metadata, sample, estimation, fit-index, parameter,
+#' modification-index, constraint, network, edge, node, and model-specific
+#' tables.
 #' For \code{quicknet_perturbation} inputs it contains perturbation settings,
 #' metrics, rankings, and a short text summary. For \code{quicknet_power}
 #' inputs it contains design settings, simulation summaries, and sample-size
@@ -25,8 +27,13 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
 
   report <- list(
     model = fit$model,
+    model_info = quicknet_model_info(fit$model),
     sample = quicknet_report_sample(fit),
     estimation = quicknet_report_estimation(fit),
+    fit_indices = quicknet_report_fit_indices(fit),
+    parameters = quicknet_report_parameters(fit),
+    modification_indices = quicknet_report_modification_indices(fit),
+    constraints = quicknet_report_constraints(fit),
     networks = quicknet_report_networks(fit, threshold = threshold),
     edges = quicknet_report_edges(fit, threshold = threshold),
     nodes = fit$nodes,
@@ -167,11 +174,24 @@ quicknet_report_sample <- function(fit) {
     ))
   }
 
+  if (identical(data_type, "meta")) {
+    return(data.frame(
+      data_type = data_type,
+      studies = fit$meta$n_studies %||% NA_integer_,
+      variables = length(fit$meta$vars),
+      total_n = if (!is.null(fit$meta$nobs)) sum(fit$meta$nobs, na.rm = TRUE) else NA_real_,
+      rows = if (!is.null(fit$data)) nrow(fit$data) else NA_integer_,
+      stringsAsFactors = FALSE
+    ))
+  }
+
   data.frame(data_type = data_type, stringsAsFactors = FALSE)
 }
 
 quicknet_report_estimation <- function(fit) {
-  backend <- fit$meta$backend %||% switch(
+  model_info <- quicknet_model_info(fit$model)
+  registry_backend <- if (nrow(model_info) > 0) model_info$backend[[1]] else NULL
+  backend <- fit$meta$backend %||% registry_backend %||% switch(
     fit$model,
     EBICglasso = "bootnet::estimateNetwork(default = 'EBICglasso')",
     correlation = "stats::cor",
@@ -180,13 +200,28 @@ quicknet_report_estimation <- function(fit) {
     ordinal = if (identical(fit$meta$ordinal_method, "polychoric")) "psych::polychoric" else "stats::cor",
     mgm = "mgm::mgm",
     clpn = "glmnet::cv.glmnet",
+    ri_clpm = "psychonetrics::ri_clpm",
+    panel_gvar = "psychonetrics::panelgvar",
+    panel_var = "psychonetrics::panelvar",
     panel_sem = "lavaan::sem",
     confirmatory_ggm = "psychonetrics::ggm",
+    confirmatory_ising = "psychonetrics::Ising",
+    confirmatory_cor = "psychonetrics::varcov(type = 'cor')",
+    confirmatory_covariance = "psychonetrics::varcov(type = 'cov')",
+    confirmatory_precision = "psychonetrics::varcov(type = 'prec')",
     latent_network = "lavaan::cfa",
+    lvm = "psychonetrics::lvm",
+    lnm = "psychonetrics::lnm",
+    rnm = "psychonetrics::rnm",
+    lrnm = "psychonetrics::lrnm",
+    meta_ggm = "psychonetrics::meta_varcov(type = 'ggm')",
+    meta_cor = "psychonetrics::meta_varcov(type = 'cor')",
+    meta_gvar = "psychonetrics::meta_gvar",
     mixedVAR = "mgm::mvar",
     time_varying_mvar = "mgm::tvmvar",
     graphicalVAR = "graphicalVAR::mlGraphicalVAR",
     mlVAR = "mlVAR::mlVAR",
+    psychonetrics_gvar = "psychonetrics::gvar",
     NA_character_
   )
 
@@ -201,7 +236,8 @@ quicknet_report_estimation <- function(fit) {
     "alpha", "lambda_rule", "nfolds", "standardize", "scale",
     "centerWithin", "lags", "estimator", "temporal", "contemporaneous",
     "nCores", "residual_cov", "lambdaSel", "bandwidth",
-    "std.lv", "signInfo"
+    "std.lv", "signInfo", "ri_type", "stationary", "identification",
+    "randomEffects", "studyvar", "beta_model", "maxNodes"
   )
   for (key in report_keys) {
     value <- fit$meta[[key]]
@@ -225,6 +261,79 @@ quicknet_report_estimation <- function(fit) {
   }
 
   do.call(rbind, rows)
+}
+
+quicknet_report_fit_indices <- function(fit) {
+  fit_indices <- fit$fit$fit_indices
+  if (!is.null(fit_indices)) {
+    return(as.data.frame(fit_indices))
+  }
+  backend_model <- quicknet_report_backend_model(fit)
+  if (quicknet_report_is_psychonetrics_model(backend_model)) {
+    return(quicknet_psychonetrics_fit_indices(backend_model))
+  }
+  data.frame()
+}
+
+quicknet_report_parameters <- function(fit) {
+  backend_model <- quicknet_report_backend_model(fit)
+  if (quicknet_report_is_psychonetrics_model(backend_model)) {
+    return(quicknet_report_psychonetrics_parameters(backend_model))
+  }
+  data.frame()
+}
+
+quicknet_report_modification_indices <- function(fit) {
+  backend_model <- quicknet_report_backend_model(fit)
+  if (!quicknet_report_is_psychonetrics_model(backend_model)) {
+    return(data.frame())
+  }
+  out <- data.frame()
+  invisible(utils::capture.output({
+    out <- tryCatch(as.data.frame(psychonetrics::MIs(backend_model)), error = function(e) data.frame())
+  }))
+  if (!nrow(out)) return(out)
+  signal_columns <- intersect(c("mi", "pmi", "epc", "mi_free", "pmi_free", "epc_free"), names(out))
+  if (!length(signal_columns)) return(out[0, , drop = FALSE])
+  has_signal <- Reduce(`|`, lapply(signal_columns, function(column) is.finite(suppressWarnings(as.numeric(out[[column]])))))
+  out <- out[has_signal, , drop = FALSE]
+  if ("mi" %in% names(out)) {
+    mi <- suppressWarnings(as.numeric(out$mi))
+    out <- out[order(-mi, na.last = TRUE), , drop = FALSE]
+  }
+  rownames(out) <- NULL
+  out
+}
+
+quicknet_report_constraints <- function(fit) {
+  parameters <- quicknet_report_parameters(fit)
+  if (!nrow(parameters) || !"matrix" %in% names(parameters)) {
+    return(data.frame())
+  }
+  if (!"fixed" %in% names(parameters)) {
+    parameters$fixed <- NA
+  }
+  if (!"group" %in% names(parameters)) {
+    parameters$group <- NA_character_
+  }
+  groups <- split(parameters, list(parameters$matrix, parameters$group), drop = TRUE)
+  rows <- lapply(groups, function(part) {
+    fixed <- quicknet_report_as_logical(part$fixed)
+    lower <- if ("minimum" %in% names(part)) suppressWarnings(as.numeric(part$minimum)) else rep(NA_real_, nrow(part))
+    upper <- if ("maximum" %in% names(part)) suppressWarnings(as.numeric(part$maximum)) else rep(NA_real_, nrow(part))
+    data.frame(
+      matrix = part$matrix[[1]],
+      group = part$group[[1]],
+      parameters = nrow(part),
+      free_parameters = sum(!fixed, na.rm = TRUE),
+      fixed_parameters = sum(fixed, na.rm = TRUE),
+      bounded_parameters = sum(is.finite(lower) | is.finite(upper), na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
 }
 
 quicknet_report_networks <- function(fit, threshold = 1e-10) {
@@ -295,7 +404,7 @@ quicknet_report_model_specific <- function(fit) {
     return(fit$nodes[, columns, drop = FALSE])
   }
 
-  if (fit$model %in% c("graphicalVAR", "mlVAR", "confirmatory_ggm", "latent_network", "mixedVAR", "time_varying_mvar", "panel_sem")) {
+  if (fit$model %in% c("graphicalVAR", "mlVAR", "psychonetrics_gvar", "confirmatory_ggm", "confirmatory_ising", "confirmatory_cor", "confirmatory_covariance", "confirmatory_precision", "latent_network", "lvm", "lnm", "rnm", "lrnm", "meta_ggm", "meta_cor", "meta_gvar", "mixedVAR", "time_varying_mvar", "panel_sem", "ri_clpm", "panel_gvar", "panel_var")) {
     return(fit$nodes)
   }
 
@@ -333,4 +442,44 @@ quicknet_report_is_directed <- function(fit, network_name) {
 quicknet_report_collapse <- function(x) {
   if (length(x) == 0) return(NA_character_)
   paste(as.character(x), collapse = ", ")
+}
+
+quicknet_report_backend_model <- function(fit) {
+  if (is.null(fit$fit) || is.null(fit$fit$model)) return(NULL)
+  fit$fit$model
+}
+
+quicknet_report_is_psychonetrics_model <- function(model) {
+  inherits(model, "psychonetrics")
+}
+
+quicknet_report_psychonetrics_parameters <- function(model) {
+  out <- data.frame()
+  invisible(utils::capture.output({
+    out <- tryCatch(as.data.frame(psychonetrics::parameters(model)), error = function(e) data.frame())
+  }))
+  if (!nrow(out)) return(out)
+  out <- quicknet_report_add_parameter_ci(out)
+  rownames(out) <- NULL
+  out
+}
+
+quicknet_report_add_parameter_ci <- function(parameters) {
+  if (!all(c("est", "se") %in% names(parameters))) {
+    return(parameters)
+  }
+  est <- suppressWarnings(as.numeric(parameters$est))
+  se <- suppressWarnings(as.numeric(parameters$se))
+  valid <- is.finite(est) & is.finite(se)
+  parameters$ci_lower <- NA_real_
+  parameters$ci_upper <- NA_real_
+  parameters$ci_lower[valid] <- est[valid] - stats::qnorm(0.975) * se[valid]
+  parameters$ci_upper[valid] <- est[valid] + stats::qnorm(0.975) * se[valid]
+  parameters
+}
+
+quicknet_report_as_logical <- function(x) {
+  if (is.logical(x)) return(x)
+  if (is.numeric(x)) return(x != 0)
+  tolower(as.character(x)) %in% c("true", "t", "1", "yes")
 }

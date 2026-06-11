@@ -99,11 +99,26 @@ quicknet_check_input <- function(data, model, args = list()) {
     ising = quicknet_check_ising(data, args),
     mgm = quicknet_check_mgm(data, args),
     clpn = quicknet_check_panel(data, args),
+    ri_clpm = quicknet_check_panel(data, args),
+    panel_gvar = quicknet_check_panel(data, args),
+    panel_var = quicknet_check_panel(data, args),
     panel_sem = quicknet_check_panel(data, args),
     graphicalVAR = quicknet_check_longitudinal(data, args),
     mlVAR = quicknet_check_longitudinal(data, args),
+    psychonetrics_gvar = quicknet_check_longitudinal(data, args),
     confirmatory_ggm = quicknet_check_confirmatory(data, args),
-    latent_network = quicknet_check_latent(data, args),
+    confirmatory_ising = quicknet_check_confirmatory_ising(data, args),
+    confirmatory_cor = quicknet_check_confirmatory(data, args),
+    confirmatory_covariance = quicknet_check_confirmatory(data, args),
+    confirmatory_precision = quicknet_check_confirmatory(data, args),
+    latent_network = quicknet_check_latent(data, c(args, list(latent_model = key))),
+    lvm = quicknet_check_latent(data, c(args, list(latent_model = key))),
+    lnm = quicknet_check_latent(data, c(args, list(latent_model = key))),
+    rnm = quicknet_check_latent(data, c(args, list(latent_model = key))),
+    lrnm = quicknet_check_latent(data, c(args, list(latent_model = key))),
+    meta_ggm = quicknet_check_meta(data, c(args, list(meta_model = key))),
+    meta_cor = quicknet_check_meta(data, c(args, list(meta_model = key))),
+    meta_gvar = quicknet_check_meta(data, c(args, list(meta_model = key))),
     mixedVAR = quicknet_check_dynamic(data, args, time_varying = FALSE),
     time_varying_mvar = quicknet_check_dynamic(data, args, time_varying = TRUE),
     power = quicknet_check_power(args),
@@ -133,11 +148,26 @@ quicknet_input_specs <- function() {
     ising = quicknet_input_spec("wide data.frame/matrix", "data", "binary 0/1 columns with both values present", "listwise by default", "values not coded 0/1; no variation"),
     mgm = quicknet_input_spec("wide data.frame/matrix", "data, types, levels", "numeric columns; types/levels match columns", "listwise by default", "wrong type/level length; categorical levels not coded numerically"),
     clpn = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; fewer than two waves"),
+    ri_clpm = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "requires at least three waves for stable RI-CLPM interpretation"),
+    panel_gvar = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; unstable between-person network with small samples"),
+    panel_var = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; contemporaneous layer is covariance-based"),
     panel_sem = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; fewer than two waves"),
     graphicalVAR = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
     mlVAR = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
+    psychonetrics_gvar = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "psychonetrics handles selected missing rule", "non-consecutive time indices; too few observations per subject"),
     confirmatory_ggm = quicknet_input_spec("wide data.frame/matrix", "vars, optional omega", "continuous numeric columns; omega is square template", "listwise by default", "omega dimensions/names do not match vars"),
+    confirmatory_ising = quicknet_input_spec("wide data.frame/matrix", "vars, optional omega", "binary 0/1 columns; omega is square template", "listwise by default", "values not coded 0/1; omega dimensions/names do not match vars"),
+    confirmatory_cor = quicknet_input_spec("wide data.frame/matrix", "vars, optional rho", "continuous numeric columns; rho is square template", "listwise by default", "rho dimensions/names do not match vars"),
+    confirmatory_covariance = quicknet_input_spec("wide data.frame/matrix", "vars, optional sigma", "continuous numeric columns; sigma is square template", "listwise by default", "sigma dimensions/names do not match vars"),
+    confirmatory_precision = quicknet_input_spec("wide data.frame/matrix", "vars, optional kappa", "continuous numeric columns; kappa is square template", "listwise by default", "kappa dimensions/names do not match vars"),
     latent_network = quicknet_input_spec("wide data.frame/matrix", "lavaan CFA model syntax", "numeric manifest indicators", "listwise by default", "invalid CFA syntax; factors with too few indicators"),
+    lvm = quicknet_input_spec("wide data.frame/matrix", "model = 'lvm', lambda", "numeric manifest indicators; lambda rows match vars", "listwise by default", "lambda dimensions/names do not match variables"),
+    lnm = quicknet_input_spec("wide data.frame/matrix", "model = 'lnm', lambda", "numeric manifest indicators; latent network estimated in omega_zeta", "listwise by default", "lambda dimensions/names do not match variables"),
+    rnm = quicknet_input_spec("wide data.frame/matrix", "model = 'rnm', lambda", "numeric manifest indicators; residual network estimated in omega_epsilon", "listwise by default", "lambda dimensions/names do not match variables"),
+    lrnm = quicknet_input_spec("wide data.frame/matrix", "model = 'lrnm', lambda", "numeric manifest indicators; latent and residual networks estimated", "listwise by default", "lambda dimensions/names do not match variables"),
+    meta_ggm = quicknet_input_spec("list of correlation/covariance matrices or raw study data", "cors/covs + nobs, or data + studyvar", "square matrices with common variable names", "handled by psychonetrics meta-analytic SEM", "missing nobs; matrices with inconsistent dimensions"),
+    meta_cor = quicknet_input_spec("list of correlation/covariance matrices or raw study data", "cors/covs + nobs, or data + studyvar", "square matrices with common variable names", "handled by psychonetrics meta-analytic SEM", "missing nobs; matrices with inconsistent dimensions"),
+    meta_gvar = quicknet_input_spec("multi-study intensive longitudinal data or Toeplitz covariances", "data + studyvar + id/day/beep + vars, or covs + nobs + vars", "numeric repeated-measures variables by study", "handled by psychonetrics meta-analytic VAR", "missing study/time identifiers; insufficient studies"),
     mixedVAR = quicknet_input_spec("time-ordered data.frame/matrix", "vars, types, levels", "numeric continuous/category codes in temporal order", "complete cases recommended", "types/levels mismatch; unordered rows"),
     time_varying_mvar = quicknet_input_spec("time-ordered data.frame/matrix", "vars, types, levels, timepoints/estpoints", "numeric continuous/category codes in temporal order", "complete cases recommended", "timepoints length mismatch; invalid estpoints"),
     power = quicknet_input_spec("no raw data required", "nodes, density, sample_sizes, replications", "simulation design parameters", "not applicable", "unrealistic true-network assumptions; too few replications"),
@@ -166,6 +196,7 @@ quicknet_input_model_key <- function(model) {
     LatentNet = "latent_network",
     MixedVARNet = "mixedVAR",
     TimeVaryingNet = "time_varying_mvar",
+    MetaNet = "meta_ggm",
     NetworkPower = "power",
     SampleSize = "power",
     Perturbation = "perturbation"
@@ -323,9 +354,27 @@ quicknet_check_longitudinal <- function(data, args) {
 
 quicknet_check_confirmatory <- function(data, args) {
   vars <- args$vars
-  dat <- as.data.frame(data)
+  dat <- if (!is.null(data)) as.data.frame(data) else NULL
   if (is.null(vars) && !is.null(data)) vars <- colnames(dat)
-  out <- quicknet_check_cross_continuous(if (!is.null(vars)) dat[, vars, drop = FALSE] else data, args)
+  out <- quicknet_check_cross_continuous(if (!is.null(vars) && !is.null(dat)) dat[, vars, drop = FALSE] else data, args)
+  templates <- list(omega = args$omega, sigma = args$sigma, kappa = args$kappa, rho = args$rho)
+  for (template_name in names(templates)) {
+    template <- templates[[template_name]]
+    if (!is.null(template) && !is.null(vars)) {
+      template <- as.matrix(template)
+      if (!all(dim(template) == c(length(vars), length(vars)))) {
+        out$errors <- c(out$errors, paste0(template_name, " must have one row and one column per variable."))
+      }
+    }
+  }
+  out
+}
+
+quicknet_check_confirmatory_ising <- function(data, args) {
+  out <- quicknet_check_ising(data, args)
+  vars <- args$vars
+  dat <- if (!is.null(data)) as.data.frame(data) else NULL
+  if (is.null(vars) && !is.null(dat)) vars <- colnames(dat)
   omega <- args$omega
   if (!is.null(omega) && !is.null(vars)) {
     omega <- as.matrix(omega)
@@ -341,9 +390,28 @@ quicknet_check_latent <- function(data, args) {
   dat <- if (!is.null(data)) as.data.frame(data) else NULL
   if (is.null(vars) && !is.null(dat)) vars <- colnames(dat)
   out <- quicknet_check_cross_continuous(if (!is.null(vars) && !is.null(dat)) dat[, vars, drop = FALSE] else data, args)
-  syntax <- args$syntax %||% args$model
-  if (is.null(syntax) || !is.character(syntax) || !grepl("=~", syntax)) {
-    out$errors <- c(out$errors, "A lavaan CFA model syntax containing '=~' is required.")
+  latent_model <- args$latent_model %||% "latent_network"
+  if (latent_model == "latent_network") {
+    syntax <- args$syntax %||% args$model
+    if (is.null(syntax) || !is.character(syntax) || !grepl("=~", syntax)) {
+      out$errors <- c(out$errors, "A lavaan CFA model syntax containing '=~' is required.")
+    }
+  } else {
+    lambda <- args$lambda
+    if (is.null(lambda)) {
+      out$errors <- c(out$errors, "lambda must be provided for psychonetrics latent models.")
+    } else {
+      lambda <- as.matrix(lambda)
+      if (!is.null(vars) && nrow(lambda) != length(vars)) {
+        out$errors <- c(out$errors, "lambda must have one row per manifest variable in vars.")
+      }
+      if (ncol(lambda) < 1) {
+        out$errors <- c(out$errors, "lambda must contain at least one latent variable column.")
+      }
+      if (!is.null(vars) && !is.null(rownames(lambda)) && !all(vars %in% rownames(lambda))) {
+        out$errors <- c(out$errors, "lambda row names must include all vars when row names are supplied.")
+      }
+    }
   }
   out
 }
@@ -367,6 +435,71 @@ quicknet_check_dynamic <- function(data, args, time_varying) {
   out
 }
 
+quicknet_check_meta <- function(data, args) {
+  errors <- warnings <- character()
+  meta_model <- args$meta_model %||% "meta_ggm"
+  cors <- args$cors
+  covs <- args$covs
+  nobs <- args$nobs
+  vars <- args$vars
+  studyvar <- args$studyvar
+  id <- args$id %||% "id"
+  day <- args$day %||% "day"
+  beep <- args$beep %||% "beep"
+
+  has_matrices <- !is.null(cors) || !is.null(covs)
+  has_data <- !is.null(data)
+  if (!has_matrices && !has_data) {
+    errors <- c(errors, "Provide cors/covs with nobs, or raw data with studyvar.")
+  }
+
+  matrices <- cors %||% covs
+  if (!is.null(matrices)) {
+    if (!is.list(matrices) || length(matrices) < 2) {
+      errors <- c(errors, "cors/covs must be a list containing at least two study matrices.")
+    } else {
+      dims <- lapply(matrices, dim)
+      square <- vapply(dims, function(x) length(x) == 2 && x[[1]] == x[[2]], logical(1))
+      if (!all(square)) errors <- c(errors, "Each study matrix must be square.")
+      if (length(unique(vapply(dims, paste, collapse = "x", character(1)))) > 1) {
+        errors <- c(errors, "Study matrices must have common dimensions.")
+      }
+      if (is.null(vars) && is.null(colnames(matrices[[1]]))) {
+        warnings <- c(warnings, "vars could not be inferred from matrix column names.")
+      }
+    }
+    if (is.null(nobs) || length(nobs) != length(matrices)) {
+      errors <- c(errors, "nobs must provide one sample size per study matrix.")
+    }
+  }
+
+  if (has_data) {
+    dat <- as.data.frame(data)
+    if (is.null(studyvar) || !studyvar %in% colnames(dat)) {
+      errors <- c(errors, "studyvar must identify a study column in data.")
+    }
+    if (!is.null(studyvar) && studyvar %in% colnames(dat) && length(unique(dat[[studyvar]])) < 2) {
+      errors <- c(errors, "At least two studies are required.")
+    }
+    if (meta_model == "meta_gvar") {
+      required <- c(vars, studyvar, id, day, beep)
+      missing_required <- setdiff(required, colnames(dat))
+      if (length(missing_required) > 0) errors <- c(errors, paste0("Missing required column(s): ", paste(missing_required, collapse = ", ")))
+      if (!is.null(vars)) {
+        out <- quicknet_check_numeric_columns(dat, vars, errors, warnings)
+        errors <- out$errors
+        warnings <- out$warnings
+      }
+    } else if (!is.null(vars)) {
+      out <- quicknet_check_numeric_columns(dat, vars, errors, warnings)
+      errors <- out$errors
+      warnings <- out$warnings
+    }
+  }
+
+  list(errors = errors, warnings = warnings)
+}
+
 quicknet_check_power <- function(args) {
   errors <- warnings <- character()
   nodes <- args$nodes %||% 8
@@ -387,8 +520,14 @@ quicknet_check_perturbation <- function(args) {
   if (!inherits(fit, "quicknet_fit")) {
     errors <- c(errors, "fit must be a quicknet_fit object.")
   } else if (!is.null(method)) {
-    if (method == "ising_threshold" && fit$model != "ising") errors <- c(errors, "method = 'ising_threshold' requires an Ising fit.")
-    if (method != "ising_threshold" && fit$model == "ising") warnings <- c(warnings, "Ising fits should generally use method = 'ising_threshold'.")
+    is_ising <- quicknet_is_ising_model(fit$model)
+    if (method == "ising_threshold" && !is_ising) errors <- c(errors, "method = 'ising_threshold' requires an Ising fit.")
+    if (method != "ising_threshold" && !quicknet_supports_continuous_perturbation(fit$model)) {
+      errors <- c(errors, paste0(
+        "method = '", method,
+        "' requires an EBICglasso, correlation, partial, or ordinal fit; use method = 'ising_threshold' for Ising fits."
+      ))
+    }
   }
   list(errors = errors, warnings = warnings)
 }

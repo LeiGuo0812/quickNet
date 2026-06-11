@@ -39,6 +39,43 @@ test_that("PanelNet returns a directed quicknet_fit object", {
   expect_true(nrow(stability$default) > 0)
 })
 
+test_that("PanelNet supports psychonetrics panel models", {
+  skip_if_not_installed("psychonetrics")
+  set.seed(110)
+  n <- 70
+  nodes <- c("x1", "x2")
+  waves <- 1:3
+  x1 <- matrix(rnorm(n * length(waves)), nrow = n)
+  x2 <- matrix(rnorm(n * length(waves)), nrow = n)
+  for (wave in 2:length(waves)) {
+    x1[, wave] <- 0.35 * x1[, wave - 1] + rnorm(n)
+    x2[, wave] <- 0.25 * x2[, wave - 1] + 0.10 * x1[, wave - 1] + rnorm(n)
+  }
+  dat <- data.frame(
+    id = seq_len(n),
+    x1_t1 = x1[, 1], x2_t1 = x2[, 1],
+    x1_t2 = x1[, 2], x2_t2 = x2[, 2],
+    x1_t3 = x1[, 3], x2_t3 = x2[, 3]
+  )
+
+  panel_gvar <- suppressWarnings(PanelNet(dat, nodes = nodes, waves = waves, model = "panel_gvar"))
+  expect_s3_class(panel_gvar, "quicknet_fit")
+  expect_equal(panel_gvar$model, "panel_gvar")
+  expect_true(all(c("temporal", "within", "between") %in% names(panel_gvar$networks)))
+  expect_equal(panel_gvar$meta$backend, "psychonetrics::panelgvar")
+
+  panel_var <- suppressWarnings(PanelNet(dat, nodes = nodes, waves = waves, model = "panel_var"))
+  expect_s3_class(panel_var, "quicknet_fit")
+  expect_equal(panel_var$model, "panel_var")
+  expect_true(all(c("temporal", "within", "between") %in% names(panel_var$networks)))
+
+  ri_clpm <- suppressWarnings(PanelNet(dat, nodes = nodes, waves = waves, model = "ri_clpm"))
+  expect_s3_class(ri_clpm, "quicknet_fit")
+  expect_equal(ri_clpm$model, "ri_clpm")
+  expect_true(all(c("temporal", "cross_lagged", "contemporaneous", "random_intercept") %in% names(ri_clpm$networks)))
+  expect_true("ri_type" %in% quicknet_report(ri_clpm)$estimation$parameter)
+})
+
 test_that("LongitudinalNet returns graphicalVAR network layers", {
   skip_if_not_installed("graphicalVAR")
   set.seed(101)
@@ -76,6 +113,34 @@ test_that("LongitudinalNet returns graphicalVAR network layers", {
   stability <- suppressWarnings(LongitudinalStability(fit, nboot = 1))
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(stability)))
   expect_true(nrow(stability$temporal) > 0)
+})
+
+test_that("LongitudinalNet supports psychonetrics gvar", {
+  skip_if_not_installed("psychonetrics")
+  set.seed(111)
+  ids <- rep(1:20, each = 5)
+  dat <- data.frame(
+    id = ids,
+    day = 1,
+    beep = rep(1:5, times = 20),
+    x1 = rnorm(length(ids)),
+    x2 = rnorm(length(ids))
+  )
+
+  fit <- suppressWarnings(LongitudinalNet(
+    dat,
+    vars = c("x1", "x2"),
+    id = "id",
+    day = "day",
+    beep = "beep",
+    model = "psychonetrics_gvar"
+  ))
+
+  expect_s3_class(fit, "quicknet_fit")
+  expect_equal(fit$model, "psychonetrics_gvar")
+  expect_true(all(c("temporal", "contemporaneous") %in% names(fit$networks)))
+  expect_equal(fit$meta$backend, "psychonetrics::gvar")
+  expect_true(all(c("temporal", "contemporaneous") %in% quicknet_report(fit)$networks$network))
 })
 
 test_that("LongitudinalNet supports mlVAR", {
