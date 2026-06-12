@@ -504,7 +504,7 @@ quicknet_check_power <- function(args) {
   errors <- warnings <- character()
   nodes <- args$nodes %||% 8
   density <- args$density %||% 0.30
-  sample_sizes <- args$sample_sizes %||% c(100, 200, 400)
+  sample_sizes <- args$sample_sizes %||% quicknet_power_default_sample_sizes(nodes)
   replications <- args$replications %||% 100
   if (nodes < 3) errors <- c(errors, "nodes must be at least 3.")
   if (density <= 0 || density > 1) errors <- c(errors, "density must be in (0, 1].")

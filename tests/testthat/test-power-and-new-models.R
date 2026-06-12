@@ -21,6 +21,17 @@ test_that("NetworkPower returns a quicknet_power object", {
   expect_true(all(c("settings", "summary", "recommendation", "text") %in% names(report)))
 })
 
+test_that("NetworkPower defaults use balanced adaptive planning", {
+  small <- NetworkPower(nodes = 8, replications = 2, target_value = 0, target_probability = 0, seed = 101)
+  large <- NetworkPower(nodes = 24, replications = 2, target_value = 0, target_probability = 0, seed = 101)
+
+  expect_equal(small$settings$target_metric, "mcc")
+  expect_equal(small$settings$sample_sizes, c(100L, 200L, 400L))
+  expect_true(max(large$settings$sample_sizes) > max(small$settings$sample_sizes))
+  expect_true(all(c("achieved_probability", "at_lower_boundary", "smallest_evaluated_n", "largest_evaluated_n") %in% names(small$recommendation)))
+  expect_match(small$report, "Smallest evaluated N")
+})
+
 test_that("ConfirmatoryNet returns a quicknet_fit object", {
   skip_if_not_installed("psychonetrics")
   set.seed(12)

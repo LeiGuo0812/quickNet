@@ -10,6 +10,7 @@
 #' @param edge_strength Absolute nonzero edge-weight range used for the assumed
 #' true partial-correlation network.
 #' @param sample_sizes Candidate sample sizes for \code{method = "monte_carlo"}.
+#' If \code{NULL}, an adaptive grid is generated from \code{nodes}.
 #' @param replications Monte Carlo replications per candidate sample size.
 #' @param target_metric Metric used for the power criterion. Supported values
 #' are \code{"sensitivity"}, \code{"specificity"}, \code{"mcc"},
@@ -34,9 +35,9 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
                          density = 0.30,
                          positive = 0.70,
                          edge_strength = c(0.15, 0.45),
-                         sample_sizes = c(100, 200, 400),
+                         sample_sizes = NULL,
                          replications = 100,
-                         target_metric = c("sensitivity", "specificity", "mcc", "edge_weight_correlation", "rmse"),
+                         target_metric = c("mcc", "sensitivity", "specificity", "edge_weight_correlation", "rmse"),
                          target_value = 0.60,
                          target_probability = 0.80,
                          gamma = 0.50,
@@ -47,6 +48,7 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
   method <- match.arg(method)
   target_metric <- match.arg(target_metric)
   estimator <- match.arg(estimator)
+  sample_sizes <- quicknet_power_resolve_sample_sizes(sample_sizes, nodes)
   quicknet_validate_input(
     model = "power",
     nodes = nodes,
@@ -314,6 +316,20 @@ quicknet_power_validate_design <- function(nodes, density, positive, edge_streng
   if (replications < 1) stop("replications must be at least 1.", call. = FALSE)
 }
 
+quicknet_power_resolve_sample_sizes <- function(sample_sizes, nodes) {
+  if (!is.null(sample_sizes)) {
+    return(sort(unique(as.integer(sample_sizes))))
+  }
+  quicknet_power_default_sample_sizes(nodes)
+}
+
+quicknet_power_default_sample_sizes <- function(nodes) {
+  upper <- max(400L, as.integer(ceiling(nodes * 50 / 100) * 100))
+  base_grid <- c(100L, 200L, 400L, 800L, 1200L, 1600L, 2400L, 3200L, 4800L, 6400L)
+  grid <- base_grid[base_grid <= upper]
+  sort(unique(c(grid, upper)))
+}
+
 quicknet_power_true_network <- function(nodes, density, positive, edge_strength) {
   node_names <- paste0("V", seq_len(nodes))
   mat <- matrix(0, nodes, nodes, dimnames = list(node_names, node_names))
@@ -466,9 +482,16 @@ quicknet_power_achieved_probability <- function(values, metric, target_value) {
 
 quicknet_power_recommend <- function(summary, target_probability) {
   eligible <- summary[summary$achieved_probability >= target_probability, , drop = FALSE]
+  recommended_n <- if (nrow(eligible) > 0) min(eligible$sample_size) else NA_real_
+  recommended_row <- summary[summary$sample_size == recommended_n, , drop = FALSE]
   data.frame(
-    recommended_n = if (nrow(eligible) > 0) min(eligible$sample_size) else NA_real_,
+    recommended_n = recommended_n,
     target_probability = target_probability,
+    achieved_probability = if (nrow(recommended_row) > 0) recommended_row$achieved_probability[[1]] else NA_real_,
+    smallest_evaluated_n = min(summary$sample_size, na.rm = TRUE),
+    largest_evaluated_n = max(summary$sample_size, na.rm = TRUE),
+    at_lower_boundary = is.finite(recommended_n) && recommended_n == min(summary$sample_size, na.rm = TRUE),
+    at_upper_boundary = is.finite(recommended_n) && recommended_n == max(summary$sample_size, na.rm = TRUE),
     reached = nrow(eligible) > 0,
     stringsAsFactors = FALSE
   )
@@ -484,6 +507,11 @@ quicknet_power_powerly_recommendation <- function(fit) {
   data.frame(
     recommended_n = recommended_n,
     target_probability = NA_real_,
+    achieved_probability = NA_real_,
+    smallest_evaluated_n = NA_real_,
+    largest_evaluated_n = NA_real_,
+    at_lower_boundary = NA,
+    at_upper_boundary = NA,
     reached = is.finite(recommended_n),
     stringsAsFactors = FALSE
   )
@@ -506,11 +534,19 @@ quicknet_power_powerly_summary <- function(fit, target_metric, target_value) {
 
 quicknet_power_report_text <- function(recommendation, target_metric, target_value, target_probability) {
   if (isTRUE(recommendation$reached[[1]])) {
+    boundary_note <- if (isTRUE(recommendation$at_lower_boundary[[1]])) {
+      " This is the smallest evaluated candidate; smaller sample sizes were not tested."
+    } else if (isTRUE(recommendation$at_upper_boundary[[1]])) {
+      " This is the largest evaluated candidate; consider extending the sample-size grid."
+    } else {
+      ""
+    }
     paste0(
-      "Recommended N = ", recommendation$recommended_n[[1]],
+      "Smallest evaluated N meeting the criterion = ", recommendation$recommended_n[[1]],
       " to achieve P(", target_metric, " reaches ", target_value, ") >= ",
       target_probability,
-      " under the specified simulation design."
+      " under the specified simulation design.",
+      boundary_note
     )
   } else {
     paste0(

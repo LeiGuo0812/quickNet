@@ -11,9 +11,9 @@ NetworkPower(
   density = 0.3,
   positive = 0.7,
   edge_strength = c(0.15, 0.45),
-  sample_sizes = c(100, 200, 400),
+  sample_sizes = NULL,
   replications = 100,
-  target_metric = c("sensitivity", "specificity", "mcc", "edge_weight_correlation",
+  target_metric = c("mcc", "sensitivity", "specificity", "edge_weight_correlation",
     "rmse"),
   target_value = 0.6,
   target_probability = 0.8,
@@ -41,7 +41,8 @@ network.}
 \item{edge_strength}{Absolute nonzero edge-weight range used for the assumed
 true partial-correlation network.}
 
-\item{sample_sizes}{Candidate sample sizes for \code{method = "monte_carlo"}.}
+\item{sample_sizes}{Candidate sample sizes for \code{method = "monte_carlo"}.
+If \code{NULL}, an adaptive grid is generated from \code{nodes}.}
 
 \item{replications}{Monte Carlo replications per candidate sample size.}
 

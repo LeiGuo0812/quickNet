@@ -349,9 +349,8 @@ mlvar_fit$nodes
 power <- NetworkPower(
   nodes = 8,
   density = 0.30,
-  sample_sizes = c(100, 200, 400),
   replications = 100,
-  target_metric = "sensitivity",
+  target_metric = "mcc",
   target_value = 0.60,
   target_probability = 0.80
 )
@@ -360,6 +359,11 @@ summary(power)
 plot(power)
 quicknet_report(power)$text
 ```
+
+如果 `sample_sizes = NULL`，`NetworkPower()` 会根据节点数自动生成候选样本量网格。
+默认目标指标为 `mcc`，它比单独使用 sensitivity 更平衡，因为会同时惩罚假阴性和假阳性。
+如果显式设置 `target_metric = "sensitivity"`，应将推荐结果理解为较乐观，并同时报告 specificity
+或假阳性控制情况。
 
 也可以使用 `powerly` 后端进行 GGM 样本量规划：
 

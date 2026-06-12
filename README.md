@@ -350,9 +350,8 @@ mlvar_fit$nodes
 power <- NetworkPower(
   nodes = 8,
   density = 0.30,
-  sample_sizes = c(100, 200, 400),
   replications = 100,
-  target_metric = "sensitivity",
+  target_metric = "mcc",
   target_value = 0.60,
   target_probability = 0.80
 )
@@ -361,6 +360,13 @@ summary(power)
 plot(power)
 quicknet_report(power)$text
 ```
+
+If `sample_sizes = NULL`, `NetworkPower()` generates an adaptive candidate
+grid from the number of nodes. The default target metric is `mcc`, which is
+more balanced than sensitivity alone because it penalizes both false negatives
+and false positives. If you explicitly use `target_metric = "sensitivity"`,
+interpret the recommendation as optimistic unless specificity or false-positive
+control is also reported.
 
 For `powerly`-based GGM planning:
 
