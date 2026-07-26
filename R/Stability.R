@@ -1,4 +1,4 @@
-#' @title estimate the edge weight and node stability of a network.
+#' @title Estimate edge-weight and node stability of a network
 #' @importFrom bootnet bootnet corStability
 #' @param data a data frame or \code{quicknet_fit} object.
 #' @param nboot number of bootstraps.
@@ -46,7 +46,17 @@
 
 Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = 0.5, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, case.drop = c(0.10, 0.25, 0.50), add.bridge = FALSE, communities = NULL, useCommunities = 'all', cor = 0.7){
 
-  if (!is.logical(add.bridge)) {
+  if (!quicknet_is_positive_integer(nboot)) {
+    stop("nboot must be a positive integer.", call. = FALSE)
+  }
+  if (!quicknet_is_positive_integer(ncore)) {
+    stop("ncore must be a positive integer.", call. = FALSE)
+  }
+  if (!is.numeric(case.drop) || length(case.drop) == 0 ||
+      any(!is.finite(case.drop)) || any(case.drop <= 0 | case.drop >= 1)) {
+    stop("case.drop must contain finite proportions in (0, 1).", call. = FALSE)
+  }
+  if (!is.logical(add.bridge) || length(add.bridge) != 1 || is.na(add.bridge)) {
     stop('Error: add.bridge should be logical.')
   }
 

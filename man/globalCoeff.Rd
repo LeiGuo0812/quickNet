@@ -2,7 +2,7 @@
 % Please edit documentation in R/globalCoeff.R
 \name{globalCoeff}
 \alias{globalCoeff}
-\title{Compute global coefficients of a net work.}
+\title{Compute global coefficients of a network}
 \usage{
 globalCoeff(x, list = FALSE)
 }
@@ -13,14 +13,15 @@ globalCoeff(x, list = FALSE)
 }
 \value{
 \itemize{
-\item{\code{globalStrength:} the global strength.}
-\item{\code{AGS:} the average of all the edge weights in the network. equals globalStrength/(N * (N-1)/2), where N is the number of nodes in the network.}
-\item{\code{ASPL:} the global average shortest path length.}
-\item{\code{CC:} the global clustering coefficient. The average clustering coefficient for each node in the network.}
+\item \code{globalStrength}: the global strength.
+\item \code{AGS}: the average of all the edge weights in the network. It
+equals globalStrength/(N * (N-1)/2), where N is the number of nodes.
+\item \code{ASPL}: the global average shortest path length.
+\item \code{CC}: the global clustering coefficient, averaged across nodes.
 }
 }
 \description{
-Compute global coefficients of a net work.
+Compute global coefficients of a network
 }
 \examples{
 

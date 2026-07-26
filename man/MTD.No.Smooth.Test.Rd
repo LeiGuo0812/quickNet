@@ -2,7 +2,7 @@
 % Please edit documentation in R/MTD.No.Smooth.Test.R
 \name{MTD.No.Smooth.Test}
 \alias{MTD.No.Smooth.Test}
-\title{Calculate coupling value with Multiplication of Temporal Derivatives method.}
+\title{Calculate coupling with the Multiplication of Temporal Derivatives method}
 \usage{
 MTD.No.Smooth.Test(data, nperm = 5000)
 }
@@ -13,13 +13,14 @@ MTD.No.Smooth.Test(data, nperm = 5000)
 }
 \value{
 A list. \itemize{
-\item{\code{coupling}: The coupling of the two columns in each observation.}
-\item{\code{coupling_mean}: The mean coupling value of all the observations, representing the overall coupling between the two columns.}
-\item{\code{p.value}: The p value of the coupling value from permutation test.}
+\item \code{coupling}: The coupling of the two columns in each observation.
+\item \code{coupling_mean}: The mean coupling value of all the observations,
+representing the overall coupling between the two columns.
+\item \code{p.value}: The permutation-test p value of the coupling.
 }
 }
 \description{
-Calculate coupling value with Multiplication of Temporal Derivatives method.
+Calculate coupling with the Multiplication of Temporal Derivatives method
 }
 \details{
 This function apply the method of Multiplication of Temporal Derivatives introduced by Shine, et al (2015). But note that this function doesn't apply time series smooth.
@@ -29,5 +30,5 @@ MTD.No.Smooth.Test(mtcars[,1:2])
 
 }
 \references{
-Shine, J. M., Koyejo, O., Bell, P. T., Gorgolewski, K. J., Gilat, M., & Poldrack, R. A. (2015). Estimation of dynamic functional connectivity using Multiplication of Temporal Derivatives. NeuroImage, 122, 399–407. https://doi.org/10.1016/j.neuroimage.2015.07.064
+Shine, J. M., Koyejo, O., Bell, P. T., Gorgolewski, K. J., Gilat, M., & Poldrack, R. A. (2015). Estimation of dynamic functional connectivity using Multiplication of Temporal Derivatives. NeuroImage, 122, 399-407. https://doi.org/10.1016/j.neuroimage.2015.07.064
 }

@@ -1,4 +1,4 @@
-#' @title get network plot from qgraph objects.
+#' @title Get network plot from qgraph objects
 #' @param network a qgraph object.
 #' @param prefix the prefix of output plot files.
 #' @param path the path of output files, can be either a relative or absolute path.
@@ -26,31 +26,16 @@ get_network_plot <- function(network, prefix = '', path = '.', device = 'pdf', w
     prefix <- paste0(prefix,'_')
   }
 
-  if (device == 'pdf') {
-    pdf(file = path_join(c(path,
-                           paste0(prefix,
-                                  'network_plot.pdf'))),
-        width = width,
-        height = height,
-        ...)
-
-    plot(network)
-
-    dev.off()
-
-  } else if (device == 'svg'){
-
-    svg(filename = path_join(c(path,
-                           paste0(prefix,
-                                  'network_plot.svg'))),
-        width = width,
-        height = height,
-        ...)
-
-    plot(network)
-
-    dev.off()
-  }
+  device <- match.arg(device, c("pdf", "svg"))
+  filename <- path_join(c(path, paste0(prefix, "network_plot.", device)))
+  quicknet_plot_to_device(
+    filename = filename,
+    device = device,
+    width = width,
+    height = height,
+    plot_function = function() plot(network),
+    ...
+  )
 
   if (get.matrix) {
     write.csv(quicknet_network_matrix(network), path_join(c(path,

@@ -19,38 +19,29 @@
 #' # back_to_matrix(NCT$einv.pvals)
 #'
 back_to_matrix <- function(x){
-  var <- unique(c(as.character(x$Var1),as.character(x$Var2)))
-
-  tested <- x %>%
-    dplyr::filter(!is.na(`p-value`))
-
-  tested_var <- unique(c(as.character(tested$Var1),as.character(tested$Var2)))
-
-  x %>%
-    spread('Var2','p-value') -> temp
-
-  temp[nrow(temp) + 1, 1]  <- var[-c(1:length(var)-1)]
-
-  temp[,var[1]] <- NA
-
-  temp %>%
-    select(Var1,var[1],everything()) %>%
-    select(-1) %>%
-    as.data.frame() %>%
-    `row.names<-`(temp$Var1) -> matrix
-
-  matrix[lower.tri(matrix,diag = T)]  <- 0
-
-  matrix <- matrix %>%
-
-   mutate(across(everything(), ~ as.numeric(.x)))
-
-  matrix + t(matrix) %>%
-    `diag<-`(NA_integer_) -> p_matrix
-
-  for (i in seq_along(tested_var)) {
-    p_matrix[tested_var[i],tested_var[i]] <- 1
+  required <- c("Var1", "Var2", "p-value")
+  if (!is.data.frame(x) || !all(required %in% names(x))) {
+    stop("x must be a data frame containing Var1, Var2, and p-value.", call. = FALSE)
   }
 
-  return(p_matrix)
+  variables <- unique(c(as.character(x$Var1), as.character(x$Var2)))
+  variables <- variables[!is.na(variables) & nzchar(variables)]
+  p_matrix <- matrix(
+    NA_real_,
+    length(variables),
+    length(variables),
+    dimnames = list(variables, variables)
+  )
+  if (length(variables) == 0) return(p_matrix)
+  diag(p_matrix) <- 1
+
+  for (i in seq_len(nrow(x))) {
+    node_i <- as.character(x$Var1[[i]])
+    node_j <- as.character(x$Var2[[i]])
+    if (node_i %in% variables && node_j %in% variables) {
+      value <- suppressWarnings(as.numeric(as.character(x$`p-value`[[i]])))
+      p_matrix[node_i, node_j] <- p_matrix[node_j, node_i] <- value
+    }
+  }
+  p_matrix
 }

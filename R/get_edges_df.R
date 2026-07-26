@@ -2,8 +2,8 @@
 #' @param net1 a network. Should be either the product of \code{qgraph} or \code{quickNet}.
 #' @param net2 alternative. a network. Should be either the product of \code{qgraph} or \code{quickNet}.
 #' @param method only works when net2 is provided. \itemize{
-#' \item{"union": return the edges that exist in net1 or net2, default.}
-#' \item{"intersect": return the edges that both exist in net1 and net2.}
+#' \item \code{"union"}: return the edges that exist in net1 or net2, default.
+#' \item \code{"intersect"}: return the edges that both exist in net1 and net2.
 #' }
 #' @param labels the name of each node. If provided, the nodes will be named by labels.
 #' @return a data frame with 3 columns. The vectors in from and to represent the node index.
@@ -19,12 +19,6 @@
 #'
 get_edges_df <- function(net1, net2 = NULL, method = 'union', labels = NULL) {
 
-  edges <- list(
-    from = NA,
-    to = NA,
-    weight = NA
-  )
-
   if (is.null(net2)) {
 
     edge_data <- quicknet_edgelist(
@@ -32,9 +26,7 @@ get_edges_df <- function(net1, net2 = NULL, method = 'union', labels = NULL) {
       directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
     ) %>% as.data.frame()
 
-    edges$from <- edge_data$from
-    edges$to <- edge_data$to
-    edges$weight <- edge_data$weight
+    edges <- edge_data[, c("from", "to", "weight"), drop = FALSE]
 
   } else {
 
@@ -58,29 +50,30 @@ get_edges_df <- function(net1, net2 = NULL, method = 'union', labels = NULL) {
       edge_data_combine <- rbind(edge_data1,edge_data2) %>%
         dplyr::filter(!duplicated(pair))
 
-      edges$from <- edge_data_combine$from
-      edges$to <- edge_data_combine$to
-      edges$weight <- edge_data_combine$weight
+      edges <- edge_data_combine[, c("from", "to", "weight"), drop = FALSE]
 
     } else if (method == 'intersect') {
 
       edge_data_intersect <- edge_data1 %>%
         dplyr::filter(pair %in% edge_data2$pair)
 
-      edges$from <- edge_data_intersect$from
-      edges$to <- edge_data_intersect$to
-      edges$weight <- edge_data_intersect$weight
+      edges <- edge_data_intersect[, c("from", "to", "weight"), drop = FALSE]
     }
   }
 
-  edges <- as.data.frame(edges)
-
-  edges_result <- edges
+  edges_result <- as.data.frame(edges)
 
   if (!is.null(labels)) {
-    for (i in 1:nrow(edges_result)) {
-      edges_result[i,'from'] <- labels[edges[i,'from']]
-      edges_result[i,'to'] <- labels[edges[i,'to']]
+    edge_indices <- c(edges_result$from, edges_result$to)
+    if (length(edge_indices) > 0 && (
+      any(!is.finite(edge_indices)) ||
+      any(edge_indices < 1 | edge_indices > length(labels))
+    )) {
+      stop("labels must contain one entry for every node index.", call. = FALSE)
+    }
+    for (i in seq_len(nrow(edges_result))) {
+      edges_result[i,'from'] <- labels[edges_result[i,'from']]
+      edges_result[i,'to'] <- labels[edges_result[i,'to']]
     }
   }
 

@@ -12,8 +12,8 @@ get_edges(net1, net2 = NULL, method = "union")
 \item{net2}{alternative. a network. Should be either the product of \code{qgraph} or \code{quickNet}.}
 
 \item{method}{only works when net2 is provided. \itemize{
-\item{"union": return the edges that exist in net1 or net2, default.}
-\item{"intersect": return the edges that both exist in net1 and net2.}
+\item \code{"union"}: return the edges that exist in net1 or net2, default.
+\item \code{"intersect"}: return the edges that both exist in net1 and net2.
 }}
 }
 \value{

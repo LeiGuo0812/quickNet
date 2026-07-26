@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_stability_plot.R
 \name{get_stability_plot}
 \alias{get_stability_plot}
-\title{get stability plot from stability results.}
+\title{Get stability plot from stability results}
 \usage{
 get_stability_plot(
   stability,
@@ -36,7 +36,7 @@ get_stability_plot(
 four plot files will be output to the specified path, if the bridge stability is calculated, the outputs will also contain the bridge stability plot.
 }
 \description{
-get stability plot from stability results.
+Get stability plot from stability results
 }
 \examples{
 data('mtcars')

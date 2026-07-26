@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_centrality_plot.R
 \name{get_centrality_plot}
 \alias{get_centrality_plot}
-\title{get network plot from stability results.}
+\title{Get centrality plot from centrality results}
 \usage{
 get_centrality_plot(
   centrality,

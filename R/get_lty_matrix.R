@@ -1,4 +1,4 @@
-#' Change network linetype based on group/community.
+#' Change network linetype based on group/community
 #'
 #' @param data The data frame used to construct the data
 #' @param group The group information defining the community of nodes (must be a list.)
@@ -18,8 +18,8 @@
 #'
 get_lty_matrix = function(data, group, inner_type = 1, outer_type = 2) {
   lty_matrix = matrix(nrow = ncol(data), ncol = ncol(data))
-  for (i in 1:nrow(lty_matrix)) {
-    for (j in 1:ncol(lty_matrix)) {
+  for (i in seq_len(nrow(lty_matrix))) {
+    for (j in seq_len(ncol(lty_matrix))) {
       if (i!=j) {
         same_group = sapply(group, function(x) {
           return(i %in% x & j %in% x)

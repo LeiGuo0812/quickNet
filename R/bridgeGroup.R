@@ -1,4 +1,4 @@
-#' Get new groups that bridge nodes are in a single group.
+#' Get new groups that bridge nodes are in a single group
 #' @importFrom forcats fct_relevel
 #' @importFrom magrittr %>%
 #' @importFrom stringr str_match

@@ -22,11 +22,20 @@
 #' Bridge <- Bridge(quickNet(mtcars), communities = list(c1 = 1:5, c2 = 6:11))
 #'
 Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 'basic', normalize = T,...){
+  if (!is.character(include) || length(include) == 0 || anyNA(include)) {
+    stop("include must be a non-missing character vector.", call. = FALSE)
+  }
 
   results <- list()
 
   bridge_input <- if (inherits(net_G, "quicknet_fit") && !is.null(net_G$plots$network)) {
     net_G$plots$network
+  } else if (inherits(net_G, "quicknet_fit") && isTRUE(net_G$meta$directed)) {
+    qgraph::qgraph(
+      quicknet_to_qgraph_matrix(quicknet_network_matrix(net_G), directed = TRUE),
+      directed = TRUE,
+      DoNotPlot = TRUE
+    )
   } else {
     quicknet_network_matrix(net_G)
   }
@@ -39,11 +48,11 @@ Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 
     `colnames<-`(names(bridge_data)) %>%
     mutate(nodes = rownames(.)))
 
-  if (include %in% c('all', 'All')){
+  if (length(include) == 1 && tolower(include) == "all"){
     plot_data <- plot_data
   }
 
-  else if (include == 'basic') {
+  else if (length(include) == 1 && include == 'basic') {
     plot_data <- plot_data %>%
       select(-c(`Bridge Expected Influence (1-step)`,
                        `Bridge Expected Influence (2-step)`))

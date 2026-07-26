@@ -21,9 +21,11 @@ netCor(x1, x2, nperm = 1000, graph = TRUE, alternative = "two.sided", ...)
 }
 \value{
 \itemize{
-\item{\code{z.stat:} 	the Z-statistic (sum of rows*columns of lower triangle) of the data matrices.}
-\item{\code{p:} P-value (quantile of the observed Z-statistic in the permutation distribution).}
-\item{\code{alternative:} the alternative hypothesis.}
+\item \code{z.stat}: the Z-statistic (sum of row-column products in the
+lower triangle) of the data matrices.
+\item \code{p}: P-value (quantile of the observed Z-statistic in the
+permutation distribution).
+\item \code{alternative}: the alternative hypothesis.
 }
 }
 \description{

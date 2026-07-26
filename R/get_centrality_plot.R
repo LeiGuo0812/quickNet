@@ -1,4 +1,4 @@
-#' @title get network plot from stability results.
+#' @title Get centrality plot from centrality results
 #' @description a wrapper function of \code{ggplot2::ggsave}
 #' @importFrom stringr str_sub
 #' @importFrom dplyr select contains mutate everything

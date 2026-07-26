@@ -32,8 +32,17 @@ quicknet_fit <- function(model,
   })
 
   default_network <- networks[[1]]
-  edge_table <- if (is.null(edges)) quicknet_edge_table(default_network) else edges
-  node_table <- if (is.null(nodes)) quicknet_node_table(default_network) else nodes
+  default_directed <- quicknet_network_summary_is_directed(model, meta, names(networks)[[1]])
+  edge_table <- if (is.null(edges)) {
+    quicknet_edge_table(default_network, directed = default_directed)
+  } else {
+    edges
+  }
+  node_table <- if (is.null(nodes)) {
+    if (default_directed) quicknet_directed_node_table(default_network) else quicknet_node_table(default_network)
+  } else {
+    nodes
+  }
   summary_table <- if (is.null(network_summary)) {
     quicknet_network_summary_list(networks, model = model, meta = meta)
   } else {
@@ -53,7 +62,7 @@ quicknet_fit <- function(model,
       network_summary = summary_table,
       graph = default_network,
       graphData = list(graph = default_network),
-      Edgelist = quicknet_edgelist(default_network, directed = isTRUE(meta$directed))
+      Edgelist = quicknet_edgelist(default_network, directed = default_directed)
     ),
     class = "quicknet_fit"
   )
@@ -82,7 +91,13 @@ summary.quicknet_fit <- function(object, ...) {
 #' @export
 plot.quicknet_fit <- function(x, network = "default", ...) {
   mat <- quicknet_network_matrix(x, network = network)
-  qgraph::qgraph(mat, ...)
+  directed <- quicknet_network_summary_is_directed(x$model, x$meta, network)
+  args <- list(...)
+  if (is.null(args$directed)) args$directed <- directed
+  do.call(
+    qgraph::qgraph,
+    c(list(quicknet_to_qgraph_matrix(mat, directed = directed)), args)
+  )
 }
 
 quicknet_network_summary <- function(weight_matrix, threshold = 1e-10, directed = FALSE) {
@@ -94,7 +109,7 @@ quicknet_network_summary <- function(weight_matrix, threshold = 1e-10, directed 
     nodes = ncol(mat),
     possible_edges = length(values),
     nonzero_edges = sum(nonzero, na.rm = TRUE),
-    density = mean(nonzero, na.rm = TRUE),
+    density = if (length(nonzero) > 0) mean(nonzero, na.rm = TRUE) else 0,
     mean_abs_weight = ifelse(any(nonzero, na.rm = TRUE), mean(abs(values[nonzero]), na.rm = TRUE), 0),
     max_abs_weight = ifelse(any(nonzero, na.rm = TRUE), max(abs(values[nonzero]), na.rm = TRUE), 0),
     directed = directed,
@@ -113,9 +128,12 @@ quicknet_network_summary_list <- function(networks, model, meta, threshold = 1e-
 }
 
 quicknet_network_summary_is_directed <- function(model, meta, network_name) {
-  if (model %in% c("clpn", "panel_sem", "mixedVAR", "time_varying_mvar")) return(TRUE)
+  if (model %in% c("clpn", "mixedVAR", "time_varying_mvar")) return(TRUE)
+  if (model == "panel_sem") {
+    return(network_name %in% c("default", "cross_lagged"))
+  }
   if (model %in% c("graphicalVAR", "mlVAR", "psychonetrics_gvar", "ri_clpm", "panel_gvar", "panel_var", "meta_gvar")) {
-    return(network_name %in% c("default", "temporal", "cross_lagged"))
+    return(quicknet_longitudinal_network_is_directed(network_name))
   }
   isTRUE(meta$directed)
 }
@@ -162,13 +180,13 @@ quicknet_edge_table <- function(weight_matrix,
   }
 
   out <- data.frame(
-    network = network,
+    network = rep(network, nrow(index)),
     from = node_names[index[, "col"]],
     to = node_names[index[, "row"]],
     from_index = index[, "col"],
     to_index = index[, "row"],
     weight = mat[index],
-    directed = directed,
+    directed = rep(directed, nrow(index)),
     stringsAsFactors = FALSE
   )
   out$abs_weight <- abs(out$weight)
@@ -242,7 +260,7 @@ quicknet_continuous_predictability <- function(data) {
     model_data <- dat[, c(target, predictors), drop = FALSE]
     model_data <- model_data[stats::complete.cases(model_data), , drop = FALSE]
     if (nrow(model_data) < length(predictors) + 5) next
-    fit <- stats::lm(stats::as.formula(paste(target, "~", paste(predictors, collapse = " + "))), data = model_data)
+    fit <- stats::lm(quicknet_additive_formula(target, predictors), data = model_data)
     out$predictability_R2[out$node == target] <- summary(fit)$r.squared
   }
   out
@@ -263,7 +281,11 @@ quicknet_binary_predictability <- function(data) {
     model_data <- model_data[stats::complete.cases(model_data), , drop = FALSE]
     if (nrow(model_data) < length(predictors) + 10 || length(unique(model_data[[target]])) != 2) next
     fit <- tryCatch(
-      stats::glm(stats::as.formula(paste(target, "~", paste(predictors, collapse = " + "))), data = model_data, family = stats::binomial()),
+      stats::glm(
+        quicknet_additive_formula(target, predictors),
+        data = model_data,
+        family = stats::binomial()
+      ),
       error = function(e) NULL
     )
     if (is.null(fit)) next
@@ -392,11 +414,16 @@ quicknet_fit_cross_sectional <- function(data,
       types <- rep("g", ncol(dat))
     }
     if (is.null(levels)) {
-      levels <- ifelse(types == "g", 1L, vapply(dat, function(x) length(unique(x)), integer(1)))
+      levels <- ifelse(
+        types == "c",
+        vapply(dat, function(x) length(unique(x)), integer(1)),
+        1L
+      )
     }
     if (length(types) != ncol(dat) || length(levels) != ncol(dat)) {
       stop("types and levels must have one entry per network variable.", call. = FALSE)
     }
+    quicknet_dynamic_validate(dat, node_names, types, levels)
     fit <- mgm::mgm(
       data = as.matrix(dat),
       type = types,
@@ -410,7 +437,7 @@ quicknet_fit_cross_sectional <- function(data,
       signInfo = FALSE,
       warnings = FALSE
     )
-    mat <- as.matrix(fit$pairwise$wadj)
+    mat <- quicknet_apply_signs(fit$pairwise$wadj, fit$pairwise$signs)
   }
 
   diag(mat) <- 0
@@ -495,24 +522,25 @@ quicknet_bootstrap_edge_stability <- function(fit,
     }
     edge_values[boot_index, ] <- boot_fit$graph[edge_index]
   }
+  quicknet_check_failed_iterations(failed, "edge bootstrap replications")
 
   original_values <- original[edge_index]
   out <- data.frame(
     node_i = node_names[edge_index[, "row"]],
     node_j = node_names[edge_index[, "col"]],
     original_weight = original_values,
-    bootstrap_mean = colMeans(edge_values, na.rm = TRUE),
-    bootstrap_sd = apply(edge_values, 2, stats::sd, na.rm = TRUE),
-    ci_lower = apply(edge_values, 2, stats::quantile, probs = 0.025, na.rm = TRUE),
-    ci_upper = apply(edge_values, 2, stats::quantile, probs = 0.975, na.rm = TRUE),
-    selection_rate = colMeans(abs(edge_values) > threshold, na.rm = TRUE),
+    bootstrap_mean = apply(edge_values, 2, quicknet_safe_mean),
+    bootstrap_sd = apply(edge_values, 2, quicknet_safe_sd),
+    ci_lower = apply(edge_values, 2, quicknet_safe_quantile, probability = 0.025),
+    ci_upper = apply(edge_values, 2, quicknet_safe_quantile, probability = 0.975),
+    selection_rate = apply(abs(edge_values) > threshold, 2, quicknet_safe_mean),
     valid_bootstraps = colSums(is.finite(edge_values)),
     failed_bootstraps = sum(failed),
     stringsAsFactors = FALSE
   )
   out$sign_stability <- vapply(seq_along(original_values), function(edge_id) {
     if (abs(original_values[edge_id]) <= threshold) return(NA_real_)
-    mean(sign(edge_values[, edge_id]) == sign(original_values[edge_id]), na.rm = TRUE)
+    quicknet_safe_mean(sign(edge_values[, edge_id]) == sign(original_values[edge_id]))
   }, numeric(1))
   out[order(-abs(out$original_weight), -out$selection_rate), , drop = FALSE]
 }
@@ -534,6 +562,7 @@ quicknet_case_drop_centrality_stability <- function(fit,
   for (drop_proportion in proportions) {
     keep_n <- max(3, floor(nrow(data) * (1 - drop_proportion)))
     correlations <- matrix(NA_real_, nrow = nboot, ncol = length(statistics), dimnames = list(NULL, statistics))
+    failed <- logical(nboot)
 
     for (boot_index in seq_len(nboot)) {
       sampled_rows <- sample(seq_len(nrow(data)), keep_n, replace = FALSE)
@@ -541,7 +570,10 @@ quicknet_case_drop_centrality_stability <- function(fit,
         quicknet_refit_like(data[sampled_rows, , drop = FALSE], fit),
         error = function(e) NULL
       )
-      if (is.null(boot_fit) || !all(dim(boot_fit$graph) == dim(fit$graph))) next
+      if (is.null(boot_fit) || !all(dim(boot_fit$graph) == dim(fit$graph))) {
+        failed[boot_index] <- TRUE
+        next
+      }
 
       boot_centrality <- quicknet_node_table(boot_fit$graph)
       for (statistic in statistics) {
@@ -551,6 +583,10 @@ quicknet_case_drop_centrality_stability <- function(fit,
         correlations[boot_index, statistic] <- stats::cor(original_values, boot_values, use = "complete.obs")
       }
     }
+    quicknet_check_failed_iterations(
+      failed,
+      paste0("case-drop replications at proportion ", drop_proportion)
+    )
 
     for (statistic in statistics) {
       values <- correlations[, statistic]
@@ -559,6 +595,7 @@ quicknet_case_drop_centrality_stability <- function(fit,
         proportion_dropped = drop_proportion,
         statistic = statistic,
         bootstrap_reps = nboot,
+        failed_reps = sum(failed),
         valid_reps = length(finite_values),
         median_correlation = ifelse(length(finite_values) > 0, stats::median(finite_values), NA_real_),
         q05_correlation = ifelse(length(finite_values) > 0, stats::quantile(finite_values, 0.05), NA_real_),
@@ -607,14 +644,14 @@ quicknet_matrix_bootstrap_summary <- function(original_matrix,
 
   original_values <- original[edge_index]
   out$original_weight <- original_values
-  out$bootstrap_mean <- colMeans(values, na.rm = TRUE)
-  out$bootstrap_sd <- apply(values, 2, stats::sd, na.rm = TRUE)
-  out$ci_lower <- apply(values, 2, stats::quantile, probs = 0.025, na.rm = TRUE)
-  out$ci_upper <- apply(values, 2, stats::quantile, probs = 0.975, na.rm = TRUE)
-  out$selection_rate <- colMeans(abs(values) > threshold, na.rm = TRUE)
+  out$bootstrap_mean <- apply(values, 2, quicknet_safe_mean)
+  out$bootstrap_sd <- apply(values, 2, quicknet_safe_sd)
+  out$ci_lower <- apply(values, 2, quicknet_safe_quantile, probability = 0.025)
+  out$ci_upper <- apply(values, 2, quicknet_safe_quantile, probability = 0.975)
+  out$selection_rate <- apply(abs(values) > threshold, 2, quicknet_safe_mean)
   out$sign_stability <- vapply(seq_along(original_values), function(edge_id) {
     if (abs(original_values[edge_id]) <= threshold) return(NA_real_)
-    mean(sign(values[, edge_id]) == sign(original_values[edge_id]), na.rm = TRUE)
+    quicknet_safe_mean(sign(values[, edge_id]) == sign(original_values[edge_id]))
   }, numeric(1))
   out$valid_bootstraps <- colSums(is.finite(values))
   out$failed_bootstraps <- failed_bootstraps

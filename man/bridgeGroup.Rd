@@ -2,7 +2,7 @@
 % Please edit documentation in R/bridgeGroup.R
 \name{bridgeGroup}
 \alias{bridgeGroup}
-\title{Get new groups that bridge nodes are in a single group.}
+\title{Get new groups that bridge nodes are in a single group}
 \usage{
 bridgeGroup(bridge, groups, labels = NULL, n = 1, by_group = TRUE)
 }
@@ -21,7 +21,7 @@ bridgeGroup(bridge, groups, labels = NULL, n = 1, by_group = TRUE)
 A factor, can be used as new \code{groups} parameter in \code{quickNet::quickNet}
 }
 \description{
-Get new groups that bridge nodes are in a single group.
+Get new groups that bridge nodes are in a single group
 }
 \examples{
 data('mtcars')

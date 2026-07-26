@@ -9,9 +9,11 @@
 #' @param ... further arguments to be passed to plot() (to add a title, change the axis labels, and so on).
 #' @details The function calculates a Z-statistic for the Mantel test, equal to the sum of the pairwise product of the lower triangles of the permuted matrices, for each permutation of rows and columns. It compares the permuted distribution with the Z-statistic observed for the actual data.
 #' @return \itemize{
-#' \item{\code{z.stat:} 	the Z-statistic (sum of rows*columns of lower triangle) of the data matrices.}
-#' \item{\code{p:} P-value (quantile of the observed Z-statistic in the permutation distribution).}
-#' \item{\code{alternative:} the alternative hypothesis.}
+#' \item \code{z.stat}: the Z-statistic (sum of row-column products in the
+#' lower triangle) of the data matrices.
+#' \item \code{p}: P-value (quantile of the observed Z-statistic in the
+#' permutation distribution).
+#' \item \code{alternative}: the alternative hypothesis.
 #' }
 #' @export
 #'

@@ -42,7 +42,7 @@ LongitudinalNet(
 
 \item{centerWithin}{Should variables be person-mean centered?}
 
-\item{lags}{Number of lags used by \code{mlVAR}.}
+\item{lags}{Positive integer vector of lags used by \code{mlVAR}.}
 
 \item{estimator}{Estimator used by \code{mlVAR}.}
 
@@ -55,7 +55,10 @@ LongitudinalNet(
 \item{...}{Additional arguments passed to the selected backend.}
 }
 \value{
-A \code{quicknet_fit} object with \code{temporal}, \code{contemporaneous}, and \code{between} networks.
+A \code{quicknet_fit} object with temporal and contemporaneous
+networks. Backends that estimate a between-person layer also return
+\code{between}; multi-lag mlVAR fits additionally return
+\code{temporal_lag_*} layers.
 }
 \description{
 Estimate longitudinal ESM networks

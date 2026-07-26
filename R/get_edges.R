@@ -2,8 +2,8 @@
 #' @param net1 a network. Should be either the product of \code{qgraph} or \code{quickNet}.
 #' @param net2 alternative. a network. Should be either the product of \code{qgraph} or \code{quickNet}.
 #' @param method only works when net2 is provided. \itemize{
-#' \item{"union": return the edges that exist in net1 or net2, default.}
-#' \item{"intersect": return the edges that both exist in net1 and net2.}
+#' \item \code{"union"}: return the edges that exist in net1 or net2, default.
+#' \item \code{"intersect"}: return the edges that both exist in net1 and net2.
 #' }
 #'
 #' @return a list with n vectors of length 2. The vectors represent the node index. n is the number of edges. The result can be provided to the \code{edges} parameter of \code{NetCompare} or \code{NCT} to specify the edges that you want to test.
@@ -26,11 +26,9 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
       directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
     ) %>% as.data.frame()
 
-    edges <- list()
-
-    for (i in seq(nrow(edge_data))) {
-      edges[[i]] <- c(edge_data$from[i],edge_data$to[i])
-    }
+    edges <- lapply(seq_len(nrow(edge_data)), function(i) {
+      c(edge_data$from[[i]], edge_data$to[[i]])
+    })
 
     } else {
 
@@ -54,22 +52,18 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
           edge_data_combine <- rbind(edge_data1,edge_data2) %>%
             dplyr::filter(!duplicated(pair))
 
-          edges <- list()
-
-          for (i in seq(nrow(edge_data_combine))) {
-            edges[[i]] <- c(edge_data_combine$from[i],edge_data_combine$to[i])
-          }
+          edges <- lapply(seq_len(nrow(edge_data_combine)), function(i) {
+            c(edge_data_combine$from[[i]], edge_data_combine$to[[i]])
+          })
 
         } else if (method == 'intersect') {
 
             edge_data_intersect <- edge_data1 %>%
               dplyr::filter(pair %in% edge_data2$pair)
 
-            edges <- list()
-
-            for (i in seq(nrow(edge_data_intersect))) {
-              edges[[i]] <- c(edge_data_intersect$from[i],edge_data_intersect$to[i])
-          }
+            edges <- lapply(seq_len(nrow(edge_data_intersect)), function(i) {
+              c(edge_data_intersect$from[[i]], edge_data_intersect$to[[i]])
+            })
         }
   }
   return(edges)

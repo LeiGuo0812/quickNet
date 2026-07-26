@@ -1,4 +1,4 @@
-#' @title get bridge plot from bridge results.
+#' @title Get bridge plot from bridge results
 #' @description a wrapper function of \code{ggplot2::ggsave}
 #' @importFrom stringr str_sub
 #' @importFrom dplyr select contains mutate everything

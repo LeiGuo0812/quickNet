@@ -56,7 +56,8 @@ ConfirmatoryNet <- function(data,
     omega = omega,
     sigma = sigma,
     kappa = kappa,
-    rho = rho
+    rho = rho,
+    missing = missing
   )
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
@@ -65,7 +66,7 @@ ConfirmatoryNet <- function(data,
     stop("Missing variables: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
   dat <- dat[, vars, drop = FALSE]
-  dat <- quicknet_complete_numeric_data(dat, missing = "listwise")
+  dat <- quicknet_complete_numeric_data(dat, missing = quicknet_missing_mode(missing))
   node_names <- colnames(dat)
   fit <- quicknet_confirmatory_psychonetrics_fit(
     dat = dat,
@@ -253,7 +254,7 @@ LatentNet <- function(data,
   psychonetrics_models <- c("lvm", "lnm", "rnm", "lrnm")
   if (length(model) == 1 && model %in% psychonetrics_models) {
     identification <- match.arg(identification)
-    quicknet_validate_input(data, model = model, vars = vars, lambda = lambda)
+    quicknet_validate_input(data, model = model, vars = vars, lambda = lambda, missing = missing)
     return(quicknet_psychonetrics_latent_fit(
       data = data,
       model = model,
@@ -270,7 +271,13 @@ LatentNet <- function(data,
   if (!requireNamespace("lavaan", quietly = TRUE)) {
     stop("Package 'lavaan' is required for LatentNet().", call. = FALSE)
   }
-  quicknet_validate_input(data, model = "latent_network", vars = vars, syntax = model)
+  quicknet_validate_input(
+    data,
+    model = "latent_network",
+    vars = vars,
+    syntax = model,
+    missing = missing
+  )
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
   missing_cols <- setdiff(vars, colnames(dat))
@@ -278,7 +285,7 @@ LatentNet <- function(data,
     stop("Missing variables: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
   dat <- dat[, vars, drop = FALSE]
-  dat <- quicknet_complete_numeric_data(dat, missing = "listwise")
+  dat <- quicknet_complete_numeric_data(dat, missing = quicknet_missing_mode(missing))
 
   fit <- lavaan::cfa(model = model, data = dat, std.lv = std.lv, missing = missing, ...)
   latent <- as.matrix(lavaan::lavInspect(fit, "cor.lv"))
@@ -337,7 +344,7 @@ quicknet_psychonetrics_latent_fit <- function(data,
     stop("Missing variables: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
   dat <- dat[, vars, drop = FALSE]
-  dat <- quicknet_complete_numeric_data(dat, missing = "listwise")
+  dat <- quicknet_complete_numeric_data(dat, missing = quicknet_missing_mode(missing))
   lambda <- as.matrix(lambda)
   if (is.null(rownames(lambda))) rownames(lambda) <- vars
   if (is.null(latents)) {
@@ -486,7 +493,15 @@ PanelSEMNet <- function(data,
   if (!requireNamespace("lavaan", quietly = TRUE)) {
     stop("Package 'lavaan' is required for PanelSEMNet().", call. = FALSE)
   }
-  quicknet_validate_input(data, model = "panel_sem", nodes = nodes, waves = waves, id = id, prefix = prefix)
+  quicknet_validate_input(
+    data,
+    model = "panel_sem",
+    nodes = nodes,
+    waves = waves,
+    id = id,
+    prefix = prefix,
+    missing = missing
+  )
   if (length(waves) < 2) {
     stop("At least two waves are required for PanelSEMNet().", call. = FALSE)
   }
@@ -498,7 +513,9 @@ PanelSEMNet <- function(data,
   }
   if (!id %in% colnames(dat)) dat[[id]] <- seq_len(nrow(dat))
   dat <- dat[, c(id, required_columns), drop = FALSE]
-  dat <- dat[stats::complete.cases(dat), , drop = FALSE]
+  if (identical(quicknet_missing_mode(missing), "listwise")) {
+    dat <- dat[stats::complete.cases(dat), , drop = FALSE]
+  }
   if (standardize) {
     dat[required_columns] <- lapply(dat[required_columns], function(x) as.numeric(scale(x)))
   }
@@ -510,17 +527,58 @@ PanelSEMNet <- function(data,
   mat <- quicknet_panel_sem_matrix(path_table, nodes, waves, prefix)
   cross_lagged <- mat
   diag(cross_lagged) <- 0
-  edge_table <- quicknet_edge_table(mat, directed = TRUE, drop_zero = FALSE, include_diag = TRUE)
-  edge_table$edge_type <- ifelse(edge_table$from == edge_table$to, "autoregressive", "cross_lagged")
-  node_table <- quicknet_directed_node_table(mat)
+  networks <- list(default = mat, cross_lagged = cross_lagged)
+  edge_table <- quicknet_edge_table(
+    mat,
+    directed = TRUE,
+    drop_zero = FALSE,
+    include_diag = TRUE
+  )
+  edge_table$edge_type <- ifelse(
+    edge_table$from == edge_table$to,
+    "autoregressive",
+    "cross_lagged"
+  )
+  node_tables <- list(quicknet_directed_node_table(mat))
+  residual_paths <- parameters[
+    parameters$op == "~~" & parameters$lhs != parameters$rhs,
+    c("lhs", "rhs", "est.std", "se", "z", "pvalue"),
+    drop = FALSE
+  ]
+  contemporaneous <- NULL
+  if (isTRUE(residual_cov)) {
+    contemporaneous <- quicknet_panel_sem_contemporaneous(
+      residual_paths,
+      nodes,
+      waves,
+      prefix
+    )
+    networks$contemporaneous <- contemporaneous
+    contemporaneous_edges <- quicknet_edge_table(
+      contemporaneous,
+      network = "contemporaneous",
+      directed = FALSE,
+      drop_zero = FALSE
+    )
+    contemporaneous_edges$edge_type <- "contemporaneous"
+    edge_table <- quicknet_bind_rows_fill(edge_table, contemporaneous_edges)
+    node_tables[[length(node_tables) + 1]] <-
+      quicknet_node_table(contemporaneous, network = "contemporaneous")
+  }
 
   quicknet_fit(
     model = "panel_sem",
     data = dat,
-    networks = list(default = mat, cross_lagged = cross_lagged),
+    networks = networks,
     edges = edge_table,
-    nodes = node_table,
-    fit = list(model = fit, fit_indices = quicknet_lavaan_fit_indices(fit), paths = path_table, syntax = syntax),
+    nodes = do.call(quicknet_bind_rows_fill, node_tables),
+    fit = list(
+      model = fit,
+      fit_indices = quicknet_lavaan_fit_indices(fit),
+      paths = path_table,
+      residual_paths = residual_paths,
+      syntax = syntax
+    ),
     meta = list(
       data_type = "panel",
       directed = TRUE,
@@ -574,7 +632,11 @@ quicknet_lavaan_residual_network <- function(fit, dat) {
   residual_matrix <- matrix(NA_real_, nrow = nrow(dat), ncol = length(item_names), dimnames = list(NULL, item_names))
   for (item in item_names) {
     regression_data <- cbind(item_value = dat[[item]], factor_scores)
-    residual_matrix[, item] <- stats::resid(stats::lm(item_value ~ ., data = regression_data))
+    residual_matrix[, item] <- stats::resid(stats::lm(
+      item_value ~ .,
+      data = regression_data,
+      na.action = stats::na.exclude
+    ))
   }
   out <- stats::cor(residual_matrix, use = "pairwise.complete.obs")
   out <- quicknet_make_positive_definite(out)
@@ -612,15 +674,40 @@ quicknet_panel_sem_matrix <- function(path_table, nodes, waves, prefix) {
   mat <- matrix(0, length(nodes), length(nodes), dimnames = list(nodes, nodes))
   for (from_node in nodes) {
     for (to_node in nodes) {
-      rows <- path_table[
-        grepl(paste0("^", to_node, prefix, "(", paste(waves[-1], collapse = "|"), ")$"), path_table$lhs) &
-          grepl(paste0("^", from_node, prefix, "(", paste(waves[-length(waves)], collapse = "|"), ")$"), path_table$rhs),
-        ,
-        drop = FALSE
-      ]
+      expected_lhs <- paste0(to_node, prefix, waves[-1])
+      expected_rhs <- paste0(from_node, prefix, waves[-length(waves)])
+      rows <- path_table[path_table$lhs %in% expected_lhs & path_table$rhs %in% expected_rhs, , drop = FALSE]
       if (nrow(rows) > 0) {
         mat[to_node, from_node] <- mean(rows$est.std, na.rm = TRUE)
       }
+    }
+  }
+  mat
+}
+
+quicknet_panel_sem_contemporaneous <- function(residual_paths, nodes, waves, prefix) {
+  mat <- matrix(0, length(nodes), length(nodes), dimnames = list(nodes, nodes))
+  if (nrow(residual_paths) == 0 || length(nodes) < 2) return(mat)
+
+  residual_waves <- waves[-1]
+  for (node_i_index in seq_len(length(nodes) - 1)) {
+    for (node_j_index in seq.int(node_i_index + 1, length(nodes))) {
+      node_i <- nodes[[node_i_index]]
+      node_j <- nodes[[node_j_index]]
+      values <- numeric()
+      for (wave in residual_waves) {
+        name_i <- paste0(node_i, prefix, wave)
+        name_j <- paste0(node_j, prefix, wave)
+        rows <- residual_paths[
+          (residual_paths$lhs == name_i & residual_paths$rhs == name_j) |
+            (residual_paths$lhs == name_j & residual_paths$rhs == name_i),
+          ,
+          drop = FALSE
+        ]
+        if (nrow(rows) > 0) values <- c(values, rows$est.std)
+      }
+      value <- quicknet_safe_mean(values)
+      mat[node_i, node_j] <- mat[node_j, node_i] <- value
     }
   }
   mat

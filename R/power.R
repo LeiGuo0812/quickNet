@@ -48,6 +48,19 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
   method <- match.arg(method)
   target_metric <- match.arg(target_metric)
   estimator <- match.arg(estimator)
+  if (!quicknet_is_positive_integer(nodes) || nodes < 3) {
+    stop("nodes must be an integer of at least 3.", call. = FALSE)
+  }
+  if (!is.numeric(target_probability) || length(target_probability) != 1 ||
+      !is.finite(target_probability) || target_probability < 0 || target_probability > 1) {
+    stop("target_probability must be a finite number in [0, 1].", call. = FALSE)
+  }
+  if (!is.numeric(target_value) || length(target_value) != 1 || !is.finite(target_value)) {
+    stop("target_value must be a finite number.", call. = FALSE)
+  }
+  if (!is.numeric(gamma) || length(gamma) != 1 || !is.finite(gamma) || gamma < 0) {
+    stop("gamma must be a non-negative finite number.", call. = FALSE)
+  }
   sample_sizes <- quicknet_power_resolve_sample_sizes(sample_sizes, nodes)
   quicknet_validate_input(
     model = "power",
@@ -99,7 +112,8 @@ print.quicknet_power <- function(x, ...) {
   cat("<quicknet_power>\n")
   cat("Method: ", x$method, "\n", sep = "")
   cat("Model: ", x$model, "\n", sep = "")
-  if (!is.null(x$recommendation$recommended_n)) {
+  if (!is.null(x$recommendation$recommended_n) &&
+      is.finite(x$recommendation$recommended_n[[1]])) {
     cat("Recommended N: ", x$recommendation$recommended_n, "\n", sep = "")
   } else {
     cat("Recommended N: not reached in evaluated range\n")
@@ -212,6 +226,7 @@ quicknet_power_monte_carlo <- function(nodes,
   }
 
   results <- do.call(rbind, rows)
+  quicknet_check_failed_iterations(results$failed, "Monte Carlo replications")
   summary <- quicknet_power_summary(results, target_metric, target_value)
   recommendation <- quicknet_power_recommend(summary, target_probability)
   settings <- list(
@@ -306,18 +321,40 @@ quicknet_power_powerly <- function(nodes,
 }
 
 quicknet_power_validate_design <- function(nodes, density, positive, edge_strength, sample_sizes, replications) {
-  if (nodes < 3) stop("nodes must be at least 3.", call. = FALSE)
-  if (density <= 0 || density > 1) stop("density must be in (0, 1].", call. = FALSE)
-  if (positive < 0 || positive > 1) stop("positive must be in [0, 1].", call. = FALSE)
-  if (length(edge_strength) != 2 || any(edge_strength <= 0) || edge_strength[[1]] > edge_strength[[2]]) {
+  if (!quicknet_is_positive_integer(nodes) || nodes < 3) {
+    stop("nodes must be an integer of at least 3.", call. = FALSE)
+  }
+  if (!is.numeric(density) || length(density) != 1 || !is.finite(density) ||
+      density <= 0 || density > 1) {
+    stop("density must be a finite number in (0, 1].", call. = FALSE)
+  }
+  if (!is.numeric(positive) || length(positive) != 1 || !is.finite(positive) ||
+      positive < 0 || positive > 1) {
+    stop("positive must be a finite number in [0, 1].", call. = FALSE)
+  }
+  if (!is.numeric(edge_strength) || length(edge_strength) != 2 ||
+      any(!is.finite(edge_strength)) || any(edge_strength <= 0) ||
+      edge_strength[[1]] > edge_strength[[2]]) {
     stop("edge_strength must be a positive length-2 range.", call. = FALSE)
   }
-  if (any(sample_sizes < 5)) stop("sample_sizes must be at least 5.", call. = FALSE)
-  if (replications < 1) stop("replications must be at least 1.", call. = FALSE)
+  if (!is.numeric(sample_sizes) || length(sample_sizes) == 0 ||
+      any(!is.finite(sample_sizes)) ||
+      any(vapply(sample_sizes, function(x) !quicknet_is_positive_integer(x), logical(1))) ||
+      any(sample_sizes < 5)) {
+    stop("sample_sizes must contain positive integers of at least 5.", call. = FALSE)
+  }
+  if (!quicknet_is_positive_integer(replications)) {
+    stop("replications must be a positive integer.", call. = FALSE)
+  }
 }
 
 quicknet_power_resolve_sample_sizes <- function(sample_sizes, nodes) {
   if (!is.null(sample_sizes)) {
+    if (!is.numeric(sample_sizes) || length(sample_sizes) == 0 ||
+        any(!is.finite(sample_sizes)) ||
+        any(vapply(sample_sizes, function(x) !quicknet_is_positive_integer(x), logical(1)))) {
+      stop("sample_sizes must contain positive integers.", call. = FALSE)
+    }
     return(sort(unique(as.integer(sample_sizes))))
   }
   quicknet_power_default_sample_sizes(nodes)
@@ -458,12 +495,12 @@ quicknet_power_summary <- function(results, target_metric, target_value) {
       replications = nrow(subset),
       failed_replications = sum(subset$failed %in% TRUE, na.rm = TRUE),
       achieved_probability = quicknet_power_achieved_probability(subset[[target_metric]], target_metric, target_value),
-      mean_estimated_nonzero_edges = mean(subset$estimated_nonzero_edges, na.rm = TRUE),
+      mean_estimated_nonzero_edges = quicknet_safe_mean(subset$estimated_nonzero_edges),
       stringsAsFactors = FALSE
     )
     for (metric in metric_names) {
-      out[[paste0("mean_", metric)]] <- mean(subset[[metric]], na.rm = TRUE)
-      out[[paste0("sd_", metric)]] <- stats::sd(subset[[metric]], na.rm = TRUE)
+      out[[paste0("mean_", metric)]] <- quicknet_safe_mean(subset[[metric]])
+      out[[paste0("sd_", metric)]] <- quicknet_safe_sd(subset[[metric]])
     }
     out
   })
@@ -471,19 +508,25 @@ quicknet_power_summary <- function(results, target_metric, target_value) {
 }
 
 quicknet_power_achieved_probability <- function(values, metric, target_value) {
-  values <- values[is.finite(values)]
   if (length(values) == 0) return(NA_real_)
+  valid <- is.finite(values)
   if (metric == "rmse") {
-    mean(values <= target_value)
+    mean(valid & values <= target_value)
   } else {
-    mean(values >= target_value)
+    mean(valid & values >= target_value)
   }
 }
 
 quicknet_power_recommend <- function(summary, target_probability) {
-  eligible <- summary[summary$achieved_probability >= target_probability, , drop = FALSE]
+  eligible_index <- is.finite(summary$achieved_probability) &
+    summary$achieved_probability >= target_probability
+  eligible <- summary[eligible_index, , drop = FALSE]
   recommended_n <- if (nrow(eligible) > 0) min(eligible$sample_size) else NA_real_
-  recommended_row <- summary[summary$sample_size == recommended_n, , drop = FALSE]
+  recommended_row <- if (is.finite(recommended_n)) {
+    summary[summary$sample_size == recommended_n, , drop = FALSE]
+  } else {
+    summary[0, , drop = FALSE]
+  }
   data.frame(
     recommended_n = recommended_n,
     target_probability = target_probability,
@@ -492,7 +535,7 @@ quicknet_power_recommend <- function(summary, target_probability) {
     largest_evaluated_n = max(summary$sample_size, na.rm = TRUE),
     at_lower_boundary = is.finite(recommended_n) && recommended_n == min(summary$sample_size, na.rm = TRUE),
     at_upper_boundary = is.finite(recommended_n) && recommended_n == max(summary$sample_size, na.rm = TRUE),
-    reached = nrow(eligible) > 0,
+    reached = is.finite(recommended_n),
     stringsAsFactors = FALSE
   )
 }

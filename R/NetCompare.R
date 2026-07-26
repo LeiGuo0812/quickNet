@@ -42,8 +42,10 @@
 #' \item\code{edge_weight_p} the wide format of einv.pvals, p-values (corrected for multiple testing or not according to 'p.adjust.methods') per edge from the permutation test concerning differences in edges weights. Only returned if test.edges = TRUE.
 #' \item\code{diff_sig_nw1>nw2:} the value of significant edge weight differences by nw1-nw2, unsignificant edge weights are set as 0.
 #' \item\code{diff_sig_nw1<nw2:} the value of significant edge weight differences by nw2-nw1, unsignificant edge weights are set as 0.
-#' \item\code{net1_mask:} a binary matrix that indicates non-zero edges in the EBICglasso network constructed from data1.
-#' \item\code{net2_mask:} a binary matrix that indicates non-zero edges in the EBICglasso network constructed from data2.
+#' \item\code{net1_mask:} a binary matrix that indicates non-zero edges in the
+#' network estimated from data1.
+#' \item\code{net2_mask:} a binary matrix that indicates non-zero edges in the
+#' network estimated from data2.
 #' }
 #' @export
 #'
@@ -59,70 +61,83 @@
 #' )
 #'
 NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=TRUE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = TRUE, centrality = 'all', nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, ...){
-
-  if (!is.logical(add.bridge)) {
+  if (!is.logical(add.bridge) || length(add.bridge) != 1 || is.na(add.bridge)) {
     stop("Error: add.bridge should be logical.")
   }
-
-  net1 <- EBICglassoNet(data1)
-  net2 <- EBICglassoNet(data2)
-
-  if (add.bridge) {
-
-    results <- NCT_gl(data1,data2, it= it, binary.data=binary.data, paired = paired, weighted = weighted, AND = AND, abs = abs_edge, test.edges=test.edges, edges=edges, progressbar=progressbar, make.positive.definite = make.positive.definite, p.adjust.methods = p.adjust.methods, test.centrality = test.centrality, centrality = 'all', communities = communities, useCommunities = useCommunities, ...)
-
-    results$info$call$abs = abs_edge
-
-  } else {
-
-    results <- NCT_gl(data1,data2, it= it, binary.data=binary.data, paired = paired, weighted = weighted, AND = AND, abs = abs_edge, test.edges=test.edges, edges=edges, progressbar=progressbar, make.positive.definite = make.positive.definite, p.adjust.methods = p.adjust.methods, test.centrality = test.centrality, centrality = c("closeness", "betweenness", "strength", "expectedInfluence"), ...)
-
-    results$info$call$abs = abs_edge
-
+  if (!is.logical(test.edges) || length(test.edges) != 1 || is.na(test.edges)) {
+    stop("test.edges should be a single logical value.", call. = FALSE)
+  }
+  if (!is.numeric(sig.level) || length(sig.level) != 1 || !is.finite(sig.level) ||
+      sig.level <= 0 || sig.level >= 1) {
+    stop("sig.level must be a finite number in (0, 1).", call. = FALSE)
   }
 
-  if (sum(edges != 'all')>0) {
+  centrality_to_test <- if (isTRUE(add.bridge)) {
+    centrality
+  } else if (length(centrality) == 1 && identical(tolower(centrality), "all")) {
+    c("closeness", "betweenness", "strength", "expectedInfluence")
+  } else {
+    centrality
+  }
 
-    full_matrix_temp <- matrix(NA, ncol(data1), ncol(data1))
+  results <- NCT_gl(
+    data1,
+    data2,
+    it = it,
+    binary.data = binary.data,
+    paired = paired,
+    weighted = weighted,
+    AND = AND,
+    abs = abs_edge,
+    test.edges = test.edges,
+    edges = edges,
+    progressbar = progressbar,
+    make.positive.definite = make.positive.definite,
+    p.adjust.methods = p.adjust.methods,
+    test.centrality = test.centrality,
+    centrality = centrality_to_test,
+    nodes = nodes,
+    communities = communities,
+    useCommunities = useCommunities,
+    ...
+  )
 
-    full_matrix_temp[upper.tri(full_matrix_temp,diag = F)] <- 0
+  if (is.null(results$info)) results$info <- list()
+  if (is.null(results$info$call)) results$info$call <- list()
+  results$info$call$abs <- abs_edge
+  results$net1_mask <- (results$nw1 != 0) * 1
+  results$net2_mask <- (results$nw2 != 0) * 1
 
-    rownames(full_matrix_temp) <- colnames(full_matrix_temp) <- colnames(data1)
+  if (!isTRUE(test.edges)) {
+    results$edge_weight_p <- NULL
+    results$diff_sig <- NULL
+    results$`diff_sig_nw1>nw2` <- NULL
+    results$`diff_sig_nw1<nw2` <- NULL
+    return(results)
+  }
 
-    melt(full_matrix_temp, na.rm = T, value.name = 'p-value') -> full_matrix
-
-    full_matrix$`p-value` <- NA
-
-    for (i in seq(nrow(results$einv.pvals))) {
-      full_matrix[full_matrix$Var1 == results$einv.pvals$Var1[i] & full_matrix$Var2 == results$einv.pvals$Var2[i], 'p-value'] <- results$einv.pvals$`p-value`[i]
+  node_names <- colnames(results$nw1)
+  p <- matrix(NA_real_, length(node_names), length(node_names), dimnames = list(node_names, node_names))
+  diag(p) <- 1
+  if (!is.null(results$einv.pvals) && nrow(results$einv.pvals) > 0) {
+    for (i in seq_len(nrow(results$einv.pvals))) {
+      node_i <- as.character(results$einv.pvals$Var1[[i]])
+      node_j <- as.character(results$einv.pvals$Var2[[i]])
+      if (node_i %in% node_names && node_j %in% node_names) {
+        value <- suppressWarnings(as.numeric(as.character(results$einv.pvals$`p-value`[[i]])))
+        p[node_i, node_j] <- p[node_j, node_i] <- value
+      }
     }
-
-    pvals <- full_matrix
-
-  } else {
-
-    pvals <- results$einv.pvals[c('Var1', 'Var2', 'p-value')]
-
   }
-
-  p <- back_to_matrix(pvals)
-
   results$edge_weight_p <- p
 
-  p[is.na(p)] <- 1
-
-  p_mask  <- (p < sig.level)*1
-
+  p_for_mask <- p
+  p_for_mask[is.na(p_for_mask)] <- 1
+  p_mask <- (p_for_mask < sig.level) * 1
   diff <- results$nw1 - results$nw2
-
   diff_masked <- diff * p_mask
-
-  results$`diff_sig` <- diff_masked
+  results$diff_sig <- diff_masked
   results$`diff_sig_nw1>nw2` <- diff_masked * (diff_masked > 0)
   results$`diff_sig_nw1<nw2` <- diff_masked * (diff_masked < 0)
-
-  results$net1_mask <- (net1$graph != 0)*1
-  results$net2_mask <- (net2$graph != 0)*1
-
-  return(results)
+  results
 }

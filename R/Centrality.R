@@ -20,6 +20,12 @@ Centrality <- function(network_G, include = 'all', ...){
   network_matrix <- quicknet_network_matrix(network_G)
   cp_input <- if (inherits(network_G, "quicknet_fit") && !is.null(network_G$plots$network)) {
     network_G$plots$network
+  } else if (inherits(network_G, "quicknet_fit") && isTRUE(network_G$meta$directed)) {
+    qgraph::qgraph(
+      quicknet_to_qgraph_matrix(network_matrix, directed = TRUE),
+      directed = TRUE,
+      DoNotPlot = TRUE
+    )
   } else {
     network_matrix
   }
@@ -38,7 +44,11 @@ Centrality <- function(network_G, include = 'all', ...){
   results$centralityPlot <- cp
 
   results$centrality_data <- cp_data_all
-  results$node_table <- quicknet_node_table(network_matrix)
+  results$node_table <- if (inherits(network_G, "quicknet_fit") && isTRUE(network_G$meta$directed)) {
+    quicknet_directed_node_table(network_matrix)
+  } else {
+    quicknet_node_table(network_matrix)
+  }
 
   return(results)
 }

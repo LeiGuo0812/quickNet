@@ -151,7 +151,7 @@ quicknet_input_specs <- function() {
     ri_clpm = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "requires at least three waves for stable RI-CLPM interpretation"),
     panel_gvar = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; unstable between-person network with small samples"),
     panel_var = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; contemporaneous layer is covariance-based"),
-    panel_sem = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; fewer than two waves"),
+    panel_sem = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "selected lavaan missing-data rule", "missing wave columns; fewer than two waves"),
     graphicalVAR = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
     mlVAR = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
     psychonetrics_gvar = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "psychonetrics handles selected missing rule", "non-consecutive time indices; too few observations per subject"),
@@ -220,7 +220,7 @@ quicknet_check_data_frame <- function(data, errors, warnings) {
   list(data = dat, errors = errors, warnings = warnings)
 }
 
-quicknet_check_numeric_columns <- function(dat, cols, errors, warnings) {
+quicknet_check_numeric_columns <- function(dat, cols, errors, warnings, require_complete = TRUE) {
   missing_cols <- setdiff(cols, colnames(dat))
   if (length(missing_cols) > 0) {
     errors <- c(errors, paste0("Missing column(s): ", paste(missing_cols, collapse = ", ")))
@@ -231,12 +231,42 @@ quicknet_check_numeric_columns <- function(dat, cols, errors, warnings) {
     errors <- c(errors, paste0("Non-numeric column(s): ", paste(cols[!numeric_cols], collapse = ", ")))
   }
   complete_n <- sum(stats::complete.cases(dat[, cols, drop = FALSE]))
-  if (complete_n < 3) errors <- c(errors, "Fewer than three complete rows are available.")
+  if (isTRUE(require_complete) && complete_n < 3) {
+    errors <- c(errors, "Fewer than three complete rows are available.")
+  }
   constant <- vapply(dat[, cols, drop = FALSE], function(x) length(unique(stats::na.omit(x))) < 2, logical(1))
   if (any(constant)) {
     errors <- c(errors, paste0("No variation in column(s): ", paste(cols[constant], collapse = ", ")))
   }
   list(errors = errors, warnings = warnings)
+}
+
+quicknet_check_selected_data <- function(data, vars) {
+  errors <- warnings <- character()
+  checked <- quicknet_check_data_frame(data, errors, warnings)
+  dat <- checked$data
+  errors <- checked$errors
+  warnings <- checked$warnings
+  if (is.null(dat)) {
+    return(list(data = NULL, vars = vars, errors = errors, warnings = warnings))
+  }
+
+  if (is.null(vars)) vars <- colnames(dat)
+  if (length(vars) < 2) {
+    errors <- c(errors, "vars must contain at least two variables.")
+  }
+  missing_vars <- setdiff(vars, colnames(dat))
+  if (length(missing_vars) > 0) {
+    errors <- c(errors, paste0("Missing variable(s): ", paste(missing_vars, collapse = ", ")))
+    return(list(data = NULL, vars = vars, errors = unique(errors), warnings = unique(warnings)))
+  }
+
+  list(
+    data = dat[, vars, drop = FALSE],
+    vars = vars,
+    errors = unique(errors),
+    warnings = unique(warnings)
+  )
 }
 
 quicknet_check_cross_continuous <- function(data, args) {
@@ -303,6 +333,30 @@ quicknet_check_mgm <- function(data, args) {
   } else if (length(levels) != ncol(dat)) {
     out$errors <- c(out$errors, "levels must have one entry per variable.")
   }
+  resolved_types <- types %||% rep("g", ncol(dat))
+  resolved_levels <- levels
+  if (is.null(resolved_levels) && length(resolved_types) == ncol(dat)) {
+    resolved_levels <- ifelse(
+      resolved_types == "c",
+      vapply(dat, function(x) length(unique(x)), integer(1)),
+      1L
+    )
+  }
+  if (length(resolved_types) == ncol(dat) && length(resolved_levels) == ncol(dat)) {
+    mgm_error <- tryCatch(
+      {
+        quicknet_dynamic_validate(
+          dat,
+          colnames(dat),
+          resolved_types,
+          resolved_levels
+        )
+        NULL
+      },
+      error = function(error) conditionMessage(error)
+    )
+    if (!is.null(mgm_error)) out$errors <- c(out$errors, mgm_error)
+  }
   out
 }
 
@@ -319,7 +373,13 @@ quicknet_check_panel <- function(data, args) {
   if (is.null(waves) || length(waves) < 2) errors <- c(errors, "At least two waves are required.")
   if (!is.null(dat) && !is.null(nodes) && !is.null(waves)) {
     required <- unlist(lapply(waves, function(wave) paste0(nodes, prefix, wave)))
-    out <- quicknet_check_numeric_columns(dat, required, errors, warnings)
+    out <- quicknet_check_numeric_columns(
+      dat,
+      required,
+      errors,
+      warnings,
+      require_complete = quicknet_missing_mode(args$missing %||% "listwise") == "listwise"
+    )
     errors <- out$errors
     warnings <- out$warnings
   }
@@ -353,10 +413,24 @@ quicknet_check_longitudinal <- function(data, args) {
 }
 
 quicknet_check_confirmatory <- function(data, args) {
-  vars <- args$vars
-  dat <- if (!is.null(data)) as.data.frame(data) else NULL
-  if (is.null(vars) && !is.null(data)) vars <- colnames(dat)
-  out <- quicknet_check_cross_continuous(if (!is.null(vars) && !is.null(dat)) dat[, vars, drop = FALSE] else data, args)
+  selected <- quicknet_check_selected_data(data, args$vars)
+  vars <- selected$vars
+  out <- list(errors = selected$errors, warnings = selected$warnings)
+  if (!is.null(selected$data)) {
+    if (quicknet_missing_mode(args$missing %||% "listwise") == "listwise") {
+      checked <- quicknet_check_cross_continuous(selected$data, args)
+    } else {
+      checked <- quicknet_check_numeric_columns(
+        selected$data,
+        colnames(selected$data),
+        character(),
+        character(),
+        require_complete = FALSE
+      )
+    }
+    out$errors <- unique(c(out$errors, checked$errors))
+    out$warnings <- unique(c(out$warnings, checked$warnings))
+  }
   templates <- list(omega = args$omega, sigma = args$sigma, kappa = args$kappa, rho = args$rho)
   for (template_name in names(templates)) {
     template <- templates[[template_name]]
@@ -371,10 +445,19 @@ quicknet_check_confirmatory <- function(data, args) {
 }
 
 quicknet_check_confirmatory_ising <- function(data, args) {
-  out <- quicknet_check_ising(data, args)
-  vars <- args$vars
-  dat <- if (!is.null(data)) as.data.frame(data) else NULL
-  if (is.null(vars) && !is.null(dat)) vars <- colnames(dat)
+  selected <- quicknet_check_selected_data(data, args$vars)
+  vars <- selected$vars
+  out <- list(errors = selected$errors, warnings = selected$warnings)
+  if (!is.null(selected$data)) {
+    checked <- quicknet_check_ising(selected$data, args)
+    if (quicknet_missing_mode(args$missing %||% "listwise") != "listwise") {
+      checked$errors <- checked$errors[
+        checked$errors != "Fewer than three complete rows are available."
+      ]
+    }
+    out$errors <- unique(c(out$errors, checked$errors))
+    out$warnings <- unique(c(out$warnings, checked$warnings))
+  }
   omega <- args$omega
   if (!is.null(omega) && !is.null(vars)) {
     omega <- as.matrix(omega)
@@ -386,10 +469,24 @@ quicknet_check_confirmatory_ising <- function(data, args) {
 }
 
 quicknet_check_latent <- function(data, args) {
-  vars <- args$vars
-  dat <- if (!is.null(data)) as.data.frame(data) else NULL
-  if (is.null(vars) && !is.null(dat)) vars <- colnames(dat)
-  out <- quicknet_check_cross_continuous(if (!is.null(vars) && !is.null(dat)) dat[, vars, drop = FALSE] else data, args)
+  selected <- quicknet_check_selected_data(data, args$vars)
+  vars <- selected$vars
+  out <- list(errors = selected$errors, warnings = selected$warnings)
+  if (!is.null(selected$data)) {
+    if (quicknet_missing_mode(args$missing %||% "listwise") == "listwise") {
+      checked <- quicknet_check_cross_continuous(selected$data, args)
+    } else {
+      checked <- quicknet_check_numeric_columns(
+        selected$data,
+        colnames(selected$data),
+        character(),
+        character(),
+        require_complete = FALSE
+      )
+    }
+    out$errors <- unique(c(out$errors, checked$errors))
+    out$warnings <- unique(c(out$warnings, checked$warnings))
+  }
   latent_model <- args$latent_model %||% "latent_network"
   if (latent_model == "latent_network") {
     syntax <- args$syntax %||% args$model
@@ -417,20 +514,54 @@ quicknet_check_latent <- function(data, args) {
 }
 
 quicknet_check_dynamic <- function(data, args, time_varying) {
-  vars <- args$vars
-  dat <- if (!is.null(data)) as.data.frame(data) else NULL
-  if (is.null(vars) && !is.null(dat)) vars <- colnames(dat)
-  out <- quicknet_check_cross_continuous(if (!is.null(vars) && !is.null(dat)) dat[, vars, drop = FALSE] else data, args)
+  selected <- quicknet_check_selected_data(data, args$vars)
+  vars <- selected$vars
+  dat <- selected$data
+  out <- list(errors = selected$errors, warnings = selected$warnings)
+  if (!is.null(dat)) {
+    checked <- quicknet_check_cross_continuous(dat, args)
+    out$errors <- unique(c(out$errors, checked$errors))
+    out$warnings <- unique(c(out$warnings, checked$warnings))
+  }
   if (is.null(vars)) return(out)
   types <- args$types
   levels <- args$levels
   if (is.null(types) || length(types) != length(vars)) out$errors <- c(out$errors, "types must have one entry per variable.")
   if (is.null(levels) || length(levels) != length(vars)) out$errors <- c(out$errors, "levels must have one entry per variable.")
+  if (!is.null(dat) && length(types) == length(vars) && length(levels) == length(vars)) {
+    dynamic_error <- tryCatch(
+      {
+        quicknet_dynamic_validate(dat, vars, types, levels)
+        NULL
+      },
+      error = function(error) conditionMessage(error)
+    )
+    if (!is.null(dynamic_error)) out$errors <- c(out$errors, dynamic_error)
+  }
+  lags <- args$lags %||% 1
+  valid_lags <- is.numeric(lags) && length(lags) > 0 && all(is.finite(lags)) &&
+    all(vapply(lags, quicknet_is_positive_integer, logical(1))) && !anyDuplicated(lags)
+  if (!valid_lags) out$errors <- c(out$errors, "lags must contain unique positive integers.")
   if (isTRUE(time_varying)) {
     timepoints <- args$timepoints
     estpoints <- args$estpoints %||% c(0.25, 0.50, 0.75)
-    if (!is.null(timepoints) && length(timepoints) != nrow(dat)) out$errors <- c(out$errors, "timepoints must have one value per row.")
-    if (any(estpoints < 0 | estpoints > 1)) out$errors <- c(out$errors, "estpoints should be between 0 and 1.")
+    if (!is.null(timepoints) && (is.null(dat) || length(timepoints) != nrow(dat))) {
+      out$errors <- c(out$errors, "timepoints must have one value per row.")
+    }
+    if (!is.null(timepoints) && (
+      !is.numeric(timepoints) || any(!is.finite(timepoints)) ||
+      is.unsorted(timepoints, strictly = TRUE)
+    )) {
+      out$errors <- c(out$errors, "timepoints must be finite and strictly increasing.")
+    }
+    if (!is.numeric(estpoints) || length(estpoints) == 0 || any(!is.finite(estpoints)) ||
+        any(estpoints < 0 | estpoints > 1) ||
+        is.unsorted(estpoints, strictly = TRUE)) {
+      out$errors <- c(
+        out$errors,
+        "estpoints should be strictly increasing finite values between 0 and 1."
+      )
+    }
   }
   out
 }
@@ -504,12 +635,34 @@ quicknet_check_power <- function(args) {
   errors <- warnings <- character()
   nodes <- args$nodes %||% 8
   density <- args$density %||% 0.30
-  sample_sizes <- args$sample_sizes %||% quicknet_power_default_sample_sizes(nodes)
+  sample_sizes <- args$sample_sizes
+  if (is.null(sample_sizes)) {
+    sample_sizes <- if (quicknet_is_positive_integer(nodes)) {
+      quicknet_power_default_sample_sizes(nodes)
+    } else {
+      numeric()
+    }
+  }
   replications <- args$replications %||% 100
-  if (nodes < 3) errors <- c(errors, "nodes must be at least 3.")
-  if (density <= 0 || density > 1) errors <- c(errors, "density must be in (0, 1].")
-  if (any(sample_sizes < 5)) errors <- c(errors, "sample_sizes must be at least 5.")
-  if (replications < 10) warnings <- c(warnings, "Very few replications; use larger values for applied studies.")
+  if (!quicknet_is_positive_integer(nodes) || nodes < 3) {
+    errors <- c(errors, "nodes must be an integer of at least 3.")
+  }
+  if (!is.numeric(density) || length(density) != 1 || !is.finite(density) ||
+      density <= 0 || density > 1) {
+    errors <- c(errors, "density must be a finite number in (0, 1].")
+  }
+  valid_sample_sizes <- is.numeric(sample_sizes) && length(sample_sizes) > 0 &&
+    all(is.finite(sample_sizes)) &&
+    all(vapply(sample_sizes, quicknet_is_positive_integer, logical(1))) &&
+    all(sample_sizes >= 5)
+  if (!valid_sample_sizes) {
+    errors <- c(errors, "sample_sizes must contain positive integers of at least 5.")
+  }
+  if (!quicknet_is_positive_integer(replications)) {
+    errors <- c(errors, "replications must be a positive integer.")
+  } else if (replications < 10) {
+    warnings <- c(warnings, "Very few replications; use larger values for applied studies.")
+  }
   list(errors = errors, warnings = warnings)
 }
 

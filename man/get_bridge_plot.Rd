@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_bridge_plot.R
 \name{get_bridge_plot}
 \alias{get_bridge_plot}
-\title{get bridge plot from bridge results.}
+\title{Get bridge plot from bridge results}
 \usage{
 get_bridge_plot(
   bridge,

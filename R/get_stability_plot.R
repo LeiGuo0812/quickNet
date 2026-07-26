@@ -1,4 +1,4 @@
-#' @title get stability plot from stability results.
+#' @title Get stability plot from stability results
 #' @importFrom stringr str_sub
 #' @importFrom fs path_join
 #' @importFrom dplyr select mutate everything
@@ -27,52 +27,29 @@ get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf
     prefix <- paste0(prefix,'_')
   }
 
-  if (device == 'pdf') {
-    pdf(file = path_join(c(path, paste0(prefix,'edge_weight_CI_plot.pdf'))), width = width, height = height, ...)
-    print(stability$edge_weight_CI_plot)
-    dev.off()
-
-    pdf(file = path_join(c(path, paste0(prefix,'edge_weight_diff_plot.pdf'))), width = width, height = height, ...)
-    try(print(stability$edge_weight_diff_plot))
-    dev.off()
-
-    pdf(file = path_join(c(path, paste0(prefix,'centrality_stability_plot.pdf'))), width = width, height = height, ...)
-    print(stability$centrality_stability_plot)
-    dev.off()
-
-    pdf(file = path_join(c(path, paste0(prefix,'centrality_diff_plot.pdf'))), width = width, height = height, ...)
-    print(stability$centrality_diff_plot)
-    dev.off()
-
-    if (!is.null(stability$bridge_stability_plot)) {
-      pdf(file = path_join(c(path, paste0(prefix,'bridge_stability_plot.pdf'))), width = width, height = height, ...)
-      print(stability$bridge_stability_plot)
-      dev.off()
-    }
-
-  } else if (device == 'svg'){
-
-    svg(filename = path_join(c(path, paste0(prefix,'edge_weight_CI_plot.svg'))), width = width, height = height, ...)
-    print(stability$edge_weight_CI_plot)
-    dev.off()
-
-    svg(filename = path_join(c(path, paste0(prefix,'edge_weight_diff_plot.svg'))), width = width, height = height, ...)
-    try(print(stability$edge_weight_diff_plot))
-    dev.off()
-
-    svg(filename = path_join(c(path, paste0(prefix,'centrality_stability_plot.svg'))), width = width, height = height, ...)
-    print(stability$centrality_stability_plot)
-    dev.off()
-
-    svg(filename = path_join(c(path, paste0(prefix,'centrality_diff_plot.svg'))), width = width, height = height, ...)
-    print(stability$centrality_diff_plot)
-    dev.off()
-
-    if (!is.null(stability$bridge_stability_plot)) {
-      svg(filename = path_join(c(path, paste0(prefix,'bridge_stability_plot.svg'))), width = width, height = height, ...)
-      print(stability$bridge_stability_plot)
-      dev.off()
-    }
+  device <- match.arg(device, c("pdf", "svg"))
+  plot_specs <- list(
+    edge_weight_CI_plot = stability$edge_weight_CI_plot,
+    edge_weight_diff_plot = stability$edge_weight_diff_plot,
+    centrality_stability_plot = stability$centrality_stability_plot,
+    centrality_diff_plot = stability$centrality_diff_plot
+  )
+  if (!is.null(stability$bridge_stability_plot)) {
+    plot_specs$bridge_stability_plot <- stability$bridge_stability_plot
+  }
+  for (plot_name in names(plot_specs)) {
+    if (is.null(plot_specs[[plot_name]])) next
+    quicknet_plot_to_device(
+      filename = path_join(c(path, paste0(prefix, plot_name, ".", device))),
+      device = device,
+      width = width,
+      height = height,
+      plot_function = local({
+        current_plot <- plot_specs[[plot_name]]
+        function() print(current_plot)
+      }),
+      ...
+    )
   }
 
   if (get.table && !is.null(stability$CS_coefficient)) {

@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_network_plot.R
 \name{get_network_plot}
 \alias{get_network_plot}
-\title{get network plot from qgraph objects.}
+\title{Get network plot from qgraph objects}
 \usage{
 get_network_plot(
   network,
@@ -36,7 +36,7 @@ get_network_plot(
 a network plot will be output to the specified path.
 }
 \description{
-get network plot from qgraph objects.
+Get network plot from qgraph objects
 }
 \examples{
 

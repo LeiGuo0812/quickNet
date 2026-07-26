@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_lty_matrix.R
 \name{get_lty_matrix}
 \alias{get_lty_matrix}
-\title{Change network linetype based on group/community.}
+\title{Change network linetype based on group/community}
 \usage{
 get_lty_matrix(data, group, inner_type = 1, outer_type = 2)
 }
@@ -19,7 +19,7 @@ get_lty_matrix(data, group, inner_type = 1, outer_type = 2)
 A matrix that define the linetype of each edge. This can be directly passed to the \code{lty} parameter in function \code{quickNet}
 }
 \description{
-Change network linetype based on group/community.
+Change network linetype based on group/community
 }
 \examples{
 data("mtcars")

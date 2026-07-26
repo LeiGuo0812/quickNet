@@ -1,21 +1,21 @@
-#' @title get network difference plot from NetCompare and quickNet results.
+#' @title Get network difference plots from NetCompare and quickNet results
 #' @param NetCompare the result of \code{quickNet::NetCompare}.
 #' @param network_G the result of \code{quickNet::quickNet}. The plot configurations of the results will be the same as network_G, but the legend and pie circle will be removed.
 #' @param maximum  regards the highest of the maximum or highest absolute edge weight as the highest weight to scale the edge widths too. To compare several graphs, set this argument to a higher value than any edge weight in the graphs (typically 1 for correlations). If you want the same scale as network_G, keep it same as the number you set in quickNet.
 #' @param use.mask only present significant different edges that are non-zero in the EBICglasso networks constructed from data1, data2, or both. \itemize{
-#' \item{"none": present all significantly different edges.}
-#' \item{"net1": only present significantly different edges that are non-zero in the EBICglasso network constructed from data1.}
-#' \item{"net2": only present significantly different edges that are non-zero in the EBICglasso network constructed from data2.}
-#' \item{"both": only present significantly different edges that are both non-zero in the EBICglasso networks constructed from data1 and data2.}
+#' \item \code{"none"}: present all significantly different edges.
+#' \item \code{"net1"}: only present significantly different edges that are non-zero in the first estimated network.
+#' \item \code{"net2"}: only present significantly different edges that are non-zero in the second estimated network.
+#' \item \code{"both"}: only present significantly different edges that are non-zero in both estimated networks.
 #' }
 #' @param output whether output the plots as pdf files.
 #' @param prefix the prefix of output plot files.
 #' @param path the path of output files, can be either a relative or absolute path.
 #' @param device 'pdf' or 'svg', deciding the output plot format.
 #' @param width the width of plot, in inch.
-#' @param height the height of plot, in inch. \itemize{
-#' \item the parameter prefix, path, width, and height only works when output is TRUE.
-#' }
+#' @param height the height of plot, in inch. The parameters \code{prefix},
+#' \code{path}, \code{width}, and \code{height} only apply when
+#' \code{output = TRUE}.
 #' @param ... ... other parameter from \code{pdf} or \code{svg}.
 #'
 #' @return a list contains the diff_plot, diff_pos_plot and diff_neg_plot,
@@ -31,6 +31,13 @@
 get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = 'none', output = TRUE, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, ...){
 
   results <- list()
+  required_differences <- c("diff_sig", "diff_sig_nw1>nw2", "diff_sig_nw1<nw2")
+  if (!all(required_differences %in% names(NetCompare))) {
+    stop(
+      "NetCompare must have been run with test.edges = TRUE to draw difference plots.",
+      call. = FALSE
+    )
+  }
   network_plot <- if (inherits(network_G, "quicknet_fit")) {
     if (is.null(network_G$plots$network)) {
       stop("network_G is a quicknet_fit object without a stored qgraph plot.", call. = FALSE)
@@ -124,71 +131,24 @@ get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = '
       prefix <- paste0(prefix,'_')
     }
 
-    if (device == 'pdf') {
-      pdf(file = path_join(c(path,
-                             paste0(prefix,
-                                    'diff_network_plot.pdf'))),
-          width = width,
-          height = height,
-          ...)
-
-      plot(results$diff_plot)
-
-      dev.off()
-
-      pdf(file = path_join(c(path,
-                             paste0(prefix,
-                                    'diff_pos_network_plot.pdf'))),
-          width = width,
-          height = height,
-          ...)
-
-      plot(results$diff_pos_plot)
-
-      dev.off()
-
-      pdf(file = path_join(c(path,
-                             paste0(prefix,
-                                    'diff_neg_network_plot.pdf'))),
-          width = width,
-          height = height,
-          ...)
-
-      plot(results$diff_neg_plot)
-
-      dev.off()
-
-    } else if (device == 'svg') {
-      svg(filename = path_join(c(path,
-                             paste0(prefix,
-                                    'diff_network_plot.svg'))),
-          width = width,
-          height = height)
-
-      plot(results$diff_plot)
-
-      dev.off()
-
-      svg(filename = path_join(c(path,
-                             paste0(prefix,
-                                    'diff_pos_network_plot.svg'))),
-          width = width,
-          height = height)
-
-      plot(results$diff_pos_plot)
-
-      dev.off()
-
-      svg(filename = path_join(c(path,
-                             paste0(prefix,
-                                    'diff_neg_network_plot.svg'))),
-          width = width,
-          height = height,
-          ...)
-
-      plot(results$diff_neg_plot)
-
-      dev.off()
+    device <- match.arg(device, c("pdf", "svg"))
+    plot_specs <- list(
+      diff_network_plot = results$diff_plot,
+      diff_pos_network_plot = results$diff_pos_plot,
+      diff_neg_network_plot = results$diff_neg_plot
+    )
+    for (plot_name in names(plot_specs)) {
+      quicknet_plot_to_device(
+        filename = path_join(c(path, paste0(prefix, plot_name, ".", device))),
+        device = device,
+        width = width,
+        height = height,
+        plot_function = local({
+          current_plot <- plot_specs[[plot_name]]
+          function() plot(current_plot)
+        }),
+        ...
+      )
     }
   }
   return(results)

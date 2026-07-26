@@ -98,6 +98,31 @@ test_that("LatentNet returns latent and residual network layers", {
   expect_true("latent_variables" %in% names(quicknet_report(fit)$sample))
 })
 
+test_that("LatentNet passes FIML missingness to lavaan without listwise deletion", {
+  skip_if_not_installed("lavaan")
+  set.seed(130)
+  latent <- rnorm(120)
+  dat <- data.frame(
+    x1 = latent + rnorm(120),
+    x2 = latent + rnorm(120),
+    x3 = latent + rnorm(120),
+    x4 = latent + rnorm(120)
+  )
+  dat$x1[seq(1, 120, by = 7)] <- NA
+  dat$x2[seq(2, 120, by = 7)] <- NA
+
+  fit <- suppressWarnings(LatentNet(
+    dat,
+    "F =~ x1 + x2 + x3 + x4",
+    missing = "fiml",
+    residual = FALSE
+  ))
+
+  expect_equal(nrow(fit$data), nrow(dat))
+  expect_equal(sum(is.na(fit$data)), sum(is.na(dat)))
+  expect_equal(fit$meta$missing, "fiml")
+})
+
 test_that("LatentNet supports psychonetrics latent and residual network models", {
   skip_if_not_installed("psychonetrics")
   set.seed(131)
@@ -148,9 +173,34 @@ test_that("PanelSEMNet returns a directed quicknet_fit object", {
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "panel_sem")
   expect_true(fit$meta$directed)
-  expect_true(all(c("default", "cross_lagged") %in% names(fit$networks)))
+  expect_true(all(c("default", "cross_lagged", "contemporaneous") %in% names(fit$networks)))
   expect_true(any(fit$edges$edge_type == "autoregressive"))
+  expect_true(any(fit$edges$edge_type == "contemporaneous"))
   expect_true("residual_cov" %in% quicknet_report(fit)$estimation$parameter)
+})
+
+test_that("PanelSEMNet retains incomplete rows for FIML", {
+  skip_if_not_installed("lavaan")
+  set.seed(140)
+  n <- 90
+  dat <- data.frame(id = seq_len(n))
+  for (wave in 1:3) {
+    dat[[paste0("x1_t", wave)]] <- rnorm(n)
+    dat[[paste0("x2_t", wave)]] <- rnorm(n)
+  }
+  dat$x1_t2[seq(1, n, by = 9)] <- NA
+  dat$x2_t3[seq(2, n, by = 9)] <- NA
+
+  fit <- suppressWarnings(PanelSEMNet(
+    dat,
+    nodes = c("x1", "x2"),
+    waves = 1:3,
+    missing = "fiml"
+  ))
+
+  expect_equal(nrow(fit$data), nrow(dat))
+  expect_equal(sum(is.na(fit$data)), sum(is.na(dat)))
+  expect_true("contemporaneous" %in% names(fit$networks))
 })
 
 test_that("MixedVARNet and TimeVaryingNet return quicknet_fit objects", {

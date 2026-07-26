@@ -26,7 +26,7 @@ MixedVARNet(
 
 \item{levels}{MGM variable levels, one per variable.}
 
-\item{lags}{Number of temporal lags.}
+\item{lags}{Positive integer vector of temporal lags.}
 
 \item{lambdaSel}{Lambda selection method passed to \code{mgm::mvar()}.}
 

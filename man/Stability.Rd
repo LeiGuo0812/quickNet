@@ -2,7 +2,7 @@
 % Please edit documentation in R/Stability.R
 \name{Stability}
 \alias{Stability}
-\title{estimate the edge weight and node stability of a network.}
+\title{Estimate edge-weight and node stability of a network}
 \usage{
 Stability(
   data,
@@ -74,7 +74,7 @@ a list contains the stability test results of the network\itemize{
 }
 }
 \description{
-estimate the edge weight and node stability of a network.
+Estimate edge-weight and node stability of a network
 }
 \examples{
 

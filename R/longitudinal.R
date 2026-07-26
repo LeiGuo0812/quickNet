@@ -44,9 +44,13 @@ PanelNet <- function(data,
     id = id,
     prefix = prefix
   )
+  panel_data <- as.data.frame(data)
+  if (!id %in% colnames(panel_data)) {
+    panel_data[[id]] <- seq_len(nrow(panel_data))
+  }
   if (model != "clpn") {
     return(quicknet_psychonetrics_panel_fit(
-      data = data,
+      data = panel_data,
       nodes = nodes,
       waves = waves,
       id = id,
@@ -63,7 +67,7 @@ PanelNet <- function(data,
     stop("Package 'glmnet' is required for PanelNet(model = 'clpn').", call. = FALSE)
   }
   design <- quicknet_clpn_design(
-    panel_data = data,
+    panel_data = panel_data,
     nodes = nodes,
     waves = waves,
     id = id,
@@ -76,7 +80,8 @@ PanelNet <- function(data,
     alpha = alpha,
     lambda_rule = lambda_rule,
     nfolds = nfolds,
-    seed = seed
+    seed = seed,
+    groups = design$meta$id
   )
   mat <- fit$edge_matrix
   cross_lagged <- mat
@@ -89,7 +94,7 @@ PanelNet <- function(data,
 
   quicknet_fit(
     model = "clpn",
-    data = data,
+    data = panel_data,
     networks = list(default = mat, cross_lagged = cross_lagged),
     edges = edge_table,
     nodes = node_table,
@@ -126,14 +131,17 @@ PanelNet <- function(data,
 #' @param gamma EBIC gamma used by \code{graphicalVAR::mlGraphicalVAR()}.
 #' @param scale Should variables be scaled?
 #' @param centerWithin Should variables be person-mean centered?
-#' @param lags Number of lags used by \code{mlVAR}.
+#' @param lags Positive integer vector of lags used by \code{mlVAR}.
 #' @param estimator Estimator used by \code{mlVAR}.
 #' @param temporal Temporal effect structure used by \code{mlVAR}.
 #' @param contemporaneous Contemporaneous effect structure used by \code{mlVAR}.
 #' @param nCores Number of cores used by \code{mlVAR}.
 #' @param ... Additional arguments passed to the selected backend.
 #'
-#' @return A \code{quicknet_fit} object with \code{temporal}, \code{contemporaneous}, and \code{between} networks.
+#' @return A \code{quicknet_fit} object with temporal and contemporaneous
+#' networks. Backends that estimate a between-person layer also return
+#' \code{between}; multi-lag mlVAR fits additionally return
+#' \code{temporal_lag_*} layers.
 #' @export
 LongitudinalNet <- function(data,
                             vars,
@@ -151,6 +159,7 @@ LongitudinalNet <- function(data,
                             nCores = 1,
                             ...) {
   model <- match.arg(model, c("graphicalVAR", "mlVAR", "psychonetrics_gvar"))
+  lags <- quicknet_validate_lags(lags)
   temporal_setting <- temporal
   contemporaneous_setting <- contemporaneous
   quicknet_validate_input(
@@ -203,9 +212,10 @@ LongitudinalNet <- function(data,
         ...
       ))
     }))
-    temporal <- as.matrix(fit$fixedPDC)
+    temporal <- quicknet_from_qgraph_matrix(fit$fixedPDC, directed = TRUE)
     contemporaneous <- as.matrix(fit$fixedPCC)
     between <- as.matrix(fit$betweenNet)
+    temporal_by_lag <- list()
   } else {
     if (!requireNamespace("mlVAR", quietly = TRUE)) {
       stop("Package 'mlVAR' is required for LongitudinalNet(model = 'mlVAR').", call. = FALSE)
@@ -227,7 +237,8 @@ LongitudinalNet <- function(data,
         ...
       ))
     }))
-    temporal <- quicknet_mlvar_get_net(fit, "temporal", vars)
+    temporal_by_lag <- quicknet_mlvar_temporal_networks(fit, vars, lags)
+    temporal <- temporal_by_lag[[1]]
     contemporaneous <- quicknet_mlvar_get_net(fit, "contemporaneous", vars)
     between <- quicknet_mlvar_get_net(fit, "between", vars)
   }
@@ -235,21 +246,24 @@ LongitudinalNet <- function(data,
   colnames(contemporaneous) <- rownames(contemporaneous) <- vars
   colnames(between) <- rownames(between) <- vars
 
-  edges <- rbind(
-    quicknet_edge_table(temporal, network = "temporal", directed = TRUE, drop_zero = FALSE, include_diag = TRUE),
-    quicknet_edge_table(contemporaneous, network = "contemporaneous", directed = FALSE, drop_zero = FALSE),
-    quicknet_edge_table(between, network = "between", directed = FALSE, drop_zero = FALSE)
-  )
-  nodes <- quicknet_bind_rows_fill(
-    quicknet_directed_node_table(temporal, network = "temporal"),
-    quicknet_node_table(contemporaneous, network = "contemporaneous"),
-    quicknet_node_table(between, network = "between")
-  )
+  networks <- list(default = temporal, temporal = temporal, contemporaneous = contemporaneous, between = between)
+  if (length(temporal_by_lag) > 1) {
+    networks <- c(networks, temporal_by_lag)
+  }
+  reported_networks <- networks[setdiff(names(networks), "default")]
+  edges <- quicknet_longitudinal_edges(reported_networks)
+  nodes <- do.call(quicknet_bind_rows_fill, lapply(names(reported_networks), function(network_name) {
+    if (quicknet_longitudinal_network_is_directed(network_name)) {
+      quicknet_directed_node_table(reported_networks[[network_name]], network = network_name)
+    } else {
+      quicknet_node_table(reported_networks[[network_name]], network = network_name)
+    }
+  }))
 
   quicknet_fit(
     model = model,
     data = dat,
-    networks = list(default = temporal, temporal = temporal, contemporaneous = contemporaneous, between = between),
+    networks = networks,
     edges = edges,
     nodes = nodes,
     fit = fit,
@@ -288,12 +302,31 @@ LongitudinalStability <- function(fit, nboot = 100, seed = 20260502, nfolds = NU
   if (!inherits(fit, "quicknet_fit")) {
     stop("fit must be a quicknet_fit object.", call. = FALSE)
   }
-  if (!fit$model %in% c("clpn", "graphicalVAR", "mlVAR", "psychonetrics_gvar")) {
-    stop("LongitudinalStability() supports CLPN, graphicalVAR, mlVAR, and psychonetrics_gvar fits.", call. = FALSE)
+  if (!quicknet_is_positive_integer(nboot)) {
+    stop("nboot must be a positive integer.", call. = FALSE)
+  }
+  if (!is.numeric(seed) || length(seed) != 1 || !is.finite(seed)) {
+    stop("seed must be a finite number.", call. = FALSE)
+  }
+  if (!is.null(nfolds) && (!quicknet_is_positive_integer(nfolds) || nfolds < 3)) {
+    stop("nfolds must be an integer of at least 3.", call. = FALSE)
+  }
+  supported_models <- c(
+    "clpn", "ri_clpm", "panel_gvar", "panel_var",
+    "graphicalVAR", "mlVAR", "psychonetrics_gvar"
+  )
+  if (!fit$model %in% supported_models) {
+    stop(
+      "LongitudinalStability() supports PanelNet() and LongitudinalNet() fits.",
+      call. = FALSE
+    )
   }
   set.seed(seed)
   if (fit$model == "clpn") {
     return(quicknet_panel_bootstrap_stability(fit, nboot = nboot, seed = seed, nfolds = nfolds %||% fit$meta$nfolds))
+  }
+  if (fit$model %in% c("ri_clpm", "panel_gvar", "panel_var")) {
+    return(quicknet_psychonetrics_panel_bootstrap_stability(fit, nboot = nboot, seed = seed))
   }
   quicknet_longitudinal_bootstrap_stability(fit, nboot = nboot, seed = seed)
 }
@@ -360,7 +393,8 @@ quicknet_clpn_glmnet <- function(predictors,
                                  alpha = 1,
                                  lambda_rule = c("lambda.1se", "lambda.min"),
                                  nfolds = 10,
-                                 seed = 20260502) {
+                                 seed = 20260502,
+                                 groups = NULL) {
   lambda_rule <- match.arg(lambda_rule)
   predictors <- as.matrix(predictors)
   outcomes <- as.matrix(outcomes)
@@ -369,9 +403,22 @@ quicknet_clpn_glmnet <- function(predictors,
   predictability <- data.frame(node = nodes, cv_r_squared = NA_real_, lambda = NA_real_, nonzero_predictors = NA_integer_)
   fits <- list()
 
-  nfolds <- max(3, min(nfolds, nrow(predictors)))
   set.seed(seed)
-  foldid <- sample(rep(seq_len(nfolds), length.out = nrow(predictors)))
+  if (is.null(groups)) {
+    nfolds <- max(3, min(nfolds, nrow(predictors)))
+    foldid <- sample(rep(seq_len(nfolds), length.out = nrow(predictors)))
+  } else {
+    if (length(groups) != nrow(predictors)) {
+      stop("groups must have one value per design row.", call. = FALSE)
+    }
+    unique_groups <- unique(groups)
+    if (length(unique_groups) < 3) {
+      stop("At least three independent subjects are required for grouped cross-validation.", call. = FALSE)
+    }
+    nfolds <- max(3, min(nfolds, length(unique_groups)))
+    group_folds <- sample(rep(seq_len(nfolds), length.out = length(unique_groups)))
+    foldid <- group_folds[match(groups, unique_groups)]
+  }
 
   for (target in nodes) {
     y <- outcomes[, target]
@@ -397,7 +444,13 @@ quicknet_clpn_glmnet <- function(predictors,
     fits[[target]] <- cv_fit
   }
 
-  list(edge_matrix = edge_matrix, predictability = predictability, fits = fits, lambda_rule = lambda_rule)
+  list(
+    edge_matrix = edge_matrix,
+    predictability = predictability,
+    fits = fits,
+    lambda_rule = lambda_rule,
+    foldid = foldid
+  )
 }
 
 quicknet_psychonetrics_panel_fit <- function(data,
@@ -666,7 +719,7 @@ quicknet_ri_clpm_networks <- function(fit, nodes, waves, prefix) {
 
 quicknet_longitudinal_edges <- function(networks) {
   rows <- lapply(names(networks), function(network_name) {
-    directed <- network_name %in% c("default", "temporal", "cross_lagged")
+    directed <- quicknet_longitudinal_network_is_directed(network_name)
     edge_table <- quicknet_edge_table(
       networks[[network_name]],
       network = network_name,
@@ -682,8 +735,32 @@ quicknet_longitudinal_edges <- function(networks) {
   do.call(quicknet_bind_rows_fill, rows)
 }
 
-quicknet_mlvar_get_net <- function(fit, type, vars) {
-  result <- tryCatch(mlVAR::getNet(fit, type = type, nonsig = "show"), error = function(e) NULL)
+quicknet_longitudinal_network_is_directed <- function(network_name) {
+  network_name %in% c("default", "temporal", "cross_lagged") ||
+    grepl("^(temporal_)?lag_", network_name)
+}
+
+quicknet_mlvar_get_net <- function(fit, type, vars, lag = NULL) {
+  args <- list(fit, type = type, nonsig = "show")
+  if (!is.null(lag) && identical(type, "temporal")) args$lag <- lag
+  result <- tryCatch(do.call(mlVAR::getNet, args), error = function(e) NULL)
+  quicknet_mlvar_standardize_net(result, type = type, vars = vars)
+}
+
+quicknet_mlvar_temporal_networks <- function(fit,
+                                             vars,
+                                             lags,
+                                             get_net = quicknet_mlvar_get_net) {
+  lag_values <- as.integer(lags)
+  stats::setNames(
+    lapply(seq_along(lag_values), function(lag_index) {
+      get_net(fit, "temporal", vars, lag = lag_index)
+    }),
+    paste0("temporal_lag_", lag_values)
+  )
+}
+
+quicknet_mlvar_standardize_net <- function(result, type, vars) {
   if (is.null(result)) {
     mat <- matrix(NA_real_, length(vars), length(vars), dimnames = list(vars, vars))
   } else if (is.matrix(result)) {
@@ -694,6 +771,12 @@ quicknet_mlvar_get_net <- function(fit, type, vars) {
     mat <- result[[1]]
   } else {
     mat <- as.matrix(result)
+  }
+  if (!all(dim(mat) == c(length(vars), length(vars)))) {
+    stop("mlVAR returned a network with unexpected dimensions.", call. = FALSE)
+  }
+  if (identical(type, "temporal")) {
+    mat <- quicknet_from_qgraph_matrix(mat, directed = TRUE)
   }
   colnames(mat) <- rownames(mat) <- vars
   mat
@@ -737,6 +820,7 @@ quicknet_panel_bootstrap_stability <- function(fit, nboot, seed, nfolds) {
     }
     edge_array[, , boot_index] <- boot_fit$graph
   }
+  quicknet_check_failed_iterations(failed, "panel bootstrap replications")
 
   list(
     default = quicknet_matrix_bootstrap_summary(
@@ -748,6 +832,70 @@ quicknet_panel_bootstrap_stability <- function(fit, nboot, seed, nfolds) {
   )
 }
 
+quicknet_psychonetrics_panel_bootstrap_stability <- function(fit, nboot, seed) {
+  ids <- unique(fit$data[[fit$meta$id]])
+  nodes <- fit$meta$nodes
+  layer_names <- setdiff(names(fit$networks), "default")
+  template <- array(
+    NA_real_,
+    dim = c(length(nodes), length(nodes), nboot),
+    dimnames = list(nodes, nodes, paste0("boot_", seq_len(nboot)))
+  )
+  boot_arrays <- stats::setNames(lapply(layer_names, function(layer_name) template), layer_names)
+  failed <- logical(nboot)
+  set.seed(seed)
+
+  for (boot_index in seq_len(nboot)) {
+    sampled_ids <- sample(ids, length(ids), replace = TRUE)
+    sampled_data <- do.call(rbind, lapply(seq_along(sampled_ids), function(new_id) {
+      rows <- fit$data[fit$data[[fit$meta$id]] == sampled_ids[[new_id]], , drop = FALSE]
+      rows[[fit$meta$id]] <- new_id
+      rows
+    }))
+    boot_fit <- tryCatch(
+      PanelNet(
+        sampled_data,
+        nodes = fit$meta$nodes,
+        waves = fit$meta$waves,
+        id = fit$meta$id,
+        prefix = fit$meta$prefix,
+        standardize = fit$meta$standardize,
+        model = fit$model,
+        ri_type = fit$meta$ri_type %||% "ggm",
+        stationary = fit$meta$stationary
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(boot_fit) || !all(layer_names %in% names(boot_fit$networks))) {
+      failed[[boot_index]] <- TRUE
+      next
+    }
+    boot_layers <- boot_fit$networks[layer_names]
+    valid_dimensions <- vapply(
+      boot_layers,
+      function(layer) all(dim(layer) == c(length(nodes), length(nodes))),
+      logical(1)
+    )
+    if (!all(valid_dimensions)) {
+      failed[[boot_index]] <- TRUE
+      next
+    }
+    for (layer_name in layer_names) {
+      boot_arrays[[layer_name]][, , boot_index] <- boot_layers[[layer_name]]
+    }
+  }
+  quicknet_check_failed_iterations(failed, "psychonetrics panel bootstrap replications")
+
+  stats::setNames(lapply(layer_names, function(layer_name) {
+    quicknet_matrix_bootstrap_summary(
+      fit$networks[[layer_name]],
+      boot_arrays[[layer_name]],
+      directed = quicknet_network_summary_is_directed(fit$model, fit$meta, layer_name),
+      failed_bootstraps = sum(failed)
+    )
+  }), layer_names)
+}
+
 quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
   ids <- unique(fit$data[[fit$meta$id]])
   vars <- fit$meta$vars
@@ -756,7 +904,11 @@ quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
     dim = c(length(vars), length(vars), nboot),
     dimnames = list(vars, vars, paste0("boot_", seq_len(nboot)))
   )
-  boot_arrays <- list(temporal = template, contemporaneous = template, between = template)
+  layer_names <- setdiff(names(fit$networks), "default")
+  boot_arrays <- stats::setNames(
+    lapply(layer_names, function(layer_name) template),
+    layer_names
+  )
   failed <- logical(nboot)
   set.seed(seed)
 
@@ -790,16 +942,35 @@ quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
       failed[boot_index] <- TRUE
       next
     }
-    boot_arrays$temporal[, , boot_index] <- boot_fit$networks$temporal
-    boot_arrays$contemporaneous[, , boot_index] <- boot_fit$networks$contemporaneous
-    boot_arrays$between[, , boot_index] <- boot_fit$networks$between
+    has_layers <- all(layer_names %in% names(boot_fit$networks))
+    if (!has_layers) {
+      failed[boot_index] <- TRUE
+      next
+    }
+    boot_layers <- boot_fit$networks[layer_names]
+    valid_dimensions <- vapply(
+      boot_layers,
+      function(layer) all(dim(layer) == c(length(vars), length(vars))),
+      logical(1)
+    )
+    if (!all(valid_dimensions)) {
+      failed[boot_index] <- TRUE
+      next
+    }
+    for (layer_name in layer_names) {
+      boot_arrays[[layer_name]][, , boot_index] <- boot_layers[[layer_name]]
+    }
   }
+  quicknet_check_failed_iterations(failed, "longitudinal bootstrap replications")
 
-  list(
-    temporal = quicknet_matrix_bootstrap_summary(fit$networks$temporal, boot_arrays$temporal, directed = TRUE, failed_bootstraps = sum(failed)),
-    contemporaneous = quicknet_matrix_bootstrap_summary(fit$networks$contemporaneous, boot_arrays$contemporaneous, directed = FALSE, failed_bootstraps = sum(failed)),
-    between = quicknet_matrix_bootstrap_summary(fit$networks$between, boot_arrays$between, directed = FALSE, failed_bootstraps = sum(failed))
-  )
+  stats::setNames(lapply(layer_names, function(layer_name) {
+    quicknet_matrix_bootstrap_summary(
+      fit$networks[[layer_name]],
+      boot_arrays[[layer_name]],
+      directed = quicknet_longitudinal_network_is_directed(layer_name),
+      failed_bootstraps = sum(failed)
+    )
+  }), layer_names)
 }
 
 quicknet_bind_rows_fill <- function(...) {

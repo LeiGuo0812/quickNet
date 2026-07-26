@@ -90,8 +90,10 @@ returns a 'NCT' object that contains the following items:\itemize{
 \item\code{edge_weight_p} the wide format of einv.pvals, p-values (corrected for multiple testing or not according to 'p.adjust.methods') per edge from the permutation test concerning differences in edges weights. Only returned if test.edges = TRUE.
 \item\code{diff_sig_nw1>nw2:} the value of significant edge weight differences by nw1-nw2, unsignificant edge weights are set as 0.
 \item\code{diff_sig_nw1<nw2:} the value of significant edge weight differences by nw2-nw1, unsignificant edge weights are set as 0.
-\item\code{net1_mask:} a binary matrix that indicates non-zero edges in the EBICglasso network constructed from data1.
-\item\code{net2_mask:} a binary matrix that indicates non-zero edges in the EBICglasso network constructed from data2.
+\item\code{net1_mask:} a binary matrix that indicates non-zero edges in the
+network estimated from data1.
+\item\code{net2_mask:} a binary matrix that indicates non-zero edges in the
+network estimated from data2.
 }
 }
 \description{

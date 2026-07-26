@@ -398,7 +398,7 @@ quicknet_perturb_precision <- function(fit) {
   if (is.null(node_names)) node_names <- paste0("V", seq_len(ncol(mat)))
   colnames(mat) <- rownames(mat) <- node_names
 
-  if (fit$model == "correlation") {
+  if (fit$model %in% c("correlation", "ordinal")) {
     precision <- solve(quicknet_make_positive_definite(mat))
   } else {
     precision <- -mat

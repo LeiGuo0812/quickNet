@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_compare_plot.R
 \name{get_compare_plot}
 \alias{get_compare_plot}
-\title{get network difference plot from NetCompare and quickNet results.}
+\title{Get network difference plots from NetCompare and quickNet results}
 \usage{
 get_compare_plot(
   NetCompare,
@@ -26,10 +26,10 @@ get_compare_plot(
 \item{maximum}{regards the highest of the maximum or highest absolute edge weight as the highest weight to scale the edge widths too. To compare several graphs, set this argument to a higher value than any edge weight in the graphs (typically 1 for correlations). If you want the same scale as network_G, keep it same as the number you set in quickNet.}
 
 \item{use.mask}{only present significant different edges that are non-zero in the EBICglasso networks constructed from data1, data2, or both. \itemize{
-\item{"none": present all significantly different edges.}
-\item{"net1": only present significantly different edges that are non-zero in the EBICglasso network constructed from data1.}
-\item{"net2": only present significantly different edges that are non-zero in the EBICglasso network constructed from data2.}
-\item{"both": only present significantly different edges that are both non-zero in the EBICglasso networks constructed from data1 and data2.}
+\item \code{"none"}: present all significantly different edges.
+\item \code{"net1"}: only present significantly different edges that are non-zero in the first estimated network.
+\item \code{"net2"}: only present significantly different edges that are non-zero in the second estimated network.
+\item \code{"both"}: only present significantly different edges that are non-zero in both estimated networks.
 }}
 
 \item{output}{whether output the plots as pdf files.}
@@ -42,9 +42,9 @@ get_compare_plot(
 
 \item{width}{the width of plot, in inch.}
 
-\item{height}{the height of plot, in inch. \itemize{
-\item the parameter prefix, path, width, and height only works when output is TRUE.
-}}
+\item{height}{the height of plot, in inch. The parameters \code{prefix},
+\code{path}, \code{width}, and \code{height} only apply when
+\code{output = TRUE}.}
 
 \item{...}{... other parameter from \code{pdf} or \code{svg}.}
 }
@@ -53,7 +53,7 @@ a list contains the diff_plot, diff_pos_plot and diff_neg_plot,
 representing the network difference of global, nw1>nw2 and nw1<nw2.
 }
 \description{
-get network difference plot from NetCompare and quickNet results.
+Get network difference plots from NetCompare and quickNet results
 }
 \examples{
 data('mtcars')

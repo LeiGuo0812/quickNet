@@ -53,29 +53,34 @@ quickNet <- function(data, layout = 'spring', pie = TRUE, maximum = 0.47, groups
   )
 
   if (pie && model %in% c("EBICglasso", "correlation", "partial")) {
+    pie_data <- fit$data[stats::complete.cases(fit$data), , drop = FALSE]
     fit_mgm <- mgm(
-      as.matrix(fit$data),
-      type = rep('g', ncol(fit$data)),
-      level = rep(1, ncol(fit$data)),
+      as.matrix(pie_data),
+      type = rep('g', ncol(pie_data)),
+      level = rep(1, ncol(pie_data)),
       pbar = FALSE,
       signInfo = FALSE,
       warnings = FALSE
     )
-    pred_mgm <- stats::predict(fit_mgm, fit$data)
+    pred_mgm <- stats::predict(fit_mgm, pie_data)
   } else {
     pred_mgm <- NULL
   }
 
-  if (!identical(color, c("#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2", "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1"))) {
+  default_palette <- c(
+    "#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2",
+    "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1"
+  )
+  if (!identical(color, default_palette)) {
     color = color
 
   } else if (is.null(groups)) {
     color = "#71d0f5"
 
   } else if (!is.null(groups) & is.list(groups)){
-    color = c("#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2", "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1")[1:length(groups)]
+    color = rep_len(default_palette, length(groups))
   } else if (!is.null(groups) & (is.character(groups) | is.factor(groups))) {
-    color = c("#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2", "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1")[1:length(unique(groups))]
+    color = rep_len(default_palette, length(unique(groups)))
   }
 
   network_G <- qgraph::qgraph(
