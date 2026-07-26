@@ -3,3 +3,5 @@
 ^LICENSE\.md$
 ^README\.zh-CN\.md$
 ^tests/testthat/Rplots\.pdf$
+^tmp$
+^wang-et-al-2026-simulation-intervention-for-cross-sectional-network-models-based-on-the-r-packages-nodeidentifyr-and\.pdf$

@@ -561,7 +561,7 @@ get_perturbation_plot(blocked, type = "edge_block")
 get_perturbation_plot(sequence, type = "sequence")
 ```
 
-对于 Ising 模型，可以使用 NIRA-style threshold perturbation：
+对于 Ising 模型，原有的 `ising_threshold` 方法仍作为轻量的单链敏感性分析保留：
 
 ```r
 ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
@@ -577,7 +577,75 @@ get_perturbation_plot(ising_result, type = "rank")
 get_perturbation_plot(ising_result, type = "node_change", target = "b1")
 ```
 
-扰动绘图会保持保守解释：只展示当前对象已经计算出的模拟摘要，包括靶点排序、剂量-响应、节点状态或激活变化、边阻断后的 spillover 摘要，以及贪婪序列步骤；这些图不表示临床疗效或因果干预效应。
+若要运行 Wang 等（2026）描述的正式单网络 NIRA 工作流，请使用
+`NIRA()`（也可用 `Perturbation(method = "nira")`）。该实现依次完成
+moderation prerequisite、原始条件与逐节点阈值干预模拟、多重校正的置换
+检验，以及重复模拟的排名稳定性分析：
+
+```r
+nira_result <- NIRA(
+  ising_fit,
+  perturbation_type = "alleviating",
+  amount_of_SDs_perturbation = 2,
+  n_samples = 5000,
+  moderation_nboot = 1000,
+  n_permutations = 5000,
+  stability_reps = 1000,
+  parallel = TRUE,
+  ncores = 6,
+  seed = 2025,
+  engine = "literature",
+  engine_iterations = 100
+)
+
+summary(nira_result)
+nira_result$rankings
+quicknet_report(nira_result)
+plot(nira_result, type = "effect")
+plot(nira_result, type = "stability")
+```
+
+开发阶段可将 `moderation_nboot = 100`、`stability_reps = 100` 以缩短
+耗时；正式研究建议至少使用 1000 次 moderation 重抽样，并保留默认的
+1000 次稳定性重复。默认的 `engine = "literature"` 使用 IsingSampler 的
+0/1 参数化；`native` 引擎使用具有相同条件概率、彼此独立初始化的 Gibbs
+链。每个任务使用独立的 L'Ecuyer-CMRG 子流，因此在相同 R/RNG 版本和
+固定 seed 下，串行与 PSOCK 并行任务可以复现。
+默认 `engine_iterations = 100` 用于匹配参考流程，但它不是收敛保证；
+强耦合或多峰网络应使用更大的取值做敏感性分析。自动并行最多选择四个
+worker，并将每个 worker 的 BLAS/OpenMP 线程限制为 1，避免嵌套线程
+过度订阅。
+
+实现还会拒绝非有限、下溢为 0、或在机器精度下实际没有改变阈值的干预，
+以及会超出 R 整数范围的任务数量。MGM 能够定义方向时会保留 moderation
+符号；失败的 moderation 重抽样和稳定性重复会保留原始索引及错误信息。
+真实安装包烟雾测试确认，在固定 RNG 子流下，串行与双 worker PSOCK MGM
+结果完全一致。
+
+若检测到稳定 moderation，默认会阻断 NIRA，因为此时“只改变阈值、所有
+边保持固定”的假设与数据相冲突。只有显式设置
+`proceed_on_moderation = TRUE` 才会带着醒目的固定边假设违规警告继续。
+未检测到稳定 moderation 不能解释为已证明不存在 moderation。MGM
+能够定义符号时，moderation 估计保留该符号；若 MGM 将已选分类交互的
+符号报告为未定义，则该 role 只按幅度汇总，方向比例显示为不可用，而
+不会人为赋予方向。
+
+NIRA 要求横断面、完整的 0/1 数据，观测相互独立，pairwise Ising 模型及
+阈值解释合理，节点构成共同且连贯的构念，并且总分具有明确理论意义。
+normal CI、Cohen's d 和置换 p 值只描述固定估计参数下生成的模拟分布，
+不包含原始网络估计误差。simulation-stability 排名不是 bootstrap
+stability，也不能证明第一名显著优于第二名。
+
+扰动和 NIRA 绘图会保持保守解释：只展示模型蕴含的模拟摘要，不表示临床
+疗效或因果干预效应；真实临床应用仍需外部干预研究验证。
+
+开发者兼容性验证只调用参考包的公开 API。在记录的五节点 fixture 上，
+quickNet 与 nodeIdentifyR 的完整排名一致（`N5 > N4 > N3 > N2 > N1`），
+全部条件均值及 30 个边际激活概率均落在联合 Monte Carlo 不确定性范围内。
+NIRApost 验证确认了 `1 / 5001` plus-one 置换网格、Holm 校正、完全一致的
+稳定性排名频数，以及一致的 moderation 选择语义。精确版本、commit、
+数值结果和可执行脚本记录于
+[`inst/validation/NIRA_REFERENCE_VALIDATION.md`](inst/validation/NIRA_REFERENCE_VALIDATION.md)。
 
 这种解释边界遵循网络干预和模拟研究的文献，同时也遵守当前对中心性和模型内扰动排序的谨慎解释：如果没有合适的因果设计，不应把这些结果直接解释为真实治疗效应。
 
@@ -622,7 +690,9 @@ globalCoeff(fit)
 - 桥接中心性：Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
 - 网络比较检验：van Borkulo, C. D., van Bork, R., Boschloo, L., Kossakowski, J. J., Tio, P., Schoevers, R. A., Borsboom, D., & Waldorp, L. J. (2023). Comparing network structures on three aspects: A permutation test. *Psychological Methods, 28*(6), 1273-1285. https://doi.org/10.1037/met0000476
 - Network Intervention Analysis：Blanken, T. F., van der Zweerde, T., van Straten, A., van Someren, E. J. W., Borsboom, D., & Lancee, J. (2019). Introducing Network Intervention Analysis to investigate sequential, symptom-specific treatment effects: A demonstration in co-occurring insomnia and depression. *Psychotherapy and Psychosomatics, 88*(1), 52-54. https://doi.org/10.1159/000495045
-- 基于模拟的干预靶点评估：Lunansky, G., van Borkulo, C. D., & Borsboom, D. (2021). Intervening on psychopathology networks: Evaluating intervention targets through simulations. *PsyArXiv*. https://doi.org/10.31234/osf.io/sqhje
+- 基于模拟的干预靶点评估：Lunansky, G., Naberman, J., van Borkulo, C. D., Chen, C., Wang, L., & Borsboom, D. (2022). Intervening on psychopathology networks: Evaluating intervention targets through simulations. *Methods, 204*, 29-37. https://doi.org/10.1016/j.ymeth.2021.11.006
+- 单网络 NIRA、moderation prerequisite、置换检验和模拟稳定性：Wang, F., Wu, Y., Wu, Y., & Zhu, T. (2026). Simulation intervention for cross-sectional network models: Based on the R packages NodeIdentifyR and NIRApost. *Advances in Methods and Practices in Psychological Science*. https://doi.org/10.1177/25152459261452944
+- 文献兼容 Ising 模拟引擎：Epskamp, S. (2026). *IsingSampler: Sampling Methods and Distribution Functions for the Ising Model*（R package version 0.5.0）。https://doi.org/10.32614/CRAN.package.IsingSampler
 - 中心性解释的谨慎边界：Bringmann, L. F., Elmer, T., Epskamp, S., Krause, R. W., Schoch, D., Wichers, M., Wigman, J. T. W., & Snippe, E. (2019). What do centrality measures measure in psychological networks? *Journal of Abnormal Psychology, 128*(8), 892-903. https://doi.org/10.1037/abn0000446
 
 ## 版本更新
@@ -634,6 +704,11 @@ globalCoeff(fit)
 - 新增纵向网络接口：`PanelNet()` 用于横滞后面板网络，`LongitudinalNet()` 用于 `graphicalVAR` 和 `mlVAR` 模型。
 - 新增模型通用的边表、节点表、网络摘要、中心性辅助结果和稳定性汇总。
 - 新增虚拟扰动与干预模拟辅助函数，支持 Gaussian-style 网络扰动和 Ising threshold perturbation。
+- 新增正式 `NIRA()` 模块，包含 moderation gate、文献兼容 Ising 模拟、
+  多重校正置换检验、Monte Carlo 排名稳定性、S3 摘要与绘图、报告、输入
+  元数据，以及可复现的 PSOCK 并行。
+- 新增带符号的 MGM moderation 汇总、明确的失败重复记录、有限迭代敏感性
+  控制、数值溢出防护，以及可执行的 nodeIdentifyR/NIRApost 兼容性验证。
 - 新增符合保守解释边界的扰动绘图辅助函数，支持排序、剂量-响应、节点变化、边阻断和贪婪序列摘要。
 - 新增 `NetworkPower()` / `SampleSize()`，用于基于模拟的网络样本量规划。
 - 新增验证性网络、潜变量网络、SEM 面板网络、mixed VAR 和 time-varying mixed VAR 封装接口。

@@ -32,8 +32,10 @@ Imports:
     stringr,
     tidyr,
     IsingFit,
+    IsingSampler,
     Matrix,
-    methods
+    methods,
+    parallel
 Suggests:
     glmnet,
     graphicalVAR,

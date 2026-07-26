@@ -564,7 +564,8 @@ get_perturbation_plot(blocked, type = "edge_block")
 get_perturbation_plot(sequence, type = "sequence")
 ```
 
-For Ising models, use NIRA-style threshold perturbation:
+For Ising models, the legacy `ising_threshold` method remains available as a
+lightweight single-chain sensitivity analysis:
 
 ```r
 ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
@@ -580,7 +581,87 @@ get_perturbation_plot(ising_result, type = "rank")
 get_perturbation_plot(ising_result, type = "node_change", target = "b1")
 ```
 
-Perturbation plots are intentionally conservative. They display only computed simulation summaries: target ranking, dosage response, node-level state or activity change, edge-block spillover summaries, and greedy sequence steps. They do not imply clinical efficacy or causal treatment effects.
+For the formal, single-network NIRA workflow described by Wang et al. (2026),
+use `NIRA()` (or `Perturbation(method = "nira")`). The implementation performs
+the moderation prerequisite, original and one-node-at-a-time threshold
+simulations, multiplicity-adjusted permutation tests, and repeated-simulation
+rank stability:
+
+```r
+nira_result <- NIRA(
+  ising_fit,
+  perturbation_type = "alleviating",
+  amount_of_SDs_perturbation = 2,
+  n_samples = 5000,
+  moderation_nboot = 1000,
+  n_permutations = 5000,
+  stability_reps = 1000,
+  parallel = TRUE,
+  ncores = 6,
+  seed = 2025,
+  engine = "literature",
+  engine_iterations = 100
+)
+
+summary(nira_result)
+nira_result$rankings
+quicknet_report(nira_result)
+plot(nira_result, type = "effect")
+plot(nira_result, type = "stability")
+```
+
+For development, `moderation_nboot = 100` and `stability_reps = 100` can be
+used to shorten runtime; formal analyses should use at least 1000 moderation
+resamples and the default 1000 stability repetitions. The default
+`engine = "literature"` uses the IsingSampler 0/1 parameterization. The
+`native` engine uses independently initialized Gibbs chains with the same
+conditional probabilities. Task-specific L'Ecuyer-CMRG substreams make
+serial and PSOCK-parallel task results reproducible for a fixed R/RNG version.
+The default `engine_iterations = 100` matches the reference workflow but is
+not a convergence guarantee. Strongly coupled or multimodal networks should
+be checked with larger values as a sensitivity analysis. Automatic parallel
+selection uses at most four workers, and each worker is limited to one
+BLAS/OpenMP thread to avoid nested thread oversubscription.
+
+The implementation also rejects non-finite, underflowed, or machine-precision
+no-op threshold changes and task counts that would overflow R's integer range.
+MGM moderation signs are retained when MGM defines them; failed moderation and
+stability repetitions keep their original indices and error messages. An
+installed-package smoke test confirmed that serial and two-worker PSOCK MGM
+results are identical for fixed RNG streams.
+
+Stable moderation blocks NIRA by default because changing a threshold while
+holding every edge fixed is then contradicted by the fitted data. Setting
+`proceed_on_moderation = TRUE` continues only as an explicitly flagged
+fixed-edge-assumption violation. Not detecting stable moderation is not proof
+that moderation is absent. Moderation estimates retain MGM's reported sign
+when it is defined. If MGM reports a selected categorical-interaction sign as
+undefined, that role is summarized on a magnitude-only scale and directional
+proportions are reported as unavailable rather than inventing a direction.
+
+NIRA requires cross-sectional, complete, 0/1 data; independent observations;
+an interpretable pairwise Ising model; thresholds that can be interpreted as
+spontaneous activation tendencies; a node set representing a coherent
+construct; and a theoretically meaningful total score. Its normal confidence
+intervals, Cohen's d values, and permutation p values describe distributions
+simulated from fixed estimated parameters and do not include network-estimation
+uncertainty. Simulation-stability ranks are not bootstrap stability and do not
+show that rank 1 differs significantly from rank 2.
+
+Perturbation and NIRA plots are intentionally conservative. They display only
+computed model-implied simulation summaries and do not imply clinical efficacy
+or causal treatment effects. Real clinical use requires external intervention
+studies.
+
+Developer compatibility checks use only public reference-package APIs. On the
+recorded five-node fixture, quickNet and nodeIdentifyR had the same complete
+ranking (`N5 > N4 > N3 > N2 > N1`); all condition means and 30 marginal
+activation probabilities were within joint Monte Carlo uncertainty. NIRApost
+checks confirmed the `1 / 5001` plus-one permutation grid, Holm adjustment,
+identical stability rank frequencies, and matching moderation-selection
+semantics. Exact versions, commits, numerical results, and executable scripts
+are recorded in
+[`inst/validation/NIRA_REFERENCE_VALIDATION.md`](inst/validation/NIRA_REFERENCE_VALIDATION.md).
 
 This interpretation follows the network intervention and simulation literature, while also respecting cautions that centrality or model-implied perturbation rankings should not be treated as direct causal treatment effects without a suitable causal design.
 
@@ -625,7 +706,9 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Bridge centrality: Jones, P. J., Ma, R., & McNally, R. J. (2021). Bridge centrality: A network approach to understanding comorbidity. *Multivariate Behavioral Research, 56*(2), 353-367. https://doi.org/10.1080/00273171.2019.1614898
 - Network comparison testing: van Borkulo, C. D., van Bork, R., Boschloo, L., Kossakowski, J. J., Tio, P., Schoevers, R. A., Borsboom, D., & Waldorp, L. J. (2023). Comparing network structures on three aspects: A permutation test. *Psychological Methods, 28*(6), 1273-1285. https://doi.org/10.1037/met0000476
 - Network Intervention Analysis: Blanken, T. F., van der Zweerde, T., van Straten, A., van Someren, E. J. W., Borsboom, D., & Lancee, J. (2019). Introducing Network Intervention Analysis to investigate sequential, symptom-specific treatment effects: A demonstration in co-occurring insomnia and depression. *Psychotherapy and Psychosomatics, 88*(1), 52-54. https://doi.org/10.1159/000495045
-- Simulation-based intervention target evaluation: Lunansky, G., van Borkulo, C. D., & Borsboom, D. (2021). Intervening on psychopathology networks: Evaluating intervention targets through simulations. *PsyArXiv*. https://doi.org/10.31234/osf.io/sqhje
+- Simulation-based intervention target evaluation: Lunansky, G., Naberman, J., van Borkulo, C. D., Chen, C., Wang, L., & Borsboom, D. (2022). Intervening on psychopathology networks: Evaluating intervention targets through simulations. *Methods, 204*, 29-37. https://doi.org/10.1016/j.ymeth.2021.11.006
+- Single-network NIRA workflow, moderation prerequisite, permutation testing, and simulation stability: Wang, F., Wu, Y., Wu, Y., & Zhu, T. (2026). Simulation intervention for cross-sectional network models: Based on the R packages NodeIdentifyR and NIRApost. *Advances in Methods and Practices in Psychological Science*. https://doi.org/10.1177/25152459261452944
+- Literature-compatible Ising simulation engine: Epskamp, S. (2026). *IsingSampler: Sampling Methods and Distribution Functions for the Ising Model* (R package version 0.5.0). https://doi.org/10.32614/CRAN.package.IsingSampler
 - Interpreting centrality cautiously: Bringmann, L. F., Elmer, T., Epskamp, S., Krause, R. W., Schoch, D., Wichers, M., Wigman, J. T. W., & Snippe, E. (2019). What do centrality measures measure in psychological networks? *Journal of Abnormal Psychology, 128*(8), 892-903. https://doi.org/10.1037/abn0000446
 
 ## Changelog
@@ -637,6 +720,13 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Added longitudinal modeling interfaces: `PanelNet()` for cross-lagged panel networks and `LongitudinalNet()` for `graphicalVAR` and `mlVAR` models.
 - Added model-agnostic edge tables, node tables, network summaries, centrality helpers, and stability summaries.
 - Added virtual perturbation and intervention simulation helpers for Gaussian-style networks and Ising threshold perturbation.
+- Added a formal `NIRA()` module with moderation gating, literature-compatible
+  Ising simulation, adjusted permutation tests, Monte Carlo rank stability,
+  S3 summaries and plots, reports, input metadata, and reproducible PSOCK
+  parallelism.
+- Added signed MGM moderation summaries, explicit failed-repetition records,
+  finite-iteration sensitivity controls, numerical-overflow safeguards, and
+  executable nodeIdentifyR/NIRApost compatibility validation.
 - Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and greedy sequence summaries.
 - Added `NetworkPower()` / `SampleSize()` for simulation-based network sample size planning.
 - Added confirmatory, latent, SEM-panel, mixed VAR, and time-varying mixed VAR network wrappers.

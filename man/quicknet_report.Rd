@@ -7,22 +7,27 @@
 quicknet_report(fit, digits = 3, threshold = 1e-10)
 }
 \arguments{
-\item{fit}{A \code{quicknet_fit}, \code{quicknet_perturbation}, or
-\code{quicknet_power} object.}
+\item{fit}{A \code{quicknet_nira}, \code{quicknet_fit},
+\code{quicknet_perturbation}, or \code{quicknet_power} object.}
 
-\item{digits}{Number of digits used in the plain-text summary.}
+\item{digits}{Number of digits used in plain-text summaries and in NIRA or
+power-analysis numerical report tables.}
 
-\item{threshold}{Absolute edge-weight threshold used to count nonzero edges.}
+\item{threshold}{Absolute edge-weight threshold used to count nonzero edges
+for \code{quicknet_fit} inputs.}
 }
 \value{
-A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
-contains model registry metadata, sample, estimation, fit-index, parameter,
-modification-index, constraint, network, edge, node, and model-specific
-tables.
-For \code{quicknet_perturbation} inputs it contains perturbation settings,
-metrics, rankings, and a short text summary. For \code{quicknet_power}
-inputs it contains design settings, simulation summaries, and sample-size
-recommendations.
+A \code{quicknet_report} object. For \code{quicknet_nira} inputs it
+  contains analysis status and settings, rounded effect, ranking,
+  permutation, stability, and moderation tables, assumptions, warnings, and
+  an explicit model-implied/non-causal interpretation boundary. For
+  \code{quicknet_fit} inputs it contains model registry metadata, sample,
+  estimation, fit-index, parameter, modification-index, constraint, network,
+  edge, node, and model-specific tables. For
+  \code{quicknet_perturbation} inputs it contains perturbation settings,
+  metrics, rankings, and a short text summary. For \code{quicknet_power}
+  inputs it contains design settings, simulation summaries, and sample-size
+  recommendations.
 }
 \description{
 Extract report-ready model information

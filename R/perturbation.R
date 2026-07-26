@@ -4,7 +4,9 @@
 #' @param method Perturbation method. Continuous networks support
 #' \code{"dosage"}, \code{"knockout"}, \code{"knockdown"},
 #' \code{"edge_block"}, \code{"combination"}, and \code{"sequence"}.
-#' Ising networks support \code{"ising_threshold"}.
+#' Ising networks support \code{"ising_threshold"} and the formal
+#' \code{"nira"} workflow. The existing \code{"ising_threshold"} method is
+#' unchanged.
 #' @param targets Target node names. If \code{NULL}, all nodes are considered.
 #' @param dose Numeric perturbation dose for Gaussian conditioning. Positive
 #' values are interpreted as reductions and internally applied as negative
@@ -27,13 +29,30 @@
 #' @param spillover_nodes Optional nodes used to summarize spillover in
 #' \code{method = "edge_block"}.
 #' @param threshold Absolute threshold used to define nonzero edges.
+#' @param perturbation_type NIRA direction, \code{"alleviating"} or
+#' \code{"aggravating"}.
+#' @param amount_of_SDs_perturbation NIRA threshold perturbation size in
+#' threshold standard deviations.
+#' @param run_moderation,moderation_rule,moderation_lambda,moderation_nboot
+#' NIRA moderation-prerequisite settings; see \code{\link{NIRA}}.
+#' @param proceed_on_moderation Whether NIRA may continue after stable
+#' moderation is detected.
+#' @param run_permutation,n_permutations,p_adjust NIRA permutation settings.
+#' @param run_stability,stability_reps,top_n NIRA Monte Carlo stability
+#' settings.
+#' @param parallel,ncores Cross-platform NIRA parallel settings.
+#' @param store_samples Whether NIRA retains full primary binary simulations.
+#' @param engine NIRA simulation engine.
+#' @param engine_iterations NIRA simulation sweeps per independently
+#'   initialized condition; see \code{\link{NIRA}}.
 #'
-#' @return A \code{quicknet_perturbation} object. Results are model-implied
-#' in silico simulations and should not be interpreted as causal intervention
-#' effects.
+#' @return A \code{quicknet_perturbation} object, or a
+#' \code{quicknet_nira} object for \code{method = "nira"}. Results are
+#' model-implied in silico simulations and should not be interpreted as causal
+#' intervention effects.
 #' @export
 Perturbation <- function(fit,
-                         method = c("dosage", "knockout", "knockdown", "edge_block", "combination", "sequence", "ising_threshold"),
+                         method = c("dosage", "knockout", "knockdown", "edge_block", "combination", "sequence", "ising_threshold", "nira"),
                          targets = NULL,
                          dose = c(0.25, 0.50, 0.75, 1.00),
                          remaining_strength = 0.50,
@@ -47,10 +66,30 @@ Perturbation <- function(fit,
                          seed = 20260502,
                          pulse_values = NULL,
                          spillover_nodes = NULL,
-                         threshold = 1e-10) {
+                         threshold = 1e-10,
+                         perturbation_type = c("alleviating", "aggravating"),
+                         amount_of_SDs_perturbation = 2,
+                         run_moderation = TRUE,
+                         moderation_rule = NULL,
+                         moderation_lambda = 0.25,
+                         moderation_nboot = 100L,
+                         proceed_on_moderation = FALSE,
+                         run_permutation = TRUE,
+                         n_permutations = 5000L,
+                         p_adjust = "bonferroni",
+                         run_stability = TRUE,
+                         stability_reps = 1000L,
+                         top_n = NULL,
+                         parallel = FALSE,
+                         ncores = NULL,
+                         store_samples = FALSE,
+                         engine = c("literature", "native"),
+                         engine_iterations = 100L) {
   if (!inherits(fit, "quicknet_fit")) {
     stop("fit must be a quicknet_fit object.", call. = FALSE)
   }
+  n_samples_missing <- missing(n_samples)
+  seed_missing <- missing(seed)
   method <- if (missing(method)) {
     if (quicknet_is_ising_model(fit$model)) "ising_threshold" else "dosage"
   } else {
@@ -67,6 +106,38 @@ Perturbation <- function(fit,
       burnin = burnin,
       thinning = thinning,
       seed = seed
+    ))
+  }
+
+  if (method == "nira") {
+    if (!is.null(targets)) {
+      stop(
+        "method = 'nira' evaluates every node; targets must be NULL.",
+        call. = FALSE
+      )
+    }
+    return(NIRA(
+      fit = fit,
+      perturbation_type = perturbation_type,
+      amount_of_SDs_perturbation = amount_of_SDs_perturbation,
+      n_samples = if (n_samples_missing) 5000L else n_samples,
+      run_moderation = run_moderation,
+      moderation_rule = moderation_rule,
+      moderation_lambda = moderation_lambda,
+      moderation_nboot = moderation_nboot,
+      proceed_on_moderation = proceed_on_moderation,
+      run_permutation = run_permutation,
+      n_permutations = n_permutations,
+      p_adjust = p_adjust,
+      run_stability = run_stability,
+      stability_reps = stability_reps,
+      top_n = top_n,
+      parallel = parallel,
+      ncores = ncores,
+      seed = if (seed_missing) 2025L else seed,
+      store_samples = store_samples,
+      engine = engine,
+      engine_iterations = engine_iterations
     ))
   }
 

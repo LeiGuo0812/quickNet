@@ -65,7 +65,8 @@ quicknet_model_registry_rows <- function() {
     quicknet_model_registry_row("mixedVAR", "time_series", "MixedVARNet", "mgm::mvar", "exploratory", TRUE, "default, temporal, lag_*", "lag-specific temporal mixed VAR networks; network summary", "Haslbeck and Waldorp 2020", "Rows must be correctly time ordered."),
     quicknet_model_registry_row("time_varying_mvar", "time_series", "TimeVaryingNet", "mgm::tvmvar", "exploratory", TRUE, "default, estpoint_*, estpoint_*_lag_*", "time-varying lag-specific mixed VAR networks; network summary", "Haslbeck and Waldorp 2020", "Bandwidth and estimation points strongly affect results."),
     quicknet_model_registry_row("power", "planning", "NetworkPower", "simulation / powerly", "simulation", FALSE, "not applicable", "sample-size recommendation; recovery metrics", "Constantin et al. 2023", "Results depend on assumed true-network structure."),
-    quicknet_model_registry_row("perturbation", "simulation", "Perturbation", "model-implied simulation", "simulation", NA, "not applicable", "perturbation metrics; rankings; plots", "Lunansky et al. 2022", "In silico perturbations are not causal intervention effects.")
+    quicknet_model_registry_row("perturbation", "simulation", "Perturbation", "model-implied simulation", "simulation", NA, "not applicable", "perturbation metrics; rankings; plots", "Lunansky et al. 2022", "In silico perturbations are not causal intervention effects."),
+    quicknet_model_registry_row("nira", "simulation", "NIRA", "IsingSampler / independently initialized Gibbs; mgm moderation prerequisite", "simulation", FALSE, "fixed fitted Ising network", "moderation prerequisite; projected condition effects; permutation tests; Monte Carlo rank stability", "Lunansky et al. 2022; Wang et al. 2026", "Requires binary nodes, a meaningful sum score, fixed edge weights, and external validation; outputs are model-implied and non-causal.")
   )
 }
 

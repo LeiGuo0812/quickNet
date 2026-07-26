@@ -1,20 +1,28 @@
 #' Extract report-ready model information
 #'
-#' @param fit A \code{quicknet_fit}, \code{quicknet_perturbation}, or
-#' \code{quicknet_power} object.
-#' @param digits Number of digits used in the plain-text summary.
-#' @param threshold Absolute edge-weight threshold used to count nonzero edges.
+#' @param fit A \code{quicknet_nira}, \code{quicknet_fit},
+#'   \code{quicknet_perturbation}, or \code{quicknet_power} object.
+#' @param digits Number of digits used in plain-text summaries and in NIRA or
+#'   power-analysis numerical report tables.
+#' @param threshold Absolute edge-weight threshold used to count nonzero edges
+#'   for \code{quicknet_fit} inputs.
 #'
-#' @return A \code{quicknet_report} object. For \code{quicknet_fit} inputs it
-#' contains model registry metadata, sample, estimation, fit-index, parameter,
-#' modification-index, constraint, network, edge, node, and model-specific
-#' tables.
-#' For \code{quicknet_perturbation} inputs it contains perturbation settings,
-#' metrics, rankings, and a short text summary. For \code{quicknet_power}
-#' inputs it contains design settings, simulation summaries, and sample-size
-#' recommendations.
+#' @return A \code{quicknet_report} object. For \code{quicknet_nira} inputs it
+#'   contains analysis status and settings, rounded effect, ranking,
+#'   permutation, stability, and moderation tables, assumptions, warnings, and
+#'   an explicit model-implied/non-causal interpretation boundary. For
+#'   \code{quicknet_fit} inputs it contains model registry metadata, sample,
+#'   estimation, fit-index, parameter, modification-index, constraint, network,
+#'   edge, node, and model-specific tables. For
+#'   \code{quicknet_perturbation} inputs it contains perturbation settings,
+#'   metrics, rankings, and a short text summary. For \code{quicknet_power}
+#'   inputs it contains design settings, simulation summaries, and sample-size
+#'   recommendations.
 #' @export
 quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
+  if (inherits(fit, "quicknet_nira")) {
+    return(quicknet_report_nira(fit, digits = digits))
+  }
   if (inherits(fit, "quicknet_perturbation")) {
     return(quicknet_report_perturbation(fit, digits = digits))
   }
@@ -22,7 +30,13 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     return(quicknet_report_power(fit, digits = digits))
   }
   if (!inherits(fit, "quicknet_fit")) {
-    stop("fit must be a quicknet_fit, quicknet_perturbation, or quicknet_power object.", call. = FALSE)
+    stop(
+      paste(
+        "fit must be a quicknet_nira, quicknet_fit,",
+        "quicknet_perturbation, or quicknet_power object."
+      ),
+      call. = FALSE
+    )
   }
 
   report <- list(
@@ -42,6 +56,166 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
   )
   class(report) <- "quicknet_report"
   report
+}
+
+quicknet_report_nira <- function(fit, digits = 3) {
+  effects <- quicknet_report_nira_round_table(fit$interventions, digits)
+  rankings <- quicknet_report_nira_round_table(fit$rankings, digits)
+  permutation <- quicknet_report_nira_round_table(fit$permutation, digits)
+
+  stability_table <- if (is.list(fit$stability)) {
+    fit$stability$node_summary
+  } else {
+    fit$stability
+  }
+  stability <- quicknet_report_nira_round_table(stability_table, digits)
+
+  moderation_table <- if (is.list(fit$moderation)) {
+    fit$moderation$table
+  } else {
+    fit$moderation
+  }
+  moderation <- quicknet_report_nira_round_table(moderation_table, digits)
+  assumptions <- quicknet_report_nira_round_table(fit$assumptions, digits)
+
+  report <- list(
+    model = fit$model %||% NA_character_,
+    status = fit$status %||% NA_character_,
+    settings = quicknet_report_nira_settings(fit$settings, digits),
+    effects = effects,
+    rankings = rankings,
+    permutation = permutation,
+    stability = stability,
+    moderation = moderation,
+    assumptions = assumptions,
+    warnings = fit$warnings %||% character(),
+    text = quicknet_report_nira_text(fit, effects, digits)
+  )
+  class(report) <- "quicknet_report"
+  report
+}
+
+quicknet_report_nira_round_table <- function(table, digits) {
+  if (!is.data.frame(table)) {
+    return(data.frame())
+  }
+  out <- table
+  numeric_columns <- vapply(out, is.numeric, logical(1))
+  out[numeric_columns] <- lapply(
+    out[numeric_columns],
+    round,
+    digits = digits
+  )
+  out
+}
+
+quicknet_report_nira_settings <- function(settings, digits) {
+  if (is.null(settings) || length(settings) == 0L) {
+    return(data.frame(
+      parameter = character(),
+      value = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  if (!is.list(settings)) {
+    settings <- as.list(settings)
+  }
+  parameters <- names(settings)
+  if (is.null(parameters)) {
+    parameters <- paste0("setting_", seq_along(settings))
+  } else {
+    missing_names <- is.na(parameters) | !nzchar(parameters)
+    parameters[missing_names] <- paste0(
+      "setting_",
+      which(missing_names)
+    )
+  }
+  data.frame(
+    parameter = parameters,
+    value = vapply(settings, function(value) {
+      if (is.numeric(value)) {
+        value <- round(value, digits = digits)
+      }
+      quicknet_report_collapse(value)
+    }, character(1)),
+    stringsAsFactors = FALSE
+  )
+}
+
+quicknet_report_nira_text <- function(fit, effects, digits) {
+  model <- fit$model
+  if (is.null(model) || length(model) == 0L || is.na(model[[1L]])) {
+    model <- "unknown"
+  } else {
+    model <- as.character(model[[1L]])
+  }
+  status <- fit$status
+  if (is.null(status) || length(status) == 0L || is.na(status[[1L]])) {
+    status <- "unknown"
+  } else {
+    status <- as.character(status[[1L]])
+  }
+  interpretation <-
+    "NIRA results are model-implied simulations, not causal treatment effects."
+
+  if (identical(status, "blocked_by_moderation")) {
+    return(paste0(
+      "NIRA report for model ", model, ". Status: ", status, ". ",
+      "Stable moderation was detected, so intervention simulation was blocked ",
+      "and no intervention-effect ranking was produced. ",
+      interpretation
+    ))
+  }
+
+  fixed_edge_notice <- if (identical(
+    status,
+    "completed_fixed_edge_assumption_violated"
+  )) {
+    paste(
+      "Stable moderation was detected and the fixed-edge assumption is",
+      "violated; analysis continued only by explicit request. "
+    )
+  } else {
+    ""
+  }
+
+  effect_column <- intersect(
+    c(
+      "directional_effect",
+      "absolute_mean_difference",
+      "raw_mean_difference",
+      "mean_total_score"
+    ),
+    names(effects)
+  )
+  node_available <- "node" %in% names(effects)
+  if (nrow(effects) > 0L && length(effect_column) > 0L && node_available) {
+    effect_column <- effect_column[[1L]]
+    effect_values <- suppressWarnings(as.numeric(effects[[effect_column]]))
+    valid <- is.finite(effect_values) &
+      !is.na(effects$node) &
+      nzchar(as.character(effects$node))
+    if (any(valid)) {
+      candidates <- which(valid)
+      best <- candidates[[which.max(effect_values[valid])]]
+      return(paste0(
+        "NIRA report for model ", model, ". Status: ", status, ". ",
+        "Intervention simulation evaluated ", nrow(effects), " nodes; ",
+        "the highest ", gsub("_", " ", effect_column, fixed = TRUE), " was ",
+        as.character(effects$node[[best]]), " = ",
+        round(effect_values[[best]], digits), ". ",
+      fixed_edge_notice,
+      interpretation
+      ))
+    }
+  }
+
+  paste0(
+    "NIRA report for model ", model, ". Status: ", status, ". ",
+    "No reportable intervention-effect estimates are available. ",
+    fixed_edge_notice,
+    interpretation
+  )
 }
 
 quicknet_report_power <- function(fit, digits = 3) {

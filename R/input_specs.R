@@ -123,6 +123,7 @@ quicknet_check_input <- function(data, model, args = list()) {
     time_varying_mvar = quicknet_check_dynamic(data, args, time_varying = TRUE),
     power = quicknet_check_power(args),
     perturbation = quicknet_check_perturbation(args),
+    nira = quicknet_check_nira(args),
     messages
   )
   errors <- validator$errors
@@ -171,7 +172,8 @@ quicknet_input_specs <- function() {
     mixedVAR = quicknet_input_spec("time-ordered data.frame/matrix", "vars, types, levels", "numeric continuous/category codes in temporal order", "complete cases recommended", "types/levels mismatch; unordered rows"),
     time_varying_mvar = quicknet_input_spec("time-ordered data.frame/matrix", "vars, types, levels, timepoints/estpoints", "numeric continuous/category codes in temporal order", "complete cases recommended", "timepoints length mismatch; invalid estpoints"),
     power = quicknet_input_spec("no raw data required", "nodes, density, sample_sizes, replications", "simulation design parameters", "not applicable", "unrealistic true-network assumptions; too few replications"),
-    perturbation = quicknet_input_spec("quicknet_fit object", "fit and method", "supported fitted model for chosen perturbation method", "not applicable", "method not supported for fit$model")
+    perturbation = quicknet_input_spec("quicknet_fit object", "fit and method", "supported fitted model for chosen perturbation method", "not applicable", "method not supported for fit$model"),
+    nira = quicknet_input_spec("quicknet_fit object with original analysis data", "fit; simulation, moderation, permutation, and stability settings", "binary 0/1 Ising nodes with strictly aligned names", "no imputation; fitted analysis data must be complete", "non-Ising fit; missing data; unmatched graph/threshold names; fixed-edge assumption violation")
   )
 }
 
@@ -199,7 +201,8 @@ quicknet_input_model_key <- function(model) {
     MetaNet = "meta_ggm",
     NetworkPower = "power",
     SampleSize = "power",
-    Perturbation = "perturbation"
+    Perturbation = "perturbation",
+    NIRA = "nira"
   )
   model <- as.character(model)[[1]]
   if (model %in% names(aliases)) aliases[[model]] else model
@@ -674,13 +677,39 @@ quicknet_check_perturbation <- function(args) {
     errors <- c(errors, "fit must be a quicknet_fit object.")
   } else if (!is.null(method)) {
     is_ising <- quicknet_is_ising_model(fit$model)
-    if (method == "ising_threshold" && !is_ising) errors <- c(errors, "method = 'ising_threshold' requires an Ising fit.")
-    if (method != "ising_threshold" && !quicknet_supports_continuous_perturbation(fit$model)) {
+    if (method %in% c("ising_threshold", "nira") && !is_ising) {
+      errors <- c(
+        errors,
+        paste0("method = '", method, "' requires an Ising fit.")
+      )
+    }
+    if (!method %in% c("ising_threshold", "nira") &&
+        !quicknet_supports_continuous_perturbation(fit$model)) {
       errors <- c(errors, paste0(
         "method = '", method,
-        "' requires an EBICglasso, correlation, partial, or ordinal fit; use method = 'ising_threshold' for Ising fits."
+        "' requires an EBICglasso, correlation, partial, or ordinal fit; use method = 'ising_threshold' or 'nira' for Ising fits."
       ))
     }
+  }
+  list(errors = errors, warnings = warnings)
+}
+
+quicknet_check_nira <- function(args) {
+  errors <- warnings <- character()
+  fit <- args$fit
+  if (!inherits(fit, "quicknet_fit")) {
+    errors <- c(errors, "fit must be a quicknet_fit object.")
+  } else if (!quicknet_is_ising_model(fit$model)) {
+    errors <- c(errors, "NIRA requires an exploratory or confirmatory Ising fit.")
+  } else {
+    checked <- tryCatch(
+      {
+        quicknet_nira_extract_parameters(fit)
+        NULL
+      },
+      error = function(error) conditionMessage(error)
+    )
+    if (!is.null(checked)) errors <- c(errors, checked)
   }
   list(errors = errors, warnings = warnings)
 }

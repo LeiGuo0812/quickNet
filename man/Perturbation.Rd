@@ -7,7 +7,7 @@
 Perturbation(
   fit,
   method = c("dosage", "knockout", "knockdown", "edge_block", "combination", "sequence",
-    "ising_threshold"),
+    "ising_threshold", "nira"),
   targets = NULL,
   dose = c(0.25, 0.5, 0.75, 1),
   remaining_strength = 0.5,
@@ -21,7 +21,25 @@ Perturbation(
   seed = 20260502,
   pulse_values = NULL,
   spillover_nodes = NULL,
-  threshold = 1e-10
+  threshold = 1e-10,
+  perturbation_type = c("alleviating", "aggravating"),
+  amount_of_SDs_perturbation = 2,
+  run_moderation = TRUE,
+  moderation_rule = NULL,
+  moderation_lambda = 0.25,
+  moderation_nboot = 100L,
+  proceed_on_moderation = FALSE,
+  run_permutation = TRUE,
+  n_permutations = 5000L,
+  p_adjust = "bonferroni",
+  run_stability = TRUE,
+  stability_reps = 1000L,
+  top_n = NULL,
+  parallel = FALSE,
+  ncores = NULL,
+  store_samples = FALSE,
+  engine = c("literature", "native"),
+  engine_iterations = 100L
 )
 }
 \arguments{
@@ -30,7 +48,9 @@ Perturbation(
 \item{method}{Perturbation method. Continuous networks support
 \code{"dosage"}, \code{"knockout"}, \code{"knockdown"},
 \code{"edge_block"}, \code{"combination"}, and \code{"sequence"}.
-Ising networks support \code{"ising_threshold"}.}
+Ising networks support \code{"ising_threshold"} and the formal
+\code{"nira"} workflow. The existing \code{"ising_threshold"} method is
+unchanged.}
 
 \item{targets}{Target node names. If \code{NULL}, all nodes are considered.}
 
@@ -67,11 +87,37 @@ define the source pulse.}
 \code{method = "edge_block"}.}
 
 \item{threshold}{Absolute threshold used to define nonzero edges.}
+
+\item{perturbation_type}{NIRA direction, \code{"alleviating"} or
+\code{"aggravating"}.}
+
+\item{amount_of_SDs_perturbation}{NIRA threshold perturbation size in
+threshold standard deviations.}
+
+\item{run_moderation, moderation_rule, moderation_lambda, moderation_nboot}{NIRA moderation-prerequisite settings; see \code{\link{NIRA}}.}
+
+\item{proceed_on_moderation}{Whether NIRA may continue after stable
+moderation is detected.}
+
+\item{run_permutation, n_permutations, p_adjust}{NIRA permutation settings.}
+
+\item{run_stability, stability_reps, top_n}{NIRA Monte Carlo stability
+settings.}
+
+\item{parallel, ncores}{Cross-platform NIRA parallel settings.}
+
+\item{store_samples}{Whether NIRA retains full primary binary simulations.}
+
+\item{engine}{NIRA simulation engine.}
+
+\item{engine_iterations}{NIRA simulation sweeps per independently
+initialized condition; see \code{\link{NIRA}}.}
 }
 \value{
-A \code{quicknet_perturbation} object. Results are model-implied
-in silico simulations and should not be interpreted as causal intervention
-effects.
+A \code{quicknet_perturbation} object, or a
+\code{quicknet_nira} object for \code{method = "nira"}. Results are
+model-implied in silico simulations and should not be interpreted as causal
+intervention effects.
 }
 \description{
 Virtual perturbation and intervention simulation
