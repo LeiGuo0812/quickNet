@@ -605,49 +605,16 @@ plot(nira_result, type = "effect")
 plot(nira_result, type = "stability")
 ```
 
-开发阶段可将 `moderation_nboot = 100`、`stability_reps = 100` 以缩短
-耗时；正式研究建议至少使用 1000 次 moderation 重抽样，并保留默认的
-1000 次稳定性重复。默认的 `engine = "literature"` 使用 IsingSampler 的
-0/1 参数化；`native` 引擎使用具有相同条件概率、彼此独立初始化的 Gibbs
-链。每个任务使用独立的 L'Ecuyer-CMRG 子流，因此在相同 R/RNG 版本和
-固定 seed 下，串行与 PSOCK 并行任务可以复现。
-默认 `engine_iterations = 100` 用于匹配参考流程，但它不是收敛保证；
-强耦合或多峰网络应使用更大的取值做敏感性分析。自动并行最多选择四个
-worker，并将每个 worker 的 BLAS/OpenMP 线程限制为 1，避免嵌套线程
-过度订阅。
-
-实现还会拒绝非有限、下溢为 0、或在机器精度下实际没有改变阈值的干预，
-以及会超出 R 整数范围的任务数量。MGM 能够定义方向时会保留 moderation
-符号；失败的 moderation 重抽样和稳定性重复会保留原始索引及错误信息。
-真实安装包烟雾测试确认，在固定 RNG 子流下，串行与双 worker PSOCK MGM
-结果完全一致。
+正式研究建议至少使用 1000 次 moderation 重抽样和 1000 次稳定性重复。
+默认的 literature 引擎使用 IsingSampler；可增大 `engine_iterations`
+进行敏感性分析。
 
 若检测到稳定 moderation，默认会阻断 NIRA，因为此时“只改变阈值、所有
-边保持固定”的假设与数据相冲突。只有显式设置
-`proceed_on_moderation = TRUE` 才会带着醒目的固定边假设违规警告继续。
-未检测到稳定 moderation 不能解释为已证明不存在 moderation。MGM
-能够定义符号时，moderation 估计保留该符号；若 MGM 将已选分类交互的
-符号报告为未定义，则该 role 只按幅度汇总，方向比例显示为不可用，而
-不会人为赋予方向。
+边保持固定”的假设缺少支持。设置 `proceed_on_moderation = TRUE` 可在
+明确警告下继续。
 
-NIRA 要求横断面、完整的 0/1 数据，观测相互独立，pairwise Ising 模型及
-阈值解释合理，节点构成共同且连贯的构念，并且总分具有明确理论意义。
-normal CI、Cohen's d 和置换 p 值只描述固定估计参数下生成的模拟分布，
-不包含原始网络估计误差。simulation-stability 排名不是 bootstrap
-stability，也不能证明第一名显著优于第二名。
-
-扰动和 NIRA 绘图会保持保守解释：只展示模型蕴含的模拟摘要，不表示临床
-疗效或因果干预效应；真实临床应用仍需外部干预研究验证。
-
-开发者兼容性验证只调用参考包的公开 API。在记录的五节点 fixture 上，
-quickNet 与 nodeIdentifyR 的完整排名一致（`N5 > N4 > N3 > N2 > N1`），
-全部条件均值及 30 个边际激活概率均落在联合 Monte Carlo 不确定性范围内。
-NIRApost 验证确认了 `1 / 5001` plus-one 置换网格、Holm 校正、完全一致的
-稳定性排名频数，以及一致的 moderation 选择语义。精确版本、commit、
-数值结果和可执行脚本记录于
-[`inst/validation/NIRA_REFERENCE_VALIDATION.md`](inst/validation/NIRA_REFERENCE_VALIDATION.md)。
-
-这种解释边界遵循网络干预和模拟研究的文献，同时也遵守当前对中心性和模型内扰动排序的谨慎解释：如果没有合适的因果设计，不应把这些结果直接解释为真实治疗效应。
+NIRA 要求横断面、完整的 0/1 数据和具有理论意义的总分。结果是基于固定
+估计参数的模型模拟，不应解释为因果治疗效应或 bootstrap 网络稳定性。
 
 ### 网络比较
 
@@ -704,11 +671,8 @@ globalCoeff(fit)
 - 新增纵向网络接口：`PanelNet()` 用于横滞后面板网络，`LongitudinalNet()` 用于 `graphicalVAR` 和 `mlVAR` 模型。
 - 新增模型通用的边表、节点表、网络摘要、中心性辅助结果和稳定性汇总。
 - 新增虚拟扰动与干预模拟辅助函数，支持 Gaussian-style 网络扰动和 Ising threshold perturbation。
-- 新增正式 `NIRA()` 模块，包含 moderation gate、文献兼容 Ising 模拟、
-  多重校正置换检验、Monte Carlo 排名稳定性、S3 摘要与绘图、报告、输入
-  元数据，以及可复现的 PSOCK 并行。
-- 新增带符号的 MGM moderation 汇总、明确的失败重复记录、有限迭代敏感性
-  控制、数值溢出防护，以及可执行的 nodeIdentifyR/NIRApost 兼容性验证。
+- 新增 `NIRA()`，支持 moderation gate、Ising 阈值模拟、多重校正置换
+  检验、Monte Carlo 排名稳定性、绘图和报告。
 - 新增符合保守解释边界的扰动绘图辅助函数，支持排序、剂量-响应、节点变化、边阻断和贪婪序列摘要。
 - 新增 `NetworkPower()` / `SampleSize()`，用于基于模拟的网络样本量规划。
 - 新增验证性网络、潜变量网络、SEM 面板网络、mixed VAR 和 time-varying mixed VAR 封装接口。

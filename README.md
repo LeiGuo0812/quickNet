@@ -610,60 +610,17 @@ plot(nira_result, type = "effect")
 plot(nira_result, type = "stability")
 ```
 
-For development, `moderation_nboot = 100` and `stability_reps = 100` can be
-used to shorten runtime; formal analyses should use at least 1000 moderation
-resamples and the default 1000 stability repetitions. The default
-`engine = "literature"` uses the IsingSampler 0/1 parameterization. The
-`native` engine uses independently initialized Gibbs chains with the same
-conditional probabilities. Task-specific L'Ecuyer-CMRG substreams make
-serial and PSOCK-parallel task results reproducible for a fixed R/RNG version.
-The default `engine_iterations = 100` matches the reference workflow but is
-not a convergence guarantee. Strongly coupled or multimodal networks should
-be checked with larger values as a sensitivity analysis. Automatic parallel
-selection uses at most four workers, and each worker is limited to one
-BLAS/OpenMP thread to avoid nested thread oversubscription.
-
-The implementation also rejects non-finite, underflowed, or machine-precision
-no-op threshold changes and task counts that would overflow R's integer range.
-MGM moderation signs are retained when MGM defines them; failed moderation and
-stability repetitions keep their original indices and error messages. An
-installed-package smoke test confirmed that serial and two-worker PSOCK MGM
-results are identical for fixed RNG streams.
+Formal analyses should use at least 1000 moderation resamples and 1000
+stability repetitions. The default literature engine uses IsingSampler;
+`engine_iterations` can be increased for sensitivity analysis.
 
 Stable moderation blocks NIRA by default because changing a threshold while
-holding every edge fixed is then contradicted by the fitted data. Setting
-`proceed_on_moderation = TRUE` continues only as an explicitly flagged
-fixed-edge-assumption violation. Not detecting stable moderation is not proof
-that moderation is absent. Moderation estimates retain MGM's reported sign
-when it is defined. If MGM reports a selected categorical-interaction sign as
-undefined, that role is summarized on a magnitude-only scale and directional
-proportions are reported as unavailable rather than inventing a direction.
+holding every edge fixed is then unsupported. Set
+`proceed_on_moderation = TRUE` to continue with an explicit warning.
 
-NIRA requires cross-sectional, complete, 0/1 data; independent observations;
-an interpretable pairwise Ising model; thresholds that can be interpreted as
-spontaneous activation tendencies; a node set representing a coherent
-construct; and a theoretically meaningful total score. Its normal confidence
-intervals, Cohen's d values, and permutation p values describe distributions
-simulated from fixed estimated parameters and do not include network-estimation
-uncertainty. Simulation-stability ranks are not bootstrap stability and do not
-show that rank 1 differs significantly from rank 2.
-
-Perturbation and NIRA plots are intentionally conservative. They display only
-computed model-implied simulation summaries and do not imply clinical efficacy
-or causal treatment effects. Real clinical use requires external intervention
-studies.
-
-Developer compatibility checks use only public reference-package APIs. On the
-recorded five-node fixture, quickNet and nodeIdentifyR had the same complete
-ranking (`N5 > N4 > N3 > N2 > N1`); all condition means and 30 marginal
-activation probabilities were within joint Monte Carlo uncertainty. NIRApost
-checks confirmed the `1 / 5001` plus-one permutation grid, Holm adjustment,
-identical stability rank frequencies, and matching moderation-selection
-semantics. Exact versions, commits, numerical results, and executable scripts
-are recorded in
-[`inst/validation/NIRA_REFERENCE_VALIDATION.md`](inst/validation/NIRA_REFERENCE_VALIDATION.md).
-
-This interpretation follows the network intervention and simulation literature, while also respecting cautions that centrality or model-implied perturbation rankings should not be treated as direct causal treatment effects without a suitable causal design.
+NIRA expects complete cross-sectional 0/1 data and a meaningful total score.
+Its results are model-implied simulations from fixed estimated parameters, not
+causal treatment effects or bootstrap network stability.
 
 ### Network Comparison
 
@@ -720,13 +677,8 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Added longitudinal modeling interfaces: `PanelNet()` for cross-lagged panel networks and `LongitudinalNet()` for `graphicalVAR` and `mlVAR` models.
 - Added model-agnostic edge tables, node tables, network summaries, centrality helpers, and stability summaries.
 - Added virtual perturbation and intervention simulation helpers for Gaussian-style networks and Ising threshold perturbation.
-- Added a formal `NIRA()` module with moderation gating, literature-compatible
-  Ising simulation, adjusted permutation tests, Monte Carlo rank stability,
-  S3 summaries and plots, reports, input metadata, and reproducible PSOCK
-  parallelism.
-- Added signed MGM moderation summaries, explicit failed-repetition records,
-  finite-iteration sensitivity controls, numerical-overflow safeguards, and
-  executable nodeIdentifyR/NIRApost compatibility validation.
+- Added `NIRA()` with moderation gating, Ising threshold simulation,
+  adjusted permutation tests, Monte Carlo rank stability, plots, and reports.
 - Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and greedy sequence summaries.
 - Added `NetworkPower()` / `SampleSize()` for simulation-based network sample size planning.
 - Added confirmatory, latent, SEM-panel, mixed VAR, and time-varying mixed VAR network wrappers.
