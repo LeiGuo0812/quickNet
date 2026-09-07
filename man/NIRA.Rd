@@ -133,6 +133,8 @@ usual distribution and variance assumptions. Confidence-interval overlap
 is not used as a significance test. Monte Carlo rank stability is not
 bootstrap network stability, empirical replicability, or evidence that one
 rank differs significantly from another.
+Exact ties in each stability repetition are randomly ordered using that
+task's reproducible RNG stream, avoiding preference for earlier columns.
 }
 \examples{
 \dontrun{

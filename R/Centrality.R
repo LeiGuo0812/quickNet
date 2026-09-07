@@ -20,7 +20,7 @@ Centrality <- function(network_G, include = 'all', ...){
   network_matrix <- quicknet_network_matrix(network_G)
   cp_input <- if (inherits(network_G, "quicknet_fit") && !is.null(network_G$plots$network)) {
     network_G$plots$network
-  } else if (inherits(network_G, "quicknet_fit") && isTRUE(network_G$meta$directed)) {
+  } else if (quicknet_is_directed(network_G)) {
     qgraph::qgraph(
       quicknet_to_qgraph_matrix(network_matrix, directed = TRUE),
       directed = TRUE,
@@ -30,12 +30,16 @@ Centrality <- function(network_G, include = 'all', ...){
     network_matrix
   }
 
-  cp <- centralityPlot(cp_input, include = include, ...)
+  plot_args <- list(...)
+  if (is.null(plot_args$scale) && is.null(plot_args$standardized) && is.null(plot_args$relative)) {
+    plot_args$scale <- "raw"
+  }
+  cp <- do.call(centralityPlot, c(list(cp_input, include = include), plot_args))
 
   cp_data <- centrality(cp_input)
 
   cp_data_scale <- cp_data[1:6] %>%
-    map(~ as.numeric(scale(.x)) %>%
+    map(~ quicknet_standardize_centrality(.x) %>%
           `names<-`(names(cp_data$OutDegree)))
   names(cp_data_scale) <- paste0(names(cp_data_scale), 'Scale')
 
@@ -44,11 +48,21 @@ Centrality <- function(network_G, include = 'all', ...){
   results$centralityPlot <- cp
 
   results$centrality_data <- cp_data_all
-  results$node_table <- if (inherits(network_G, "quicknet_fit") && isTRUE(network_G$meta$directed)) {
+  results$node_table <- if (quicknet_is_directed(network_G)) {
     quicknet_directed_node_table(network_matrix)
   } else {
     quicknet_node_table(network_matrix)
   }
 
   return(results)
+}
+
+quicknet_standardize_centrality <- function(x) {
+  out <- rep(NA_real_, length(x))
+  valid <- is.finite(x)
+  if (any(valid)) {
+    values <- x[valid]
+    out[valid] <- if (length(values) < 2L || stats::sd(values) == 0) 0 else as.numeric(scale(values))
+  }
+  out
 }

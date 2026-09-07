@@ -2,7 +2,9 @@
 #'
 #' @param model Model name.
 #' @param data Original input data.
-#' @param networks Named list of network weight matrices.
+#' @param networks Nonempty, uniquely named list of finite numeric square network
+#'   matrices. Node names, when supplied, must be unique; rows are aligned to
+#'   column order. The first layer is used when no layer is named "default".
 #' @param edges Edge table.
 #' @param nodes Node-level table.
 #' @param fit Raw model object returned by the backend package.
@@ -21,15 +23,36 @@ quicknet_fit <- function(model,
                          plots = list(),
                          meta = list(),
                          network_summary = NULL) {
-  if (!is.list(networks) || is.null(names(networks)) || any(names(networks) == "")) {
+  if (!is.list(networks) || length(networks) == 0L || is.null(names(networks)) ||
+      anyNA(names(networks)) || any(names(networks) == "") || anyDuplicated(names(networks))) {
     stop("networks must be a named list of matrices.", call. = FALSE)
   }
 
   networks <- lapply(networks, function(network) {
     network <- as.matrix(network)
+    if (!is.numeric(network) || nrow(network) == 0L || nrow(network) != ncol(network) ||
+        any(!is.finite(network))) {
+      stop("Each network must be a nonempty, finite numeric square matrix.", call. = FALSE)
+    }
+    rn <- rownames(network)
+    cn <- colnames(network)
+    for (nm in list(rn, cn)) {
+      if (!is.null(nm) && (anyNA(nm) || any(!nzchar(nm)) || anyDuplicated(nm))) {
+        stop("Network node names must be unique and non-missing.", call. = FALSE)
+      }
+    }
+    if (!is.null(rn) && !is.null(cn) && !identical(rn, cn)) {
+      if (!setequal(rn, cn)) stop("Network row and column names must identify the same nodes.", call. = FALSE)
+      network <- network[cn, cn, drop = FALSE]
+    }
+    node_names <- cn %||% rn %||% paste0("V", seq_len(ncol(network)))
+    dimnames(network) <- list(node_names, node_names)
     storage.mode(network) <- "double"
     network
   })
+  if ("default" %in% names(networks)) {
+    networks <- networks[c("default", setdiff(names(networks), "default"))]
+  }
 
   default_network <- networks[[1]]
   default_directed <- quicknet_network_summary_is_directed(model, meta, names(networks)[[1]])
@@ -91,8 +114,15 @@ summary.quicknet_fit <- function(object, ...) {
 #' @export
 plot.quicknet_fit <- function(x, network = "default", ...) {
   mat <- quicknet_network_matrix(x, network = network)
-  directed <- quicknet_network_summary_is_directed(x$model, x$meta, network)
+  directed <- quicknet_is_directed(x, network)
   args <- list(...)
+  if (identical(network, "default") && inherits(x$plots$network, "qgraph")) {
+    defaults <- x$plots$network$Arguments
+    defaults$input <- NULL
+    defaults$DoNotPlot <- FALSE
+    defaults$layout <- x$plots$network$layout
+    args <- utils::modifyList(defaults, args, keep.null = TRUE)
+  }
   if (is.null(args$directed)) args$directed <- directed
   do.call(
     qgraph::qgraph,
@@ -140,6 +170,9 @@ quicknet_network_summary_is_directed <- function(model, meta, network_name) {
 
 quicknet_network_matrix <- function(x, network = "default") {
   if (inherits(x, "quicknet_fit")) {
+    if (identical(network, "default") && !"default" %in% names(x$networks)) {
+      network <- names(x$networks)[[1L]]
+    }
     if (!network %in% names(x$networks)) {
       stop("Unknown network: ", network, call. = FALSE)
     }
@@ -147,16 +180,15 @@ quicknet_network_matrix <- function(x, network = "default") {
   }
 
   if (inherits(x, "qgraph")) {
-    if (!is.null(x$graphData$graph)) return(as.matrix(x$graphData$graph))
-    if (!is.null(x$graph)) return(as.matrix(x$graph))
+    return(quicknet_from_qgraph_matrix(qgraph::getWmat(x), directed = quicknet_is_directed(x)))
   }
 
   if (is.matrix(x) || is.data.frame(x)) {
     return(as.matrix(x))
   }
 
-  if (is.list(x) && !is.null(x$graph)) {
-    return(as.matrix(x$graph))
+  if (is.list(x) && !is.null(x[["graph", exact = TRUE]])) {
+    return(as.matrix(x[["graph", exact = TRUE]]))
   }
 
   stop("Cannot extract a network matrix from this object.", call. = FALSE)

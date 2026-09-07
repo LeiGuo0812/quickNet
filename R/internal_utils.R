@@ -3,6 +3,36 @@ quicknet_to_qgraph_matrix <- function(weight_matrix, directed = FALSE) {
   if (isTRUE(directed)) t(mat) else mat
 }
 
+quicknet_is_directed <- function(x, network = "default") {
+  if (inherits(x, "quicknet_fit")) {
+    if (identical(network, "default") && !"default" %in% names(x$networks)) {
+      network <- names(x$networks)[[1L]]
+    }
+    return(quicknet_network_summary_is_directed(x$model, x$meta, network))
+  }
+  if (inherits(x, "qgraph")) return(any(x$Edgelist$directed))
+  FALSE
+}
+
+quicknet_align_network <- function(reference, other) {
+  reference <- as.matrix(reference)
+  other <- as.matrix(other)
+  if (!identical(dim(reference), dim(other))) {
+    stop("Networks must have identical dimensions.", call. = FALSE)
+  }
+  reference_names <- colnames(reference)
+  other_names <- colnames(other)
+  if (!is.null(reference_names) && !is.null(other_names)) {
+    if (anyDuplicated(reference_names) || anyDuplicated(other_names) ||
+        !setequal(reference_names, other_names)) {
+      stop("Networks must contain the same unique node names.", call. = FALSE)
+    }
+    order <- match(reference_names, other_names)
+    other <- other[order, order, drop = FALSE]
+  }
+  other
+}
+
 quicknet_from_qgraph_matrix <- function(weight_matrix, directed = FALSE) {
   quicknet_to_qgraph_matrix(weight_matrix, directed = directed)
 }

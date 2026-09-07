@@ -218,6 +218,9 @@ quicknet_check_data_frame <- function(data, errors, warnings) {
     return(list(data = NULL, errors = errors, warnings = warnings))
   }
   dat <- as.data.frame(data)
+  if (anyNA(colnames(dat)) || any(!nzchar(colnames(dat))) || anyDuplicated(colnames(dat))) {
+    errors <- c(errors, "Column names must be non-empty and unique.")
+  }
   if (ncol(dat) < 2) errors <- c(errors, "data must contain at least two variables.")
   if (nrow(dat) < 3) errors <- c(errors, "data must contain at least three rows.")
   list(data = dat, errors = errors, warnings = warnings)
@@ -232,6 +235,12 @@ quicknet_check_numeric_columns <- function(dat, cols, errors, warnings, require_
   numeric_cols <- vapply(dat[, cols, drop = FALSE], is.numeric, logical(1))
   if (!all(numeric_cols)) {
     errors <- c(errors, paste0("Non-numeric column(s): ", paste(cols[!numeric_cols], collapse = ", ")))
+  }
+  infinite_cols <- vapply(dat[, cols, drop = FALSE], function(x) {
+    is.numeric(x) && any(is.infinite(x))
+  }, logical(1))
+  if (any(infinite_cols)) {
+    errors <- c(errors, paste0("Non-finite values in column(s): ", paste(cols[infinite_cols], collapse = ", ")))
   }
   complete_n <- sum(stats::complete.cases(dat[, cols, drop = FALSE]))
   if (isTRUE(require_complete) && complete_n < 3) {
@@ -255,6 +264,10 @@ quicknet_check_selected_data <- function(data, vars) {
   }
 
   if (is.null(vars)) vars <- colnames(dat)
+  if (!is.character(vars) || anyNA(vars) || any(!nzchar(vars)) || anyDuplicated(vars)) {
+    errors <- c(errors, "vars must contain unique, non-empty variable names.")
+    return(list(data = NULL, vars = vars, errors = errors, warnings = warnings))
+  }
   if (length(vars) < 2) {
     errors <- c(errors, "vars must contain at least two variables.")
   }
@@ -279,7 +292,10 @@ quicknet_check_cross_continuous <- function(data, args) {
   errors <- checked$errors
   warnings <- checked$warnings
   if (!is.null(dat)) {
-    out <- quicknet_check_numeric_columns(dat, colnames(dat), errors, warnings)
+    listwise <- quicknet_missing_mode(args$missing %||% "listwise") == "listwise"
+    if (listwise) dat <- dat[stats::complete.cases(dat), , drop = FALSE]
+    out <- quicknet_check_numeric_columns(dat, colnames(dat), errors, warnings,
+                                         require_complete = listwise)
     errors <- out$errors
     warnings <- out$warnings
     if (nrow(dat) <= ncol(dat) + 2) {
@@ -326,6 +342,9 @@ quicknet_check_mgm <- function(data, args) {
   types <- args$types
   levels <- args$levels
   if (is.null(dat)) return(out)
+  if (quicknet_missing_mode(args$missing %||% "listwise") == "listwise") {
+    dat <- dat[stats::complete.cases(dat), , drop = FALSE]
+  }
   if (is.null(types)) {
     out$warnings <- c(out$warnings, "types is NULL; all variables will be treated as Gaussian.")
   } else if (length(types) != ncol(dat)) {
@@ -374,8 +393,19 @@ quicknet_check_panel <- function(data, args) {
   prefix <- args$prefix %||% "_t"
   if (is.null(nodes) || length(nodes) < 1) errors <- c(errors, "nodes must be provided.")
   if (is.null(waves) || length(waves) < 2) errors <- c(errors, "At least two waves are required.")
+  if (!is.null(nodes) && (!is.character(nodes) || anyNA(nodes) ||
+      any(!nzchar(nodes)) || anyDuplicated(nodes))) {
+    errors <- c(errors, "nodes must contain unique, non-empty names.")
+  }
+  if (!is.null(waves) && (anyNA(waves) || anyDuplicated(waves))) {
+    errors <- c(errors, "waves must contain unique, non-missing identifiers.")
+  }
   if (!is.null(dat) && !is.null(nodes) && !is.null(waves)) {
     required <- unlist(lapply(waves, function(wave) paste0(nodes, prefix, wave)))
+    if (all(required %in% colnames(dat)) &&
+        quicknet_missing_mode(args$missing %||% "listwise") == "listwise") {
+      dat <- dat[stats::complete.cases(dat[, required, drop = FALSE]), , drop = FALSE]
+    }
     out <- quicknet_check_numeric_columns(
       dat,
       required,
@@ -407,6 +437,15 @@ quicknet_check_longitudinal <- function(data, args) {
     warnings <- out$warnings
     missing_required <- setdiff(required, colnames(dat))
     if (length(missing_required) > 0) errors <- c(errors, paste0("Missing required column(s): ", paste(missing_required, collapse = ", ")))
+    index_columns <- c(id, day, beep)
+    if (all(index_columns %in% colnames(dat))) {
+      if (anyNA(dat[, index_columns, drop = FALSE])) {
+        errors <- c(errors, "Subject and time identifiers must not contain missing values.")
+      }
+      if (anyDuplicated(dat[, index_columns, drop = FALSE])) {
+        errors <- c(errors, "Each id/day/beep combination must identify a unique observation.")
+      }
+    }
     if (id %in% colnames(dat)) {
       obs_by_id <- table(dat[[id]])
       if (any(obs_by_id < 3)) warnings <- c(warnings, "Some subjects have fewer than three observations.")
@@ -545,6 +584,9 @@ quicknet_check_dynamic <- function(data, args, time_varying) {
   valid_lags <- is.numeric(lags) && length(lags) > 0 && all(is.finite(lags)) &&
     all(vapply(lags, quicknet_is_positive_integer, logical(1))) && !anyDuplicated(lags)
   if (!valid_lags) out$errors <- c(out$errors, "lags must contain unique positive integers.")
+  if (valid_lags && !is.null(dat) && max(lags) >= nrow(dat) - 1) {
+    out$errors <- c(out$errors, "lags must leave at least two usable observations.")
+  }
   if (isTRUE(time_varying)) {
     timepoints <- args$timepoints
     estpoints <- args$estpoints %||% c(0.25, 0.50, 0.75)
@@ -564,6 +606,11 @@ quicknet_check_dynamic <- function(data, args, time_varying) {
         out$errors,
         "estpoints should be strictly increasing finite values between 0 and 1."
       )
+    }
+    bandwidth <- args$bandwidth %||% 0.20
+    if (!is.numeric(bandwidth) || length(bandwidth) != 1 ||
+        !is.finite(bandwidth) || bandwidth <= 0) {
+      out$errors <- c(out$errors, "bandwidth must be a positive finite number.")
     }
   }
   out
@@ -604,6 +651,10 @@ quicknet_check_meta <- function(data, args) {
     }
     if (is.null(nobs) || length(nobs) != length(matrices)) {
       errors <- c(errors, "nobs must provide one sample size per study matrix.")
+    }
+    if (!is.null(nobs) && (!is.numeric(nobs) || any(!is.finite(nobs)) ||
+        any(nobs < 2 | nobs != floor(nobs)))) {
+      errors <- c(errors, "nobs must contain finite integer sample sizes of at least 2.")
     }
   }
 

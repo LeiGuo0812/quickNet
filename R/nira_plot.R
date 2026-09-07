@@ -15,7 +15,7 @@
 #'   confidence intervals.
 #' @param top_n Optional positive integer giving the maximum number of nodes or
 #'   moderation effects to display. Nodes are selected by absolute intervention
-#'   effect, best reported rank, or mean stability rank, as appropriate.
+#'   effect, mean reported rank, or mean stability rank, as appropriate.
 #'
 #' @details A star in an effect plot denotes an adjusted permutation
 #'   \eqn{p < .05}. Stability is Monte Carlo simulation stability, not bootstrap
@@ -82,7 +82,8 @@ quicknet_nira_plot_caption <- function() {
 quicknet_nira_plot_validate_top_n <- function(top_n) {
   if (is.null(top_n)) return(NULL)
   if (length(top_n) != 1L || !is.numeric(top_n) || is.na(top_n) ||
-      !is.finite(top_n) || top_n < 1 || top_n != floor(top_n)) {
+      !is.finite(top_n) || top_n < 1 || top_n != floor(top_n) ||
+      top_n > .Machine$integer.max) {
     stop("top_n must be NULL or a positive integer.", call. = FALSE)
   }
   as.integer(top_n)
@@ -653,6 +654,13 @@ quicknet_nira_plot_moderation <- function(x, top_n) {
       (plot_data$lower > 0 | plot_data$upper < 0)
   }
   plot_data$label <- quicknet_nira_plot_moderation_labels(plot_data)
+  if ("estimate_scale" %in% names(plot_data)) {
+    magnitude_only <- !is.na(plot_data$estimate_scale) &
+      plot_data$estimate_scale == "magnitude"
+    plot_data$label[magnitude_only] <- paste0(
+      plot_data$label[magnitude_only], " [magnitude]"
+    )
+  }
   plot_data <- plot_data[
     nzchar(plot_data$label) & is.finite(plot_data$estimate),
     ,
@@ -687,6 +695,12 @@ quicknet_nira_plot_moderation <- function(x, top_n) {
     "Stable moderation blocks interpretation of NIRA intervention effects"
   } else {
     "No displayed moderation estimate met the stability criterion"
+  }
+  if ("estimate_scale" %in% names(plot_data) &&
+      any(plot_data$estimate_scale == "magnitude", na.rm = TRUE)) {
+    subtitle <- paste0(
+      subtitle, "\nMagnitude-only estimates do not indicate direction."
+    )
   }
 
   ggplot2::ggplot(

@@ -199,6 +199,9 @@ get_perturbation_plot <- function(perturbation,
     stop("perturbation must be a quicknet_perturbation object.", call. = FALSE)
   }
   type <- match.arg(type)
+  if (!quicknet_is_positive_integer(top_n)) {
+    stop("top_n must be a positive integer.", call. = FALSE)
+  }
   if (type == "auto") {
     type <- quicknet_perturb_plot_auto_type(perturbation)
   }
@@ -255,6 +258,19 @@ quicknet_perturb_continuous <- function(fit,
   }
 
   precision <- quicknet_perturb_precision(fit)
+  if (!is.numeric(dose) || length(dose) == 0 || any(!is.finite(dose))) {
+    stop("dose must contain finite numeric values.", call. = FALSE)
+  }
+  if (!is.numeric(remaining_strength) || length(remaining_strength) != 1 ||
+      !is.finite(remaining_strength) || remaining_strength < 0 || remaining_strength > 1) {
+    stop("remaining_strength must be a finite fraction in [0, 1].", call. = FALSE)
+  }
+  if (!quicknet_is_positive_integer(combination_size) || !quicknet_is_positive_integer(steps)) {
+    stop("combination_size and steps must be positive integers.", call. = FALSE)
+  }
+  if (!is.numeric(threshold) || length(threshold) != 1 || !is.finite(threshold) || threshold < 0) {
+    stop("threshold must be a non-negative finite number.", call. = FALSE)
+  }
   node_names <- colnames(precision)
   target_sets <- quicknet_perturb_target_sets(targets, node_names)
   baseline_state <- stats::setNames(rep(0, length(node_names)), node_names)
@@ -377,6 +393,9 @@ quicknet_perturb_ising <- function(fit,
   if (!quicknet_is_ising_model(fit$model)) {
     stop("method = 'ising_threshold' requires an Ising fit.", call. = FALSE)
   }
+  if (!is.numeric(threshold_shift) || length(threshold_shift) != 1 || !is.finite(threshold_shift)) {
+    stop("threshold_shift must be a single finite number.", call. = FALSE)
+  }
   weight_matrix <- as.matrix(fit$graph)
   node_names <- colnames(weight_matrix)
   if (is.null(node_names)) node_names <- paste0("V", seq_len(ncol(weight_matrix)))
@@ -412,7 +431,7 @@ quicknet_perturb_ising <- function(fit,
       n_samples = n_samples,
       burnin = burnin,
       thinning = thinning,
-      seed = seed + length(rows) + 1
+      seed = if (is.null(seed)) NULL else seed + length(rows) + 1
     )
     perturbed_activity <- colMeans(perturbed_samples)
     non_targets <- setdiff(node_names, target_set)
@@ -484,7 +503,9 @@ quicknet_perturb_conditioned_state <- function(precision_matrix, target_values) 
   precision_matrix <- quicknet_perturb_make_positive_definite(precision_matrix)
   node_names <- colnames(precision_matrix)
   target_nodes <- names(target_values)
-  if (is.null(target_nodes) || any(!target_nodes %in% node_names)) {
+  if (!is.numeric(target_values) || length(target_values) == 0 ||
+      any(!is.finite(target_values)) || is.null(target_nodes) ||
+      anyDuplicated(target_nodes) || any(!target_nodes %in% node_names)) {
     stop("target_values must be a named numeric vector with valid node names.", call. = FALSE)
   }
   non_targets <- setdiff(node_names, target_nodes)
@@ -613,7 +634,11 @@ quicknet_perturb_edge_block <- function(precision_matrix,
   if (is.null(spillover_nodes)) {
     spillover_nodes <- setdiff(node_names, names(pulse_values))
   }
+  if (length(spillover_nodes) > 0) quicknet_perturb_validate_nodes(spillover_nodes, node_names)
   edge_table <- quicknet_perturb_edge_candidates(fit, edges = edges, threshold = threshold)
+  if (nrow(edge_table) == 0) {
+    stop("No edges are available for edge-block perturbation.", call. = FALSE)
+  }
   unblocked <- quicknet_perturb_spillover_from_pulse(precision_matrix, pulse_values, spillover_nodes)
 
   rows <- list()
@@ -719,11 +744,21 @@ quicknet_perturb_ising_gibbs <- function(weight_matrix,
                                          burnin,
                                          thinning,
                                          seed) {
+  if (!quicknet_is_positive_integer(n_samples) || !quicknet_is_positive_integer(thinning)) {
+    stop("n_samples and thinning must be positive integers.", call. = FALSE)
+  }
+  if (!is.numeric(burnin) || length(burnin) != 1 || !is.finite(burnin) ||
+      burnin < 0 || burnin != floor(burnin)) {
+    stop("burnin must be a non-negative integer.", call. = FALSE)
+  }
   if (!is.null(seed)) set.seed(seed)
   weight_matrix <- as.matrix(weight_matrix)
   p <- length(thresholds)
   if (nrow(weight_matrix) != p || ncol(weight_matrix) != p) {
     stop("weight_matrix dimensions must match thresholds length.", call. = FALSE)
+  }
+  if (any(!is.finite(weight_matrix)) || any(!is.finite(thresholds))) {
+    stop("Ising weights and thresholds must be finite.", call. = FALSE)
   }
   state <- stats::rbinom(p, size = 1, prob = 0.50)
   samples <- matrix(NA_integer_, nrow = n_samples, ncol = p)
@@ -752,11 +787,17 @@ quicknet_perturb_target_sets <- function(targets, node_names) {
   } else {
     target_sets <- lapply(as.character(targets), function(node) node)
   }
+  if (length(target_sets) == 0) {
+    stop("targets must contain at least one node.", call. = FALSE)
+  }
   invisible(lapply(target_sets, quicknet_perturb_validate_nodes, node_names = node_names))
   target_sets
 }
 
 quicknet_perturb_validate_nodes <- function(nodes, node_names) {
+  if (length(nodes) == 0 || anyNA(nodes) || anyDuplicated(nodes)) {
+    stop("Each target set must contain one or more unique, non-missing nodes.", call. = FALSE)
+  }
   missing_nodes <- setdiff(nodes, node_names)
   if (length(missing_nodes) > 0) {
     stop("Unknown node(s): ", paste(missing_nodes, collapse = ", "), call. = FALSE)
@@ -851,6 +892,16 @@ quicknet_perturb_plot_rank <- function(perturbation, top_n) {
   )
   df <- metrics[seq_len(min(nrow(metrics), top_n)), , drop = FALSE]
   df$plot_label <- as.character(df[[label_column]])
+  # Each condition needs its own bar; repeated target labels otherwise stack.
+  if (anyDuplicated(df$plot_label)) {
+    if ("dose" %in% names(df)) {
+      df$plot_label <- paste0(df$plot_label, " (dose ", df$dose, ")")
+    }
+    if (anyDuplicated(df$plot_label) && "perturbation_type" %in% names(df)) {
+      df$plot_label <- paste(df$plot_label, df$perturbation_type, sep = " / ")
+    }
+    df$plot_label <- make.unique(df$plot_label)
+  }
   df$plot_value <- as.numeric(df[[value_column]])
   df <- df[order(df$plot_value), , drop = FALSE]
 

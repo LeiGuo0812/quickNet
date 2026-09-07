@@ -152,9 +152,9 @@ test_that("LongitudinalNet supports mlVAR", {
     id = ids,
     day = ceiling(time / 4),
     beep = ((time - 1) %% 4) + 1,
-    x1 = rnorm(length(ids)),
-    x2 = rnorm(length(ids)),
-    x3 = rnorm(length(ids))
+    x1 = rep(rnorm(8, sd = 2), each = 12) + rnorm(length(ids)),
+    x2 = rep(rnorm(8, sd = 2), each = 12) + rnorm(length(ids)),
+    x3 = rep(rnorm(8, sd = 2), each = 12) + rnorm(length(ids))
   )
 
   fit <- suppressWarnings(LongitudinalNet(

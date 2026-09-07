@@ -146,7 +146,8 @@ TimeVaryingNet <- function(data,
     levels = levels,
     lags = lags,
     timepoints = timepoints,
-    estpoints = estpoints
+    estpoints = estpoints,
+    bandwidth = bandwidth
   )
   quicknet_dynamic_validate(dat, vars, types, levels)
   matrix_data <- as.matrix(dat[, vars, drop = FALSE])

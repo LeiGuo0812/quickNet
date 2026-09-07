@@ -18,5 +18,15 @@
 #' quickNet(mtcars, vsize = vsize)
 get_strength_node_size = function(Centrality, scale_add = 0.5, scale_times = 2.5) {
   strength = Centrality$centrality_data$InDegreeScale
-  (rescale(strength, to = c(min(abs(strength)), max(abs(strength)))) + scale_add) * scale_times
+  if (is.null(strength) || !is.numeric(strength)) {
+    stop("Centrality must contain numeric InDegreeScale values.", call. = FALSE)
+  }
+  valid <- is.finite(strength)
+  sizes <- rep(scale_add * scale_times, length(strength))
+  if (any(valid)) {
+    sizes[valid] <- (rescale(strength[valid],
+      to = range(abs(strength[valid]))) + scale_add) * scale_times
+  }
+  names(sizes) <- names(strength)
+  sizes
 }

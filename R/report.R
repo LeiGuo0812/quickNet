@@ -365,7 +365,7 @@ quicknet_report_sample <- function(fit) {
 quicknet_report_estimation <- function(fit) {
   model_info <- quicknet_model_info(fit$model)
   registry_backend <- if (nrow(model_info) > 0) model_info$backend[[1]] else NULL
-  backend <- fit$meta$backend %||% registry_backend %||% switch(
+  backend <- fit$meta[["backend", exact = TRUE]] %||% registry_backend %||% switch(
     fit$model,
     EBICglasso = "bootnet::estimateNetwork(default = 'EBICglasso')",
     correlation = "stats::cor",

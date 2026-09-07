@@ -23,7 +23,7 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
 
     edge_data <- quicknet_edgelist(
       quicknet_network_matrix(net1),
-      directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
+      directed = quicknet_is_directed(net1)
     ) %>% as.data.frame()
 
     edges <- lapply(seq_len(nrow(edge_data)), function(i) {
@@ -34,12 +34,12 @@ get_edges <- function(net1, net2 = NULL, method = 'union') {
 
         edge_data1 <- quicknet_edgelist(
           quicknet_network_matrix(net1),
-          directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
+          directed = quicknet_is_directed(net1)
         ) %>% as.data.frame() %>%
           mutate(pair = paste(from,to,sep = '_'))
         edge_data2 <- quicknet_edgelist(
-          quicknet_network_matrix(net2),
-          directed = inherits(net2, "quicknet_fit") && isTRUE(net2$meta$directed)
+          quicknet_align_network(quicknet_network_matrix(net1), quicknet_network_matrix(net2)),
+          directed = quicknet_is_directed(net2)
         ) %>% as.data.frame()%>%
           mutate(pair = paste(from,to,sep = '_'))
 

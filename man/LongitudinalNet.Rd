@@ -58,7 +58,8 @@ LongitudinalNet(
 A \code{quicknet_fit} object with temporal and contemporaneous
 networks. Backends that estimate a between-person layer also return
 \code{between}; multi-lag mlVAR fits additionally return
-\code{temporal_lag_*} layers.
+\code{temporal_lag_*} layers. An unestimable mlVAR between-person layer is
+omitted with a warning.
 }
 \description{
 Estimate longitudinal ESM networks

@@ -521,7 +521,8 @@ PanelSEMNet <- function(data,
   }
 
   syntax <- quicknet_panel_sem_syntax(nodes, waves, prefix, residual_cov = residual_cov)
-  fit <- lavaan::sem(syntax, data = dat, fixed.x = FALSE, missing = missing)
+  fit <- lavaan::sem(syntax, data = dat, fixed.x = FALSE, missing = missing,
+                     auto.cov.y = FALSE)
   parameters <- lavaan::standardizedSolution(fit)
   path_table <- parameters[parameters$op == "~", c("lhs", "rhs", "est.std", "se", "z", "pvalue")]
   mat <- quicknet_panel_sem_matrix(path_table, nodes, waves, prefix)
@@ -607,10 +608,19 @@ quicknet_confirmatory_template <- function(omega, node_names, diag_value = 0) {
   if (!all(dim(omega) == c(length(node_names), length(node_names)))) {
     stop("omega must have one row and one column per node.", call. = FALSE)
   }
+  if (!is.numeric(omega) || any(!is.finite(omega))) {
+    stop("The network template must contain finite numeric values.", call. = FALSE)
+  }
   if (is.null(colnames(omega))) colnames(omega) <- node_names
   if (is.null(rownames(omega))) rownames(omega) <- node_names
+  if (anyDuplicated(rownames(omega)) || anyDuplicated(colnames(omega)) ||
+      !setequal(rownames(omega), node_names) || !setequal(colnames(omega), node_names)) {
+    stop("The network template names must match the node names.", call. = FALSE)
+  }
   omega <- omega[node_names, node_names, drop = FALSE]
-  omega[lower.tri(omega)] <- t(omega)[lower.tri(omega)]
+  if (!isSymmetric(omega)) {
+    stop("The network template must be symmetric.", call. = FALSE)
+  }
   diag(omega) <- diag_value
   omega
 }

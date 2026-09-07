@@ -125,13 +125,13 @@ quicknet_nira_simulate_condition <- function(weight_matrix,
     }
 
     samples <- as.matrix(samples)
-    storage.mode(samples) <- "integer"
     if (!identical(dim(samples), c(as.integer(n_samples), length(thresholds)))) {
       stop("The simulation engine returned an unexpected sample dimension.", call. = FALSE)
     }
     if (anyNA(samples) || any(!samples %in% c(0L, 1L))) {
       stop("The simulation engine returned values outside the required 0/1 support.", call. = FALSE)
     }
+    storage.mode(samples) <- "integer"
     colnames(samples) <- names(thresholds)
     samples
   })
@@ -515,7 +515,10 @@ quicknet_nira_stability_worker <- function(task) {
       absolute_differences <- abs(
         condition_means[-1L] - condition_means[[1L]]
       )
-      ranks <- rank(-absolute_differences, ties.method = "first")
+      # Discrete total scores can produce exact ties, especially in saturated
+      # networks. Randomize their order within the task RNG stream so column
+      # order cannot masquerade as Monte Carlo ranking stability.
+      ranks <- rank(-absolute_differences, ties.method = "random")
       list(
         ok = TRUE,
         task_index = task$task_index,
@@ -717,6 +720,7 @@ quicknet_nira_run_stability <- function(parameters,
 
   list(
     method = "Monte Carlo simulation stability; not bootstrap stability",
+    tie_method = "random ordering within ties using the task RNG stream",
     rank_frequencies = rank_frequencies,
     node_summary = node_summary,
     condition_means = condition_matrix,

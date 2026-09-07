@@ -32,9 +32,10 @@ MTD.No.Smooth.Test <- function(data, nperm = 5000){
   MTD.No.Smooth <- function(x){
 
     derivatives <- apply(x, 2, base::diff)
-    standard_deviations <- apply(x, 2, stats::sd)
+    # Shine et al. (2015), Eq. 2 normalizes the temporal derivatives.
+    standard_deviations <- apply(derivatives, 2, stats::sd)
     if (any(!is.finite(standard_deviations)) || any(standard_deviations == 0)) {
-      stop("Both data columns must have nonzero finite standard deviations.", call. = FALSE)
+      stop("Both columns must have temporal derivatives with nonzero finite standard deviations.", call. = FALSE)
     }
 
     diff_std <- sweep(derivatives, 2, standard_deviations, "/")

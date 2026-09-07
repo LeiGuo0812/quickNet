@@ -30,7 +30,7 @@ confidence intervals.}
 
 \item{top_n}{Optional positive integer giving the maximum number of nodes or
 moderation effects to display. Nodes are selected by absolute intervention
-effect, best reported rank, or mean stability rank, as appropriate.}
+effect, mean reported rank, or mean stability rank, as appropriate.}
 
 \item{...}{Additional arguments reserved for compatibility with the
 \code{plot} generic.}

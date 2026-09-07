@@ -21,7 +21,9 @@ quicknet_fit(
 
 \item{data}{Original input data.}
 
-\item{networks}{Named list of network weight matrices.}
+\item{networks}{Nonempty, uniquely named list of finite numeric square network
+matrices. Node names, when supplied, must be unique; rows are aligned to
+column order. The first layer is used when no layer is named "default".}
 
 \item{edges}{Edge table.}
 

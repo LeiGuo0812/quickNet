@@ -30,7 +30,7 @@ Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 
 
   bridge_input <- if (inherits(net_G, "quicknet_fit") && !is.null(net_G$plots$network)) {
     net_G$plots$network
-  } else if (inherits(net_G, "quicknet_fit") && isTRUE(net_G$meta$directed)) {
+  } else if (quicknet_is_directed(net_G)) {
     qgraph::qgraph(
       quicknet_to_qgraph_matrix(quicknet_network_matrix(net_G), directed = TRUE),
       directed = TRUE,
@@ -75,12 +75,15 @@ Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 
                        'Bridge Expected Influence (1-step)',
                        'Bridge Expected Influence (2-step)'
                      ))) %>%
-                     ggplot(aes(x = nodes, y = value)) +
-                     geom_line(group = 1) +
-                     geom_point(aes(color = communities)) +
+                     ggplot(aes(x = value, y = nodes)) +
+                     geom_line(group = 1, orientation = "y", na.rm = TRUE) +
+                     geom_point(aes(color = communities), na.rm = TRUE) +
                      theme_bw() +
-                     coord_flip() +
                      facet_wrap(~measure, scales = 'free_x') -> p)
+
+  if (any(!is.finite(plot_data_long$value))) {
+    p <- p + labs(caption = "Undefined bridge statistics are omitted (for example, closeness without reachable cross-community nodes).")
+  }
 
   p
 

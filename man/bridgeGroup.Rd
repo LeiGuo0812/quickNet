@@ -9,7 +9,7 @@ bridgeGroup(bridge, groups, labels = NULL, n = 1, by_group = TRUE)
 \arguments{
 \item{bridge}{The output of \code{quickNet::Bridge}.}
 
-\item{groups}{The original groups or communities parameter used. if groups is a list, the name of each group should not be end with numbers.}
+\item{groups}{The original groups or communities, as a vector or a named list of node indices.}
 
 \item{labels}{If there are labels for each node, please provide.}
 

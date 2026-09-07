@@ -26,7 +26,7 @@
 netCor <- function(x1, x2, nperm = 1000, graph = TRUE, alternative = 'two.sided',...){
 
   matrix1 <- quicknet_network_matrix(x1)
-  matrix2 <- quicknet_network_matrix(x2)
+  matrix2 <- quicknet_align_network(matrix1, quicknet_network_matrix(x2))
 
   return(ape::mantel.test(matrix1, matrix2, nperm = nperm, graph = graph, alternative = alternative, ...))
 

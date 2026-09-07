@@ -23,7 +23,7 @@ get_edges_df <- function(net1, net2 = NULL, method = 'union', labels = NULL) {
 
     edge_data <- quicknet_edgelist(
       quicknet_network_matrix(net1),
-      directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
+      directed = quicknet_is_directed(net1)
     ) %>% as.data.frame()
 
     edges <- edge_data[, c("from", "to", "weight"), drop = FALSE]
@@ -32,12 +32,12 @@ get_edges_df <- function(net1, net2 = NULL, method = 'union', labels = NULL) {
 
     edge_data1 <- quicknet_edgelist(
       quicknet_network_matrix(net1),
-      directed = inherits(net1, "quicknet_fit") && isTRUE(net1$meta$directed)
+      directed = quicknet_is_directed(net1)
     ) %>% as.data.frame() %>%
       mutate(pair = paste(from,to,sep = '_'))
     edge_data2 <- quicknet_edgelist(
-      quicknet_network_matrix(net2),
-      directed = inherits(net2, "quicknet_fit") && isTRUE(net2$meta$directed)
+      quicknet_align_network(quicknet_network_matrix(net1), quicknet_network_matrix(net2)),
+      directed = quicknet_is_directed(net2)
     ) %>% as.data.frame()%>%
       mutate(pair = paste(from,to,sep = '_'))
 
@@ -71,10 +71,8 @@ get_edges_df <- function(net1, net2 = NULL, method = 'union', labels = NULL) {
     )) {
       stop("labels must contain one entry for every node index.", call. = FALSE)
     }
-    for (i in seq_len(nrow(edges_result))) {
-      edges_result[i,'from'] <- labels[edges_result[i,'from']]
-      edges_result[i,'to'] <- labels[edges_result[i,'to']]
-    }
+    edges_result$from <- labels[edges_result$from]
+    edges_result$to <- labels[edges_result$to]
   }
 
   return(edges_result)

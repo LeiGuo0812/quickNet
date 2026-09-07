@@ -62,6 +62,10 @@ NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
     estimator2 <- data2$estimator
     estimatorArgs2 <- data2$arguments
     estimatorArgs2$verbose <- FALSE
+    if (missing(estimator)) {
+      estimator <- estimator2
+      estimatorArgs <- estimatorArgs2
+    }
     if (!identical(estimator, estimator2)) {
       stop("Estimation methods are not identical.")
     }
@@ -199,8 +203,8 @@ NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
     }
     valid_edges <- vapply(
       edges,
-      function(edge) length(edge) == 2 && all(is.finite(edge)) &&
-        all(edge >= 1 & edge <= nvars) && edge[[1]] != edge[[2]],
+      function(edge) is.numeric(edge) && length(edge) == 2 && all(is.finite(edge)) &&
+        all(edge == floor(edge)) && all(edge >= 1 & edge <= nvars) && edge[[1]] != edge[[2]],
       logical(1)
     )
     if (!all(valid_edges)) {
@@ -468,13 +472,11 @@ NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
         }
       }
       corrpvals <- p.adjust(uncorrpvals, method = p.adjust.methods)
-      corrpvals_mat <- matrix(NA, length(edges), 3)
-      corrpvals_mat[, 3] <- corrpvals
-      corrpvals_mat[, 1:2] <- pairs
-      einv.pvals <- as.data.frame(corrpvals_mat)
-      einv.pvals <- cbind(einv.pvals, einv.real)
-      colnames(einv.pvals) <- c("Var1", "Var2", "p-value",
-                                "Test statistic E")
+      einv.pvals <- data.frame(
+        Var1 = pairs[, 1], Var2 = pairs[, 2],
+        `p-value` = corrpvals, `Test statistic E` = einv.real,
+        check.names = FALSE, stringsAsFactors = FALSE
+      )
     }
     res <- list(glstrinv.real = glstrinv.real, glstrinv.sep = glstrinv.sep,
                 glstrinv.pval = (sum(glstrinv.perm >= glstrinv.real) +

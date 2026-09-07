@@ -53,6 +53,11 @@ get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = '
 
   base_matrix <- quicknet_network_matrix(network_G)
   graph_labels <- colnames(base_matrix)
+  for (field in c(required_differences, "net1_mask", "net2_mask")) {
+    if (!is.null(NetCompare[[field]])) {
+      NetCompare[[field]] <- quicknet_align_network(base_matrix, NetCompare[[field]])
+    }
+  }
 
   if (use.mask == 'none') {
     diff_net <- NetCompare$`diff_sig`

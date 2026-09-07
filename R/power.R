@@ -61,6 +61,10 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
   if (!is.numeric(gamma) || length(gamma) != 1 || !is.finite(gamma) || gamma < 0) {
     stop("gamma must be a non-negative finite number.", call. = FALSE)
   }
+  if (!is.numeric(threshold) || length(threshold) != 1 ||
+      !is.finite(threshold) || threshold < 0) {
+    stop("threshold must be a non-negative finite number.", call. = FALSE)
+  }
   sample_sizes <- quicknet_power_resolve_sample_sizes(sample_sizes, nodes)
   quicknet_validate_input(
     model = "power",
@@ -303,10 +307,17 @@ quicknet_power_powerly <- function(nodes,
   )
   args <- utils::modifyList(defaults, powerly_args)
   fit <- do.call(powerly::powerly, args)
-  recommendation <- quicknet_power_powerly_recommendation(fit)
+  recommendation <- quicknet_power_powerly_recommendation(fit, target_probability)
   summary <- quicknet_power_powerly_summary(fit, target_metric, target_value)
   settings <- c(args, list(seed = seed, target_metric = target_metric, target_probability = target_probability))
-  report <- quicknet_power_report_text(recommendation, target_metric, target_value, target_probability)
+  report <- if (isTRUE(recommendation$reached[[1]])) {
+    paste0("Powerly bootstrap median sample-size estimate = ", recommendation$recommended_n[[1]],
+           "; the fitted target-achievement probability at this estimate is ",
+           signif(recommendation$achieved_probability[[1]], 3),
+           " (target = ", target_probability, "). This is an interpolated model-based estimate.")
+  } else {
+    "Powerly's sample-size estimate did not meet the requested probability on the fitted curve. Extend the evaluated range or increase simulation precision."
+  }
   quicknet_power_object(
     method = "powerly",
     model = "ggm",
@@ -446,10 +457,11 @@ quicknet_power_recovery_metrics <- function(true_graph, estimated_graph, thresho
   estimated_values <- estimated_graph[upper.tri(estimated_graph)]
   true_edge <- abs(true_values) > threshold
   estimated_edge <- abs(estimated_values) > threshold
-  tp <- sum(true_edge & estimated_edge)
-  fn <- sum(true_edge & !estimated_edge)
-  tn <- sum(!true_edge & !estimated_edge)
-  fp <- sum(!true_edge & estimated_edge)
+  # Products of integer edge counts overflow for even moderately sized networks.
+  tp <- as.double(sum(true_edge & estimated_edge))
+  fn <- as.double(sum(true_edge & !estimated_edge))
+  tn <- as.double(sum(!true_edge & !estimated_edge))
+  fp <- as.double(sum(!true_edge & estimated_edge))
   denominator <- sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
   data.frame(
     true_positive = tp,
@@ -540,22 +552,34 @@ quicknet_power_recommend <- function(summary, target_probability) {
   )
 }
 
-quicknet_power_powerly_recommendation <- function(fit) {
+quicknet_power_powerly_recommendation <- function(fit, target_probability) {
   rec <- tryCatch(fit$recommendation, error = function(e) NULL)
   recommended_n <- if (!is.null(rec)) {
     if ("50%" %in% names(rec)) as.numeric(rec[["50%"]]) else as.numeric(rec[[1]])
   } else {
     NA_real_
   }
+  # powerly returns the upper boundary even if no spline value meets the target.
+  # A finite bootstrap recommendation alone is therefore not evidence of success.
+  curve_x <- tryCatch(as.numeric(fit$step_2$interpolation$x), error = function(e) numeric())
+  curve_y <- tryCatch(as.numeric(fit$step_2$interpolation$fitted), error = function(e) numeric())
+  achieved <- if (length(curve_x) >= 2 && length(curve_x) == length(curve_y) &&
+                 is.finite(recommended_n)) {
+    stats::approx(curve_x, curve_y, xout = recommended_n)$y
+  } else NA_real_
+  reached <- is.finite(achieved) && achieved >= target_probability
+  lower <- if (length(curve_x)) min(curve_x) else NA_real_
+  upper <- if (length(curve_x)) max(curve_x) else NA_real_
   data.frame(
-    recommended_n = recommended_n,
-    target_probability = NA_real_,
-    achieved_probability = NA_real_,
-    smallest_evaluated_n = NA_real_,
-    largest_evaluated_n = NA_real_,
-    at_lower_boundary = NA,
-    at_upper_boundary = NA,
-    reached = is.finite(recommended_n),
+    recommended_n = if (reached) recommended_n else NA_real_,
+    backend_recommended_n = recommended_n,
+    target_probability = target_probability,
+    achieved_probability = achieved,
+    smallest_evaluated_n = lower,
+    largest_evaluated_n = upper,
+    at_lower_boundary = is.finite(recommended_n) && recommended_n == lower,
+    at_upper_boundary = is.finite(recommended_n) && recommended_n == upper,
+    reached = reached,
     stringsAsFactors = FALSE
   )
 }

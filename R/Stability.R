@@ -111,7 +111,7 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
 
   results$centrality_stability_plot <- plot(bootb,statistics=c('strength','closeness','betweenness'))
 
-  results$centrality_diff_plot <- plot(boota, "strength", order="sample", labels=TRUE)
+  results$centrality_diff_plot <- plot(boota, "strength", plot="difference", order="sample", labels=TRUE)
 
   if (add.bridge) {
     results$bridge_stability_plot <- plot(bootb,statistics=c("bridgeStrength", "bridgeCloseness", "bridgeBetweenness"))

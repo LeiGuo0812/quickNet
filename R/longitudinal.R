@@ -141,7 +141,8 @@ PanelNet <- function(data,
 #' @return A \code{quicknet_fit} object with temporal and contemporaneous
 #' networks. Backends that estimate a between-person layer also return
 #' \code{between}; multi-lag mlVAR fits additionally return
-#' \code{temporal_lag_*} layers.
+#' \code{temporal_lag_*} layers. An unestimable mlVAR between-person layer is
+#' omitted with a warning.
 #' @export
 LongitudinalNet <- function(data,
                             vars,
@@ -244,9 +245,10 @@ LongitudinalNet <- function(data,
   }
   colnames(temporal) <- rownames(temporal) <- vars
   colnames(contemporaneous) <- rownames(contemporaneous) <- vars
-  colnames(between) <- rownames(between) <- vars
+  if (!is.null(between)) colnames(between) <- rownames(between) <- vars
 
-  networks <- list(default = temporal, temporal = temporal, contemporaneous = contemporaneous, between = between)
+  networks <- list(default = temporal, temporal = temporal, contemporaneous = contemporaneous)
+  if (!is.null(between)) networks$between <- between
   if (length(temporal_by_lag) > 1) {
     networks <- c(networks, temporal_by_lag)
   }
@@ -284,6 +286,7 @@ LongitudinalNet <- function(data,
       temporal = if (model == "mlVAR") temporal_setting else NULL,
       contemporaneous = if (model == "mlVAR") contemporaneous_setting else NULL,
       nCores = if (model == "mlVAR") nCores else NULL,
+      backend_args = list(...),
       call = match.call()
     )
   )
@@ -435,7 +438,7 @@ quicknet_clpn_glmnet <- function(predictors,
     coefficients <- as.matrix(stats::coef(cv_fit, s = lambda_value))
     edge_matrix[target, ] <- as.numeric(coefficients[colnames(predictors), 1])
     cv_mse <- cv_fit$cvm[which.min(abs(cv_fit$lambda - lambda_value))]
-    null_mse <- stats::var(y)
+    null_mse <- mean((y - mean(y))^2)
     predictability[predictability$node == target, c("cv_r_squared", "lambda", "nonzero_predictors")] <- c(
       ifelse(is.finite(null_mse) && null_mse > 0, 1 - cv_mse / null_mse, NA_real_),
       lambda_value,
@@ -507,7 +510,7 @@ quicknet_psychonetrics_panel_fit <- function(data,
 
   edges <- quicknet_longitudinal_edges(networks)
   node_tables <- lapply(names(networks), function(network_name) {
-    if (network_name %in% c("default", "temporal")) {
+    if (quicknet_longitudinal_network_is_directed(network_name)) {
       quicknet_directed_node_table(networks[[network_name]], network = network_name)
     } else {
       quicknet_node_table(networks[[network_name]], network = network_name)
@@ -534,6 +537,7 @@ quicknet_psychonetrics_panel_fit <- function(data,
       standardize = standardize,
       ri_type = if (model == "ri_clpm") ri_type else NULL,
       stationary = stationary,
+      backend_args = list(...),
       call = call
     )
   )
@@ -587,6 +591,7 @@ quicknet_psychonetrics_gvar_fit <- function(data,
       beep = beep,
       scale = scale,
       standardize = standardize,
+      backend_args = list(...),
       call = call
     )
   )
@@ -642,8 +647,13 @@ quicknet_psychonetrics_matrix <- function(fit, matrix_name, vars) {
 
 quicknet_psychonetrics_first_matrix <- function(fit, candidates, vars) {
   available <- tryCatch(fit@matrices$name, error = function(e) character())
-  for (candidate in candidates) {
-    if (candidate %in% available) {
+  computed <- tryCatch(names(fit@modelmatrices[[1]]), error = function(e) character())
+  # A Cholesky parameterization only models lowertri_* directly. Prefer its
+  # derived covariance when none of the requested matrices is directly modeled.
+  ordered <- c(candidates[candidates %in% available],
+               candidates[grepl("^sigma", candidates)], candidates)
+  for (candidate in unique(ordered)) {
+    if (candidate %in% c(available, computed)) {
       mat <- quicknet_psychonetrics_matrix(fit, candidate, vars)
       diag(mat) <- 0
       return(mat)
@@ -653,56 +663,53 @@ quicknet_psychonetrics_first_matrix <- function(fit, candidates, vars) {
 }
 
 quicknet_ri_clpm_networks <- function(fit, nodes, waves, prefix) {
-  pars <- data.frame()
-  invisible(utils::capture.output({
-    pars <- tryCatch(psychonetrics::parameters(fit), error = function(e) data.frame())
-  }))
+  # RI-CLPM stores wave-specific innovations first, followed by random
+  # intercepts. Read full matrices so covariance/precision/Cholesky models
+  # and fixed parameters are represented as well as GGM parameters.
+  p <- length(nodes)
+  expected_dim <- p * (length(waves) + 1L)
+  beta <- as.matrix(psychonetrics::getmatrix(fit, "beta"))
+  available <- fit@matrices$name
+  innovation_name <- c("omega_zeta", "sigma_zeta", "kappa_zeta")
+  innovation_name <- innovation_name[innovation_name %in% available]
+  if (!length(innovation_name)) innovation_name <- "sigma_zeta"
+  innovations <- as.matrix(psychonetrics::getmatrix(fit, innovation_name[[1]]))
+  if (!all(dim(beta) == c(expected_dim, expected_dim)) ||
+      !all(dim(innovations) == c(expected_dim, expected_dim))) {
+    stop("RI-CLPM returned matrices with unexpected dimensions.", call. = FALSE)
+  }
   temporal <- matrix(NA_real_, length(nodes), length(nodes), dimnames = list(nodes, nodes))
   contemporaneous <- matrix(NA_real_, length(nodes), length(nodes), dimnames = list(nodes, nodes))
   random_intercept <- matrix(NA_real_, length(nodes), length(nodes), dimnames = list(nodes, nodes))
 
-  for (from_node in nodes) {
-    for (to_node in nodes) {
+  for (from_index in seq_along(nodes)) {
+    for (to_index in seq_along(nodes)) {
       values <- numeric()
       for (wave_index in seq_len(length(waves) - 1)) {
-        from_name <- paste0("C_", from_node, prefix, waves[[wave_index]])
-        to_name <- paste0("C_", to_node, prefix, waves[[wave_index + 1]])
-        row <- pars[pars$matrix == "beta" & pars$var1 == to_name & pars$var2 == from_name, , drop = FALSE]
-        if (nrow(row) > 0) values <- c(values, row$est)
+        values <- c(values, beta[wave_index * p + to_index,
+                                  (wave_index - 1L) * p + from_index])
       }
-      temporal[to_node, from_node] <- if (length(values) > 0) mean(values, na.rm = TRUE) else NA_real_
+      temporal[to_index, from_index] <- quicknet_safe_mean(values)
     }
   }
 
-  for (node_i in nodes) {
-    for (node_j in nodes) {
+  for (i in seq_along(nodes)) {
+    node_i <- nodes[[i]]
+    for (j in seq_along(nodes)) {
+      node_j <- nodes[[j]]
       if (node_i == node_j) {
         contemporaneous[node_i, node_j] <- 0
         random_intercept[node_i, node_j] <- 0
         next
       }
       innovation_values <- numeric()
-      for (wave in waves) {
-        name_i <- paste0("C_", node_i, prefix, wave)
-        name_j <- paste0("C_", node_j, prefix, wave)
-        row <- pars[
-          pars$matrix == "omega_zeta" &
-            ((pars$var1 == name_i & pars$var2 == name_j) | (pars$var1 == name_j & pars$var2 == name_i)),
-          ,
-          drop = FALSE
-        ]
-        if (nrow(row) > 0) innovation_values <- c(innovation_values, row$est)
+      for (wave_index in seq_along(waves)) {
+        offset <- (wave_index - 1L) * p
+        innovation_values <- c(innovation_values, innovations[offset + i, offset + j])
       }
-      contemporaneous[node_i, node_j] <- if (length(innovation_values) > 0) mean(innovation_values, na.rm = TRUE) else NA_real_
-      ri_i <- paste0("RI_", node_i)
-      ri_j <- paste0("RI_", node_j)
-      ri_row <- pars[
-        pars$matrix == "omega_zeta" &
-          ((pars$var1 == ri_i & pars$var2 == ri_j) | (pars$var1 == ri_j & pars$var2 == ri_i)),
-        ,
-        drop = FALSE
-      ]
-      random_intercept[node_i, node_j] <- if (nrow(ri_row) > 0) mean(ri_row$est, na.rm = TRUE) else NA_real_
+      contemporaneous[node_i, node_j] <- quicknet_safe_mean(innovation_values)
+      offset <- length(waves) * p
+      random_intercept[node_i, node_j] <- innovations[offset + i, offset + j]
     }
   }
 
@@ -743,7 +750,15 @@ quicknet_longitudinal_network_is_directed <- function(network_name) {
 quicknet_mlvar_get_net <- function(fit, type, vars, lag = NULL) {
   args <- list(fit, type = type, nonsig = "show")
   if (!is.null(lag) && identical(type, "temporal")) args$lag <- lag
-  result <- tryCatch(do.call(mlVAR::getNet, args), error = function(e) NULL)
+  result <- tryCatch(do.call(mlVAR::getNet, args), error = function(e) {
+    if (identical(type, "between")) {
+      warning("mlVAR could not estimate the between-person network; this layer is omitted: ",
+              conditionMessage(e), call. = FALSE)
+      return(NULL)
+    }
+    stop("Could not extract the mlVAR ", type, " network: ", conditionMessage(e), call. = FALSE)
+  })
+  if (is.null(result) && identical(type, "between")) return(NULL)
   quicknet_mlvar_standardize_net(result, type = type, vars = vars)
 }
 
@@ -853,7 +868,7 @@ quicknet_psychonetrics_panel_bootstrap_stability <- function(fit, nboot, seed) {
       rows
     }))
     boot_fit <- tryCatch(
-      PanelNet(
+      quicknet_refit_with_backend_args(PanelNet, fit,
         sampled_data,
         nodes = fit$meta$nodes,
         waves = fit$meta$waves,
@@ -920,7 +935,7 @@ quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
       rows
     }))
     boot_fit <- tryCatch(
-      LongitudinalNet(
+      quicknet_refit_with_backend_args(LongitudinalNet, fit,
         sampled_data,
         vars = fit$meta$vars,
         id = fit$meta$id,
@@ -984,4 +999,8 @@ quicknet_bind_rows_fill <- function(...) {
     frame[, all_names, drop = FALSE]
   })
   do.call(rbind, frames)
+}
+
+quicknet_refit_with_backend_args <- function(fun, fit, ...) {
+  do.call(fun, c(list(...), fit$meta$backend_args %||% list()))
 }

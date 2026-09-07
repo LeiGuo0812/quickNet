@@ -26,7 +26,7 @@ globalCoeff <- function(x, list = FALSE){
 
   network <- quicknet_network_matrix(x)
   diag(network) <- 0
-  directed <- inherits(x, "quicknet_fit") && isTRUE(x$meta$directed)
+  directed <- quicknet_is_directed(x)
 
   edge_values <- if (directed) network[row(network) != col(network)] else network[upper.tri(network)]
   globalStrength <- sum(abs(edge_values), na.rm = TRUE)

@@ -173,6 +173,17 @@ quicknet_meta_infer_vars <- function(vars, cors, covs, data, studyvar, id, day, 
     }
     return(names)
   }
+  matrices <- cors %||% covs
+  if (is.list(matrices) && length(matrices) > 0 && is.matrix(matrices[[1]])) {
+    p <- ncol(matrices[[1]])
+    if (model == "meta_gvar") {
+      if (p %% 2 != 0) {
+        stop("Meta-GVAR covariance matrices must contain two equally sized variable blocks.", call. = FALSE)
+      }
+      p <- p / 2
+    }
+    return(paste0("V", seq_len(p)))
+  }
   if (!is.null(data)) {
     excluded <- c(studyvar, id, day, beep)
     numeric <- vapply(data, is.numeric, logical(1))
