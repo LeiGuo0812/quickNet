@@ -552,7 +552,7 @@ get_perturbation_plot(dosage, type = "dose_response")
 get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1)
 ```
 
-Continuous methods implement the revised SymPerturb 0.1.0 algorithms. They re-estimate Gaussian means and ridge-regularized covariance from `fit$data`; the existing fitted graph is not reused as the state model. Topology thresholding is separate from the state covariance. Default bounds are `[0,4]`; use `bounds = NULL` for unbounded outcomes such as this `mtcars` illustration.
+Continuous methods implement the revised SymPerturb 0.1.0 algorithms. They estimate Gaussian means and ridge-regularized covariance from `fit$data`. Topology thresholding is separate from the state covariance. Default bounds are `[0,4]`; use `bounds = NULL` for unbounded outcomes such as this `mtcars` illustration.
 
 The input must retain at least three participants and three finite numeric symptom columns. Both `symperturb` and `sequence` require a named `modules` mapping covering every symptom and containing at least two modules. Complete analysis and sequence optimization use the same scored candidate table. An existing character/factor `groups` vector in the fit can supply the module mapping.
 
@@ -581,16 +581,18 @@ result$sequence        # Final beam candidates and their objective values
 quicknet_report(result)
 ```
 
-Migration: `remaining_strength` now means retained target state location/scale, not retained connections. `knockout` no longer adds a structural edge-deletion row. `system_benefit` is the ranking metric for state interventions; raw `burden_reduction` is descriptive. Combinations use unit-dose `incremental_pair_value` on the common non-target set, replacing additive `synergy`. Edge/node blocking reports relative finite-step propagation loss (`communication_block`), replacing source-pulse spillover. `pulse_values` and `spillover_nodes` raise a migration error. Sequences use discounted, cost-adjusted beam search, not greedy total-burden reduction. See `?Perturbation` for the complete configuration and return fields.
+State interventions update both means and covariances. `remaining_strength` specifies the retained target location/scale fraction for knockdown, and `knockout` applies unit-dose state intervention. State results are ranked by `system_benefit`, the weighted standardized improvement over non-target outcomes; `burden_reduction` describes total change on the observed scale.
+
+Combinations use unit-dose `incremental_pair_value`: joint benefit minus the better single-target benefit on the same non-target set. Edge/node blocking reports relative finite-step propagation loss as `communication_block`. Sequences use beam search to optimize discounted marginal benefit minus cost. See `?Perturbation` for the complete configuration and return fields.
 
 The R implementation uses no Python runtime. Numerical regression fixtures are generated with the local Python reference. Bootstrap uses R's RNG; to compare exact bootstrap numbers across languages, supply identical one-based `bootstrap_indices`, rather than assuming equal integer seeds generate equal samples.
 
-Validation: seven reference configurations and the supplied 12-node Python example agree within numerical tolerance. The example's seven result tables have a maximum absolute difference of `6.7e-13`, including 25 shared bootstrap resamples. The implementation passed all 1,552 package test assertions and `R CMD check --no-manual` with no errors, warnings, or notes. See the [algorithm, migration, and validation record](docs/symperturb-validation.md) for scope and reproduction commands.
+Validation: seven reference configurations and the supplied 12-node Python example agree within numerical tolerance. The example's seven result tables have a maximum absolute difference of `6.7e-13`, including 25 shared bootstrap resamples. The implementation passed all 1,552 package test assertions and `R CMD check --no-manual` with no errors, warnings, or notes. See the [algorithm, interface, and validation record](docs/symperturb-validation.md) for scope and reproduction commands.
 
 Reference: Zhu, Z., Yu, J., Hu, T., Yang, Z., & Wang, J. (2026). *SymPerturb converts symptom-network structure into testable intervention priorities*. arXiv:2607.28673v1; revised method specification and SymPerturb 0.1.0.
 
-For Ising models, the legacy `ising_threshold` method remains available as a
-lightweight single-chain sensitivity analysis:
+For Ising models, `ising_threshold` provides a lightweight single-chain
+threshold sensitivity analysis:
 
 ```r
 ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
@@ -709,10 +711,10 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Extended cross-sectional support to EBICglasso, correlation, partial correlation, Ising, ordinal, and MGM networks through a consistent `quickNet()` interface.
 - Added longitudinal modeling interfaces: `PanelNet()` for cross-lagged panel networks and `LongitudinalNet()` for `graphicalVAR` and `mlVAR` models.
 - Added model-agnostic edge tables, node tables, network summaries, centrality helpers, and stability summaries.
-- Added virtual perturbation and intervention simulation helpers for Gaussian-style networks and Ising threshold perturbation.
-- Added `NIRA()` with moderation gating, Ising threshold simulation,
+- `Perturbation()` implements SymPerturb state interventions, adjacency blocking, signed pair increments, beam-search sequences and seven-utility VPPS with separate robustness and bootstrap results.
+- `NIRA()` provides moderation gating, Ising threshold simulation,
   adjusted permutation tests, Monte Carlo rank stability, plots, and reports.
-- Added literature-aligned perturbation plotting helpers for ranking, dosage response, node-level change, edge blocking, and sequence summaries.
+- Perturbation plots display rankings, dose responses, node-level changes, communication blocking and sequence paths.
 - Added `NetworkPower()` / `SampleSize()` for simulation-based network sample size planning.
 - Added confirmatory, latent, SEM-panel, mixed VAR, and time-varying mixed VAR network wrappers.
 - Added psychonetrics-backed panel and longitudinal models: `PanelNet(model = "ri_clpm")`, `PanelNet(model = "panel_gvar")`, `PanelNet(model = "panel_var")`, and `LongitudinalNet(model = "psychonetrics_gvar")`.

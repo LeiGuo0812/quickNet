@@ -549,7 +549,7 @@ get_perturbation_plot(dosage, type = "dose_response")
 get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1)
 ```
 
-连续干预现按 SymPerturb 0.1.0 修订规范实现。算法从 `fit$data` 重新估计原始均值和加岭正则的协方差，不把既有网络图直接当作状态模型。拓扑边阈值与状态协方差分别处理。量表边界默认为 `[0,4]`；本例 `mtcars` 不使用该量表边界，因此设置 `bounds = NULL`。
+连续干预按 SymPerturb 0.1.0 修订规范实现。算法从 `fit$data` 估计原始均值和加岭正则的协方差。拓扑边阈值与状态协方差分别处理。量表边界默认为 `[0,4]`；本例 `mtcars` 不使用该量表边界，因此设置 `bounds = NULL`。
 
 输入须保留至少 3 名参与者、3 个数值型症状变量，且不含缺失值或无穷值。`symperturb` 和 `sequence` 都需要覆盖全部症状、至少包含两个模块的命名向量 `modules`，以使用相同的评分和候选表。原拟合对象中的字符型／因子型 `groups` 向量也可提供模块映射。
 
@@ -578,17 +578,19 @@ result$sequence        # 束搜索保留的最终序列及其目标函数值
 quicknet_report(result)
 ```
 
-接口迁移：`remaining_strength` 现在表示目标状态位置／尺度的保留比例，不再削弱连接。`knockout` 不再额外输出结构删边结果。状态干预按 `system_benefit`（非目标加权标准化改善）排序，原始 `burden_reduction` 仅供描述。组合采用单位剂量，并用共同非目标集合上的 `incremental_pair_value` 取代加性 `synergy`。边／节点阻断输出有限步传播量的相对损失 `communication_block`，不再评价源脉冲；旧 `pulse_values`、`spillover_nodes` 会提示迁移错误。序列采用包含折扣和成本的束搜索。完整参数及返回字段见 `?Perturbation`。
+状态干预同时更新均值与协方差。敲降参数 `remaining_strength` 表示目标位置／尺度的保留比例，`knockout` 执行单位剂量的状态干预。结果按 `system_benefit`（非目标加权标准化改善）排序；`burden_reduction` 描述观测量纲上的总变化。
+
+组合指标 `incremental_pair_value` 在共同非目标集合上，计算单位剂量联合改善减去较优单靶点改善。边／节点阻断以 `communication_block` 报告有限步传播量的相对损失。序列采用束搜索，优化带折扣的边际获益减去成本。完整参数及返回字段见 `?Perturbation`。
 
 七维 VPPS 包括 efficacy、dose efficiency、breadth、cross-module、communication block、combination value、responsiveness；稳健性单独报告。每次 bootstrap 都重新估计网络、计算效用并在候选集合内标准化和排名。
 
 R 实现不依赖 Python 运行环境。数值回归数据由本地 Python 参考包生成。bootstrap 使用 R 的随机数发生器；跨语言逐值比较时应传入相同的 `bootstrap_indices`（从 1 开始），不能假定相同整数种子产生相同样本。
 
-验证结果：七组参考配置及 Python 包提供的 12 节点示例均在数值容差内一致。示例的七张结果表最大绝对差约为 `6.7e-13`，其中包含 25 次共享索引的 bootstrap。全部 1,552 项包测试断言通过，`R CMD check --no-manual` 为 0 errors、0 warnings、0 notes。检验范围、迁移规则及复现命令见[算法与验证记录](docs/symperturb-validation.md)。
+验证结果：七组参考配置及 Python 包提供的 12 节点示例均在数值容差内一致。示例的七张结果表最大绝对差约为 `6.7e-13`，其中包含 25 次共享索引的 bootstrap。全部 1,552 项包测试断言通过，`R CMD check --no-manual` 为 0 errors、0 warnings、0 notes。检验范围、接口说明及复现命令见[算法与验证记录](docs/symperturb-validation.md)。
 
 参考文献：Zhu, Z., Yu, J., Hu, T., Yang, Z., & Wang, J. (2026). *SymPerturb converts symptom-network structure into testable intervention priorities*. arXiv:2607.28673v1；采用修订方法规范及 SymPerturb 0.1.0。
 
-对于 Ising 模型，原有的 `ising_threshold` 方法仍作为轻量的单链敏感性分析保留：
+对于 Ising 模型，`ising_threshold` 提供轻量的单链阈值敏感性分析：
 
 ```r
 ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
@@ -704,10 +706,10 @@ globalCoeff(fit)
 - 扩展横断面模型支持，通过一致的 `quickNet()` 接口支持 EBICglasso、相关网络、偏相关网络、Ising、有序分类网络和 MGM。
 - 新增纵向网络接口：`PanelNet()` 用于横滞后面板网络，`LongitudinalNet()` 用于 `graphicalVAR` 和 `mlVAR` 模型。
 - 新增模型通用的边表、节点表、网络摘要、中心性辅助结果和稳定性汇总。
-- 新增虚拟扰动与干预模拟辅助函数，支持 Gaussian-style 网络扰动和 Ising threshold perturbation。
-- 新增 `NIRA()`，支持 moderation gate、Ising 阈值模拟、多重校正置换
+- `Perturbation()` 实现 SymPerturb 状态干预、邻接边阻断、有符号组合增量、束搜索序列和七维 VPPS，并单独报告稳健性及 bootstrap 结果。
+- `NIRA()` 支持 moderation gate、Ising 阈值模拟、多重校正置换
   检验、Monte Carlo 排名稳定性、绘图和报告。
-- 新增符合保守解释边界的扰动绘图辅助函数，支持排序、剂量-响应、节点变化、边阻断和贪婪序列摘要。
+- 扰动绘图支持排名、剂量响应、节点变化、通信阻断和序列路径。
 - 新增 `NetworkPower()` / `SampleSize()`，用于基于模拟的网络样本量规划。
 - 新增验证性网络、潜变量网络、SEM 面板网络、mixed VAR 和 time-varying mixed VAR 封装接口。
 - 新增 psychonetrics 后端的面板和纵向模型：`PanelNet(model = "ri_clpm")`、`PanelNet(model = "panel_gvar")`、`PanelNet(model = "panel_var")` 和 `LongitudinalNet(model = "psychonetrics_gvar")`。

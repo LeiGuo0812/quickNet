@@ -1,9 +1,9 @@
-# SymPerturb algorithms, interface migration and validation
+# SymPerturb algorithms, interface and validation
 
 quickNet's continuous `Perturbation()` methods implement the revised method
 specification of the locally supplied SymPerturb 0.1.0 reference, commit
 `76dd4178b285b80beb69f14a642e84ed1cabc7a0`. The R implementation is independent
-of a Python runtime. Ising and NIRA methods retain their existing algorithms.
+of a Python runtime.
 
 ## Algorithm coverage
 
@@ -26,7 +26,7 @@ included in VPPS. These are model-derived priorities, not identified causal
 treatment effects. Sequence order is a decision-objective result, not an
 identified biological time ordering.
 
-## Input and interface migration
+## Inputs and result fields
 
 - Original finite numeric participant data must be available in `fit$data`,
   with at least three participants and three symptoms. The continuous
@@ -37,20 +37,20 @@ identified biological time ordering.
 - `symperturb` and `sequence` require a named module mapping covering every
   symptom and containing at least two modules. A character/factor `groups`
   vector saved with the fit can provide the mapping.
-- `remaining_strength` is a state-retention alias for `1 - dose` in knockdown;
-  it no longer attenuates precision entries. Supply either argument, not both.
-- `knockout` returns the state intervention. Use `node_block` for the separate
-  topology operation; the extra structural-knockout row has been removed.
+- `remaining_strength` specifies the retained target location/scale fraction in
+  knockdown, with `dose = 1 - remaining_strength`. Supply either argument.
+- `knockout` returns unit-dose state intervention results. `node_block` attenuates
+  the topology edges incident to a target node.
 - State rankings use `system_benefit`, the weighted standardized non-target
-  improvement. Raw `burden_reduction` remains a descriptive quantity.
-- Combinations use `incremental_pair_value`, replacing additive `synergy`.
-  The reference comparison requires two targets and unit dose.
+  improvement. `burden_reduction` describes total change on the observed scale.
+- `incremental_pair_value` is joint benefit minus the better single-target
+  benefit on the same non-target set, using two targets and unit dose.
 - Blocking uses `communication_block`, the relative finite-step propagation
-  loss. Non-NULL `pulse_values` or `spillover_nodes` raises a migration error.
+  loss. Continuous methods require `pulse_values` and `spillover_nodes` to be NULL.
 - Sequence primary tables contain the final beam candidates. Their individual
   steps are available in `sequence_paths`.
 - `summary()` returns the primary metrics. `quicknet_report()` retains the
-  additional analysis tables. Plot labels use the revised metrics; node-change
+  additional analysis tables. Plot labels identify the reported metrics; node-change
   plots show one condition, selected explicitly with `perturbation_id` when
   needed.
 - Config names match the reference. Explicit R arguments `dose`, `threshold`,
@@ -76,7 +76,7 @@ or nearly constant normalization dimensions.
 Regression comparisons use tolerance `1e-10` for moments/topology and `1e-8`
 for complete result tables. Shared bootstrap resamples test both per-replicate
 outputs and summaries. Interface tests cover summary, plots, reports,
-configuration precedence, migration errors and invalid input.
+configuration precedence, supported arguments and invalid input.
 
 The Python package's supplied 12-node example was also run end to end, including
 13 sensitivity scenarios, 25 shared bootstrap resamples, sequence length 3 and

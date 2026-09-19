@@ -6,8 +6,7 @@
 #' \code{"edge_block"}, \code{"node_block"}, \code{"combination"},
 #' \code{"sequence"}, and the complete seven-utility \code{"symperturb"} workflow.
 #' Ising networks support \code{"ising_threshold"} and the formal
-#' \code{"nira"} workflow. The existing \code{"ising_threshold"} method is
-#' unchanged.
+#' \code{"nira"} workflow.
 #' @param targets Candidate node names. If \code{NULL}, all nodes are considered.
 #' State methods also accept a list of jointly intervened target sets.
 #' @param dose State intervention fractions in [0,1]. Explicit values override
@@ -15,7 +14,7 @@
 #' and sequence use unit dose. Knockdown accepts one or more fractions.
 #' @param remaining_strength For knockdown, an alternative to \code{dose}:
 #' retained target location/scale fraction, so alpha = 1 - remaining_strength.
-#' This no longer attenuates precision-matrix edges. Do not supply both arguments.
+#' Supply either dose or remaining_strength.
 #' @param edges Optional edge table for \code{method = "edge_block"}. It can
 #' contain \code{from/to} or \code{node_i/node_j} columns. If \code{NULL}, all
 #' nonzero topology edges incident to the candidate targets are considered.
@@ -30,10 +29,9 @@
 #' @param thinning Thinning interval for Ising perturbation.
 #' @param seed Random seed. Explicitly supplied values override
 #' \code{config$random_seed} for continuous analysis; its reference default is
-#' 20260727. Existing Ising defaults are preserved.
-#' @param pulse_values,spillover_nodes Retired pulse-conditioning arguments.
-#' Non-NULL values raise a migration error; communication blocking now uses
-#' the finite-step adjacency propagation functional.
+#' 20260727. Ising threshold simulation defaults to 20260502; NIRA defaults to 2025.
+#' @param pulse_values,spillover_nodes Must be NULL for continuous methods.
+#' Communication blocking uses the finite-step adjacency propagation functional.
 #' @param threshold Explicitly supplied values override
 #' \code{config$edge_threshold}. Thresholding applies only to topology, never
 #' to the state covariance.
@@ -91,7 +89,7 @@
 #' \code{responsiveness_epsilon = .10}.}
 #' \item{Utilities}{\code{breadth_threshold = .10}, \code{module_threshold = .20},
 #' \code{combination_partner_k = 5}, \code{combination_mode = "signed"}
-#' ("positive" enables historical exploratory positive-part averaging),
+#' ("positive" averages positive parts for exploratory analysis),
 #' \code{vpps_weights = numeric()} (named utility weights; unspecified weights are 1).}
 #' \item{Topology}{\code{block_fraction = .80}, \code{propagation_steps = 6},
 #' \code{propagation_gamma = .45}, \code{propagation_absolute = TRUE},
@@ -123,8 +121,9 @@
 #' \code{rankings}, and state \code{moments}/\code{perturbations} when applicable.
 #' State rankings use \code{system_benefit} (weighted standardized non-target
 #' improvement); raw \code{burden_reduction} is descriptive only.
-#' Combination metrics use \code{incremental_pair_value}, replacing \code{synergy}.
-#' Topology metrics use \code{communication_block}, replacing pulse spillover.
+#' Combination metrics report \code{incremental_pair_value}, the gain beyond
+#' the better single-target benefit on the common non-target set. Topology
+#' metrics report \code{communication_block}, the relative propagation loss.
 #' Sequence results retain all final beam candidates plus \code{sequence_paths}.
 #' Full analysis additionally includes \code{target_scores}, \code{dose_response},
 #' \code{pair_scores}, \code{robustness}, \code{scenario_ranks}, \code{bootstrap},
