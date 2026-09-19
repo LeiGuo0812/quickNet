@@ -2,6 +2,9 @@
 
 ## New features
 
+- Added inline explanations of Ising EBIC settings, NIRA moderation statistics,
+  and Cohen's d sign conventions, with a full reference at the end of printed
+  results, NIRA summaries, and reports.
 - Added the exported `NIRA()` single-network Ising simulation-intervention
   workflow described by Wang et al. (2026).
 - Added moderation prerequisite gating, adjusted plus-one permutation tests,

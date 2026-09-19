@@ -610,6 +610,14 @@ plot(nira_result, type = "effect")
 plot(nira_result, type = "stability")
 ```
 
+Printed results explain the actual Ising EBIC `gamma`, the quickNet default
+(0.5), and the example in Wang et al. (2026) (0.25) in ordinary sentences.
+NIRA results and `quicknet_report(nira_result)` also explain moderation
+statistics and the Cohen's d sign convention within the result text, followed
+by the full reference. The explanation and reference are also available in
+`summary(nira_result)$text` and `$references`. To match Table 4 of
+Wang et al. (2026), use `-nira_result$interventions$raw_cohen_d`.
+
 Formal analyses should use at least 1000 moderation resamples and 1000
 stability repetitions. The default literature engine uses IsingSampler;
 `engine_iterations` can be increased for sensitivity analysis.

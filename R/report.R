@@ -54,6 +54,11 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     model_specific = quicknet_report_model_specific(fit),
     text = quicknet_report_text(fit, digits = digits, threshold = threshold)
   )
+  explanation <- quicknet_ising_comparison_notes(fit$model, fit$meta$gamma)
+  if (length(explanation) > 0L) {
+    report$text <- paste(report$text, paste(explanation, collapse = " "))
+    report$references <- quicknet_nira_reference()
+  }
   class(report) <- "quicknet_report"
   report
 }
@@ -89,7 +94,11 @@ quicknet_report_nira <- function(fit, digits = 3) {
     moderation = moderation,
     assumptions = assumptions,
     warnings = fit$warnings %||% character(),
-    text = quicknet_report_nira_text(fit, effects, digits)
+    text = paste(
+      quicknet_report_nira_text(fit, effects, digits),
+      paste(quicknet_nira_comparison_notes(fit), collapse = " ")
+    ),
+    references = quicknet_nira_reference()
   )
   class(report) <- "quicknet_report"
   report
@@ -289,6 +298,9 @@ quicknet_report_perturbation <- function(fit, digits = 3) {
 print.quicknet_report <- function(x, ...) {
   cat("<quicknet_report>\n")
   cat(x$text, sep = "\n")
+  if (length(x$references) > 0L) {
+    for (reference in x$references) cat("Reference: ", reference, "\n", sep = "")
+  }
   invisible(x)
 }
 

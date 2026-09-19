@@ -103,6 +103,9 @@ print.quicknet_fit <- function(x, ...) {
     sum(abs(x$networks[[1]][upper.tri(x$networks[[1]])]) > 1e-10, na.rm = TRUE)
   }
   cat("Nonzero edges: ", nonzero_edges, "\n", sep = "")
+  explanation <- quicknet_ising_comparison_notes(x$model, x$meta$gamma)
+  quicknet_print_comparison_notes(explanation)
+  if (length(explanation) > 0L) cat("Reference: ", quicknet_nira_reference(), "\n", sep = "")
   invisible(x)
 }
 

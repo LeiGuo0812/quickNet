@@ -770,6 +770,7 @@ quicknet_nira_provenance <- function(fit,
     source_license = "MIT",
     model = fit$model,
     R_version = R.version.string,
+    estimation_gamma = fit$meta$gamma %||% NA_real_,
     platform = R.version$platform,
     package_versions = c(
       quickNet = package_version("quickNet"),
@@ -904,11 +905,13 @@ print.quicknet_nira <- function(x, ...) {
       sep = ""
     )
   }
+  quicknet_print_comparison_notes(quicknet_nira_comparison_notes(x))
   if (length(x$warnings) > 0L) {
     cat("Warnings/interpretation boundaries:\n")
     for (message in x$warnings) cat("- ", message, "\n", sep = "")
   }
   cat("Model-implied simulation; not a causal treatment effect.\n")
+  cat("Reference: ", quicknet_nira_reference(), "\n", sep = "")
   invisible(x)
 }
 
@@ -923,6 +926,8 @@ summary.quicknet_nira <- function(object, ...) {
     permutation = object$permutation,
     stability = if (is.null(object$stability)) NULL else object$stability$node_summary,
     rankings = object$rankings,
-    warnings = object$warnings
+    text = paste(quicknet_nira_comparison_notes(object), collapse = " "),
+    warnings = object$warnings,
+    references = quicknet_nira_reference()
   )
 }

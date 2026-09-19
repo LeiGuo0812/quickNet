@@ -605,6 +605,13 @@ plot(nira_result, type = "effect")
 plot(nira_result, type = "stability")
 ```
 
+打印结果时，会在普通说明句中交代实际 EBIC `gamma`、quickNet 默认值
+（0.5）和 Wang 等（2026）的示例值（0.25）。NIRA 结果及
+`quicknet_report(nira_result)` 还会在结果文字中说明调节效应统计方式与
+Cohen's d 的符号约定，并在末尾列出完整参考文献题录。说明文字和题录
+也可通过 `summary(nira_result)$text` 和 `$references` 获取。若需与 Wang 等（2026）表 4
+的效应量符号一致，可使用 `-nira_result$interventions$raw_cohen_d`。
+
 正式研究建议至少使用 1000 次 moderation 重抽样和 1000 次稳定性重复。
 默认的 literature 引擎使用 IsingSampler；可增大 `engine_iterations`
 进行敏感性分析。
