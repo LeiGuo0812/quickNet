@@ -331,24 +331,16 @@ test_that("binary NCT fails quickly when valid splits are impossible", {
   )
 })
 
-test_that("ordinal perturbations invert their correlation matrix", {
-  correlation <- matrix(
-    c(0, 0.6, 0.2, 0.6, 0, 0.4, 0.2, 0.4, 0),
-    3,
-    dimnames = list(letters[1:3], letters[1:3])
-  )
-  ordinal_fit <- quicknet_fit(
-    model = "ordinal",
-    networks = list(default = correlation),
-    meta = list(directed = FALSE)
-  )
-  correlation_fit <- ordinal_fit
-  correlation_fit$model <- "correlation"
-
-  expect_equal(
-    quicknet_perturb_precision(ordinal_fit),
-    quicknet_perturb_precision(correlation_fit)
-  )
+test_that("continuous perturbation state moments use raw data independently of graph type", {
+  dat <- mtcars[, 1:3]
+  graph <- stats::cor(dat); diag(graph) <- 0
+  fit <- quicknet_fit("ordinal", data = dat, networks = list(default = graph))
+  a <- Perturbation(fit, "knockout", targets = "mpg", config = list(bounds = NULL))
+  fit$model <- "partial"; fit$graph[,] <- 0
+  b <- Perturbation(fit, "knockout", targets = "mpg", config = list(bounds = NULL))
+  expect_equal(a$network, b$network)
+  expect_equal(a$metrics, b$metrics)
+  expect_equal(a$network$covariance, stats::cov(dat) + diag(.02 * diag(stats::cov(dat))))
 })
 
 test_that("panel SEM contemporaneous residual paths become a network layer", {

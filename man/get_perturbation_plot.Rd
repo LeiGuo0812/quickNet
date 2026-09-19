@@ -23,7 +23,8 @@ perturbation method. Supported values are \code{"rank"},
 \item{top_n}{Maximum number of rows shown for ranking-style plots.}
 
 \item{target}{Optional target label used to select one perturbation for
-node-level plots.}
+node-level plots. When the target has several conditions, the first is shown;
+use \code{perturbation_id} to select a particular dose or condition.}
 
 \item{perturbation_id}{Optional numeric perturbation id used to select one
 perturbation for node-level plots.}

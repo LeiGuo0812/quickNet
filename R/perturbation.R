@@ -3,32 +3,40 @@
 #' @param fit A \code{quicknet_fit} object.
 #' @param method Perturbation method. Continuous networks support
 #' \code{"dosage"}, \code{"knockout"}, \code{"knockdown"},
-#' \code{"edge_block"}, \code{"combination"}, and \code{"sequence"}.
+#' \code{"edge_block"}, \code{"node_block"}, \code{"combination"},
+#' \code{"sequence"}, and the complete seven-utility \code{"symperturb"} workflow.
 #' Ising networks support \code{"ising_threshold"} and the formal
 #' \code{"nira"} workflow. The existing \code{"ising_threshold"} method is
 #' unchanged.
-#' @param targets Target node names. If \code{NULL}, all nodes are considered.
-#' @param dose Numeric perturbation dose for Gaussian conditioning. Positive
-#' values are interpreted as reductions and internally applied as negative
-#' target states.
-#' @param remaining_strength Fraction of incident precision entries retained
-#' for knockdown. Use \code{0} for structural knockout.
+#' @param targets Candidate node names. If \code{NULL}, all nodes are considered.
+#' State methods also accept a list of jointly intervened target sets.
+#' @param dose State intervention fractions in [0,1]. Explicit values override
+#' \code{config$dose_grid} for dosage and full analysis. Knockout, combination,
+#' and sequence use unit dose. Knockdown accepts one or more fractions.
+#' @param remaining_strength For knockdown, an alternative to \code{dose}:
+#' retained target location/scale fraction, so alpha = 1 - remaining_strength.
+#' This no longer attenuates precision-matrix edges. Do not supply both arguments.
 #' @param edges Optional edge table for \code{method = "edge_block"}. It can
 #' contain \code{from/to} or \code{node_i/node_j} columns. If \code{NULL}, all
-#' nonzero edges are considered.
-#' @param combination_size Number of targets in each combination.
-#' @param steps Number of greedy sequence steps.
+#' nonzero topology edges incident to the candidate targets are considered.
+#' @param combination_size Must be 2 for the reference pair increment.
+#' @param steps Maximum sequence length for beam search. An explicitly supplied
+#' value overrides \code{config$sequence_length}. The standalone sequence method
+#' uses 4 when no sequence length is configured; full analysis defaults to 0.
 #' @param threshold_shift Threshold shift for Ising perturbation. Negative
 #' values lower target activation tendency.
 #' @param n_samples Number of Gibbs samples for Ising perturbation.
 #' @param burnin Number of burn-in sweeps for Ising perturbation.
 #' @param thinning Thinning interval for Ising perturbation.
-#' @param seed Random seed.
-#' @param pulse_values Named vector used by \code{method = "edge_block"} to
-#' define the source pulse.
-#' @param spillover_nodes Optional nodes used to summarize spillover in
-#' \code{method = "edge_block"}.
-#' @param threshold Absolute threshold used to define nonzero edges.
+#' @param seed Random seed. Explicitly supplied values override
+#' \code{config$random_seed} for continuous analysis; its reference default is
+#' 20260727. Existing Ising defaults are preserved.
+#' @param pulse_values,spillover_nodes Retired pulse-conditioning arguments.
+#' Non-NULL values raise a migration error; communication blocking now uses
+#' the finite-step adjacency propagation functional.
+#' @param threshold Explicitly supplied values override
+#' \code{config$edge_threshold}. Thresholding applies only to topology, never
+#' to the state covariance.
 #' @param perturbation_type NIRA direction, \code{"alleviating"} or
 #' \code{"aggravating"}.
 #' @param amount_of_SDs_perturbation NIRA threshold perturbation size in
@@ -45,16 +53,101 @@
 #' @param engine NIRA simulation engine.
 #' @param engine_iterations NIRA simulation sweeps per independently
 #'   initialized condition; see \code{\link{NIRA}}.
+#' @param config Named list of SymPerturb settings, using the Python reference
+#' names and defaults; see Details. Unknown names are rejected.
+#' @param modules Named vector assigning each symptom to a module. Full analysis
+#' and sequence optimization require at least two modules (sequence pool ordering
+#' uses the same scored candidate table as the full reference analysis).
+#' A character/factor \code{groups} vector from
+#' the original fit can also supply this mapping.
+#' @param anchors Named numeric vector of target anchors; unspecified nodes use 0.
+#' @param symptom_weights Named non-negative outcome weights; unspecified nodes
+#' use 1. An outcome set with zero total weight uses its unweighted mean.
+#' @param costs Named non-negative sequence costs; unspecified nodes use 0.
+#' @param bootstrap_indices Optional integer matrix with
+#' \code{config$bootstrap_replicates} rows and one column per participant.
+#' Entries are one-based participant indices. Use this with full analysis to
+#' reproduce precisely the same resamples across languages.
+#'
+#' @details
+#' Continuous methods re-estimate a Gaussian network from the original finite
+#' numeric participant data in \code{fit$data}, using sample covariance plus
+#' ridge times its diagonal. The fitted quickNet graph is not the state model.
+#' At least three participants and three symptoms are required. Missing values
+#' must be handled explicitly before analysis. The state operator updates both
+#' mean and covariance; exact linked knockout has zero target variance and never
+#' re-estimates a network containing that constant target column.
+#'
+#' The supported \code{config} entries and defaults are:
+#' \describe{
+#' \item{Network}{\code{ridge = 0.02}, \code{edge_threshold = 0.03}.}
+#' \item{State}{\code{bounds = c(0,4)} (use NULL for unbounded outcomes),
+#' \code{state_map = "linked"} (also "location_only", "scale_only", "independent"),
+#' \code{mu_power = 1}, \code{sigma_power = 1}. Independent maps use separate
+#' positive powers of (1-alpha). Location-only and scale-only maps are sensitivity
+#' analyses and do not impose the linked exact-knockout endpoint.}
+#' \item{Doses}{\code{dose_grid = c(0,.10,.25,.50,.75,1)},
+#' \code{dose_efficiency_grid = c(.25,.50,.75)},
+#' \code{responsiveness_epsilon = .10}.}
+#' \item{Utilities}{\code{breadth_threshold = .10}, \code{module_threshold = .20},
+#' \code{combination_partner_k = 5}, \code{combination_mode = "signed"}
+#' ("positive" enables historical exploratory positive-part averaging),
+#' \code{vpps_weights = numeric()} (named utility weights; unspecified weights are 1).}
+#' \item{Topology}{\code{block_fraction = .80}, \code{propagation_steps = 6},
+#' \code{propagation_gamma = .45}, \code{propagation_absolute = TRUE},
+#' \code{adjacency_normalization = "raw"} (also "row" or "spectral").}
+#' \item{Uncertainty}{\code{run_robustness_scenarios = TRUE},
+#' \code{bootstrap_replicates = 0}, \code{bootstrap_top_k = 5},
+#' \code{random_seed = 20260727}. These are run by the full workflow only.
+#' Bootstrap uses R's RNG; equal numeric seeds do not imply equal NumPy samples.
+#' Use shared \code{bootstrap_indices} for cross-language numerical equality.}
+#' \item{Sequence}{\code{sequence_length = 0}, \code{sequence_pool = 8},
+#' \code{sequence_beam_width = 20}, \code{sequence_eta = .90},
+#' \code{sequence_cost_lambda = 0}.}
+#' }
+#'
+#' Seven utilities are efficacy, dose efficiency, breadth, cross-module reach,
+#' communication block, combination value, and responsiveness. Each is scaled
+#' within the candidate set to 0--100 (constant dimensions score 50); VPPS is
+#' their weighted mean. Robustness is separate. The complete pipeline is refit
+#' for every bootstrap replicate. Pair value compares the joint benefit against
+#' the better single-target benefit on the common non-target set; it is not
+#' additive synergy. Sequence search optimizes discounted marginal downstream
+#' benefit minus cost, and does not identify biological time ordering.
 #'
 #' @return A \code{quicknet_perturbation} object, or a
 #' \code{quicknet_nira} object for \code{method = "nira"}. Results are
 #' model-implied in silico simulations and should not be interpreted as causal
-#' intervention effects.
+#' intervention effects. Continuous results include \code{network},
+#' \code{network_edges}, \code{metadata}, \code{baseline}, \code{metrics},
+#' \code{rankings}, and state \code{moments}/\code{perturbations} when applicable.
+#' State rankings use \code{system_benefit} (weighted standardized non-target
+#' improvement); raw \code{burden_reduction} is descriptive only.
+#' Combination metrics use \code{incremental_pair_value}, replacing \code{synergy}.
+#' Topology metrics use \code{communication_block}, replacing pulse spillover.
+#' Sequence results retain all final beam candidates plus \code{sequence_paths}.
+#' Full analysis additionally includes \code{target_scores}, \code{dose_response},
+#' \code{pair_scores}, \code{robustness}, \code{scenario_ranks}, \code{bootstrap},
+#' \code{bootstrap_draws}, \code{bootstrap_indices}, and \code{sequence}.
+#' \code{summary()} returns the primary metrics table; \code{quicknet_report()}
+#' retains the full analysis tables.
+#' @references Zhu, Z., Yu, J., Hu, T., Yang, Z., and Wang, J. (2026).
+#' SymPerturb converts symptom-network structure into testable intervention
+#' priorities. arXiv:2607.28673v1. Revised method specification and SymPerturb 0.1.0.
+#' @examples
+#' fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE,
+#'                 DoNotPlot = TRUE)
+#' Perturbation(fit, "knockout", targets = "mpg", config = list(bounds = NULL))
+#' modules <- c(mpg = "performance", cyl = "engine", disp = "engine",
+#'              hp = "engine", drat = "performance")
+#' result <- Perturbation(fit, "symperturb", modules = modules,
+#'                       config = list(bounds = NULL, run_robustness_scenarios = FALSE))
+#' summary(result)
 #' @export
 Perturbation <- function(fit,
-                         method = c("dosage", "knockout", "knockdown", "edge_block", "combination", "sequence", "ising_threshold", "nira"),
+                         method = c("dosage", "knockout", "knockdown", "edge_block", "combination", "sequence", "ising_threshold", "nira", "node_block", "symperturb"),
                          targets = NULL,
-                         dose = c(0.25, 0.50, 0.75, 1.00),
+                         dose = c(0, 0.10, 0.25, 0.50, 0.75, 1.00),
                          remaining_strength = 0.50,
                          edges = NULL,
                          combination_size = 2,
@@ -66,7 +159,7 @@ Perturbation <- function(fit,
                          seed = 20260502,
                          pulse_values = NULL,
                          spillover_nodes = NULL,
-                         threshold = 1e-10,
+                         threshold = 0.03,
                          perturbation_type = c("alleviating", "aggravating"),
                          amount_of_SDs_perturbation = 2,
                          run_moderation = TRUE,
@@ -84,7 +177,13 @@ Perturbation <- function(fit,
                          ncores = NULL,
                          store_samples = FALSE,
                          engine = c("literature", "native"),
-                         engine_iterations = 100L) {
+                         engine_iterations = 100L,
+                         config = list(),
+                         modules = NULL,
+                         anchors = NULL,
+                         symptom_weights = NULL,
+                         costs = NULL,
+                         bootstrap_indices = NULL) {
   if (!inherits(fit, "quicknet_fit")) {
     stop("fit must be a quicknet_fit object.", call. = FALSE)
   }
@@ -153,7 +252,12 @@ Perturbation <- function(fit,
     pulse_values = pulse_values,
     spillover_nodes = spillover_nodes,
     threshold = threshold,
-    seed = seed
+    seed = seed,
+    config = config, modules = modules, anchors = anchors,
+    symptom_weights = symptom_weights, costs = costs,
+    bootstrap_indices = bootstrap_indices,
+    supplied = list(dose = !missing(dose), remaining_strength = !missing(remaining_strength),
+                    steps = !missing(steps), threshold = !missing(threshold), seed = !missing(seed))
   )
 }
 
@@ -182,7 +286,8 @@ summary.quicknet_perturbation <- function(object, ...) {
 #' \code{"sequence"}.
 #' @param top_n Maximum number of rows shown for ranking-style plots.
 #' @param target Optional target label used to select one perturbation for
-#' node-level plots.
+#' node-level plots. When the target has several conditions, the first is shown;
+#' use \code{perturbation_id} to select a particular dose or condition.
 #' @param perturbation_id Optional numeric perturbation id used to select one
 #' perturbation for node-level plots.
 #'
@@ -234,152 +339,6 @@ plot.quicknet_perturbation <- function(x,
     top_n = top_n,
     target = target,
     perturbation_id = perturbation_id
-  )
-}
-
-quicknet_perturb_continuous <- function(fit,
-                                        method,
-                                        targets,
-                                        dose,
-                                        remaining_strength,
-                                        edges,
-                                        combination_size,
-                                        steps,
-                                        pulse_values,
-                                        spillover_nodes,
-                                        threshold,
-                                        seed) {
-  if (!quicknet_supports_continuous_perturbation(fit$model)) {
-    stop(
-      "Continuous perturbation currently supports EBICglasso, correlation, partial, and ordinal fits. ",
-      "Use method = 'ising_threshold' for Ising fits.",
-      call. = FALSE
-    )
-  }
-
-  precision <- quicknet_perturb_precision(fit)
-  if (!is.numeric(dose) || length(dose) == 0 || any(!is.finite(dose))) {
-    stop("dose must contain finite numeric values.", call. = FALSE)
-  }
-  if (!is.numeric(remaining_strength) || length(remaining_strength) != 1 ||
-      !is.finite(remaining_strength) || remaining_strength < 0 || remaining_strength > 1) {
-    stop("remaining_strength must be a finite fraction in [0, 1].", call. = FALSE)
-  }
-  if (!quicknet_is_positive_integer(combination_size) || !quicknet_is_positive_integer(steps)) {
-    stop("combination_size and steps must be positive integers.", call. = FALSE)
-  }
-  if (!is.numeric(threshold) || length(threshold) != 1 || !is.finite(threshold) || threshold < 0) {
-    stop("threshold must be a non-negative finite number.", call. = FALSE)
-  }
-  node_names <- colnames(precision)
-  target_sets <- quicknet_perturb_target_sets(targets, node_names)
-  baseline_state <- stats::setNames(rep(0, length(node_names)), node_names)
-
-  if (method == "dosage") {
-    evaluations <- unlist(lapply(target_sets, function(target_set) {
-      lapply(dose, function(one_dose) {
-        quicknet_perturb_evaluate_gaussian(
-          precision_matrix = precision,
-          target_nodes = target_set,
-          dose = one_dose,
-          perturbation_type = "gaussian_conditioning_dosage",
-          baseline_state = baseline_state
-        )
-      })
-    }), recursive = FALSE)
-    bound <- quicknet_perturb_bind_evaluations(evaluations)
-    metrics <- bound$metrics
-    perturbations <- bound$perturbations
-  } else if (method == "knockout") {
-    evaluations <- list()
-    for (target_set in target_sets) {
-      evaluations[[length(evaluations) + 1]] <- quicknet_perturb_evaluate_gaussian(
-        precision_matrix = precision,
-        target_nodes = target_set,
-        dose = 1,
-        perturbation_type = "conditional_state_vKO",
-        baseline_state = baseline_state
-      )
-      if (length(target_set) == 1) {
-        structural_precision <- quicknet_perturb_attenuate_precision(precision, target_set, remaining_strength = 0)
-        evaluations[[length(evaluations) + 1]] <- quicknet_perturb_evaluate_gaussian(
-          precision_matrix = structural_precision,
-          target_nodes = target_set,
-          dose = 1,
-          perturbation_type = "precision_edge_vKO",
-          baseline_state = baseline_state
-        )
-      }
-    }
-    bound <- quicknet_perturb_bind_evaluations(evaluations)
-    metrics <- bound$metrics
-    perturbations <- bound$perturbations
-  } else if (method == "knockdown") {
-    evaluations <- lapply(target_sets, function(target_set) {
-      if (length(target_set) != 1) {
-        stop("knockdown currently expects single-node target sets.", call. = FALSE)
-      }
-      modified_precision <- quicknet_perturb_attenuate_precision(precision, target_set, remaining_strength = remaining_strength)
-      quicknet_perturb_evaluate_gaussian(
-        precision_matrix = modified_precision,
-        target_nodes = target_set,
-        dose = 1 - remaining_strength,
-        perturbation_type = paste0("precision_edge_vKD_", round(remaining_strength * 100), "_percent_remaining"),
-        baseline_state = baseline_state
-      )
-    })
-    bound <- quicknet_perturb_bind_evaluations(evaluations)
-    metrics <- bound$metrics
-    perturbations <- bound$perturbations
-  } else if (method == "edge_block") {
-    edge_result <- quicknet_perturb_edge_block(
-      precision_matrix = precision,
-      fit = fit,
-      targets = targets,
-      edges = edges,
-      pulse_values = pulse_values,
-      spillover_nodes = spillover_nodes,
-      threshold = threshold
-    )
-    metrics <- edge_result$metrics
-    perturbations <- edge_result$perturbations
-  } else if (method == "combination") {
-    combo_result <- quicknet_perturb_combination(
-      precision_matrix = precision,
-      targets = targets,
-      dose = dose[[1]],
-      combination_size = combination_size
-    )
-    metrics <- combo_result$metrics
-    perturbations <- combo_result$perturbations
-  } else if (method == "sequence") {
-    sequence_result <- quicknet_perturb_sequence(
-      precision_matrix = precision,
-      targets = targets,
-      dose = dose[[1]],
-      steps = steps
-    )
-    metrics <- sequence_result$metrics
-    perturbations <- sequence_result$perturbations
-  }
-
-  rankings <- quicknet_perturb_rank(metrics)
-  quicknet_perturbation_object(
-    method = method,
-    model = fit$model,
-    settings = list(
-      dose = dose,
-      remaining_strength = remaining_strength,
-      combination_size = combination_size,
-      steps = steps,
-      threshold = threshold,
-      seed = seed,
-      interpretation = "model-implied in silico simulation; not a causal intervention effect"
-    ),
-    baseline = baseline_state,
-    perturbations = perturbations,
-    metrics = metrics,
-    rankings = rankings
   )
 }
 
@@ -481,263 +440,6 @@ quicknet_perturb_ising <- function(fit,
   )
 }
 
-quicknet_perturb_precision <- function(fit) {
-  mat <- as.matrix(fit$graph)
-  node_names <- colnames(mat)
-  if (is.null(node_names)) node_names <- rownames(mat)
-  if (is.null(node_names)) node_names <- paste0("V", seq_len(ncol(mat)))
-  colnames(mat) <- rownames(mat) <- node_names
-
-  if (fit$model %in% c("correlation", "ordinal")) {
-    precision <- solve(quicknet_make_positive_definite(mat))
-  } else {
-    precision <- -mat
-    diag(precision) <- 1
-  }
-  precision <- quicknet_perturb_make_positive_definite(precision)
-  colnames(precision) <- rownames(precision) <- node_names
-  precision
-}
-
-quicknet_perturb_conditioned_state <- function(precision_matrix, target_values) {
-  precision_matrix <- quicknet_perturb_make_positive_definite(precision_matrix)
-  node_names <- colnames(precision_matrix)
-  target_nodes <- names(target_values)
-  if (!is.numeric(target_values) || length(target_values) == 0 ||
-      any(!is.finite(target_values)) || is.null(target_nodes) ||
-      anyDuplicated(target_nodes) || any(!target_nodes %in% node_names)) {
-    stop("target_values must be a named numeric vector with valid node names.", call. = FALSE)
-  }
-  non_targets <- setdiff(node_names, target_nodes)
-  final_state <- stats::setNames(rep(0, length(node_names)), node_names)
-  final_state[target_nodes] <- target_values
-  if (length(non_targets) == 0) {
-    return(final_state)
-  }
-
-  covariance_matrix <- solve(precision_matrix)
-  covariance_matrix <- (covariance_matrix + t(covariance_matrix)) / 2
-  sigma_nt_t <- covariance_matrix[non_targets, target_nodes, drop = FALSE]
-  sigma_t_t <- covariance_matrix[target_nodes, target_nodes, drop = FALSE]
-  conditional_mean <- sigma_nt_t %*% solve(sigma_t_t, matrix(target_values, ncol = 1))
-  final_state[non_targets] <- as.numeric(conditional_mean)
-  final_state
-}
-
-quicknet_perturb_evaluate_gaussian <- function(precision_matrix,
-                                               target_nodes,
-                                               dose,
-                                               perturbation_type,
-                                               baseline_state) {
-  node_names <- colnames(precision_matrix)
-  target_values <- stats::setNames(-abs(rep(dose, length.out = length(target_nodes))), target_nodes)
-  final_state <- quicknet_perturb_conditioned_state(precision_matrix, target_values)
-  non_targets <- setdiff(node_names, target_nodes)
-  metrics <- data.frame(
-    perturbation_type = perturbation_type,
-    target = paste(target_nodes, collapse = "+"),
-    dose = paste(abs(rep(dose, length.out = length(target_nodes))), collapse = "+"),
-    final_burden = sum(final_state),
-    burden_reduction = sum(baseline_state) - sum(final_state),
-    target_reduction = mean(baseline_state[target_nodes] - final_state[target_nodes]),
-    spillover_reduction = ifelse(length(non_targets) > 0, mean(baseline_state[non_targets] - final_state[non_targets]), NA_real_),
-    adverse_increase_count = sum(final_state[non_targets] - baseline_state[non_targets] > 0.05),
-    changed_node_count = sum(abs(final_state - baseline_state) > 0.05),
-    stringsAsFactors = FALSE
-  )
-  list(metrics = metrics, final_state = final_state)
-}
-
-quicknet_perturb_bind_evaluations <- function(evaluations) {
-  metrics <- do.call(rbind, lapply(evaluations, `[[`, "metrics"))
-  rownames(metrics) <- NULL
-  perturbations <- do.call(rbind, lapply(seq_along(evaluations), function(eval_index) {
-    final_state <- evaluations[[eval_index]]$final_state
-    metric <- evaluations[[eval_index]]$metrics
-    data.frame(
-      perturbation_id = eval_index,
-      perturbation_type = metric$perturbation_type[[1]],
-      target = metric$target[[1]],
-      node = names(final_state),
-      baseline_state = 0,
-      final_state = as.numeric(final_state),
-      state_change = as.numeric(final_state),
-      stringsAsFactors = FALSE
-    )
-  }))
-  rownames(perturbations) <- NULL
-  list(metrics = metrics, perturbations = perturbations)
-}
-
-quicknet_perturb_attenuate_precision <- function(precision_matrix, target_node, remaining_strength) {
-  modified <- as.matrix(precision_matrix)
-  if (!target_node %in% colnames(modified)) {
-    stop("target_node not found in precision_matrix: ", target_node, call. = FALSE)
-  }
-  modified[target_node, ] <- modified[target_node, ] * remaining_strength
-  modified[, target_node] <- modified[, target_node] * remaining_strength
-  modified[target_node, target_node] <- precision_matrix[target_node, target_node]
-  quicknet_perturb_make_positive_definite(modified)
-}
-
-quicknet_perturb_block_precision_edge <- function(precision_matrix, node_i, node_j) {
-  modified <- as.matrix(precision_matrix)
-  if (!all(c(node_i, node_j) %in% colnames(modified))) {
-    stop("node_i or node_j is not present in precision_matrix.", call. = FALSE)
-  }
-  modified[node_i, node_j] <- 0
-  modified[node_j, node_i] <- 0
-  quicknet_perturb_make_positive_definite(modified)
-}
-
-quicknet_perturb_make_positive_definite <- function(mat) {
-  mat <- as.matrix(mat)
-  mat[!is.finite(mat)] <- 0
-  mat <- (mat + t(mat)) / 2
-  eigen_values <- eigen(mat, symmetric = TRUE, only.values = TRUE)$values
-  if (min(eigen_values) > 1e-8) {
-    return(mat)
-  }
-  adjusted <- as.matrix(Matrix::nearPD(mat, corr = FALSE)$mat)
-  (adjusted + t(adjusted)) / 2
-}
-
-quicknet_perturb_spillover_from_pulse <- function(precision_matrix, pulse_values, spillover_nodes = NULL) {
-  final_state <- quicknet_perturb_conditioned_state(precision_matrix, pulse_values)
-  if (is.null(spillover_nodes)) {
-    spillover_nodes <- setdiff(names(final_state), names(pulse_values))
-  }
-  list(
-    final_state = final_state,
-    spillover_sum = sum(final_state[spillover_nodes]),
-    spillover_abs_sum = sum(abs(final_state[spillover_nodes]))
-  )
-}
-
-quicknet_perturb_edge_block <- function(precision_matrix,
-                                        fit,
-                                        targets,
-                                        edges,
-                                        pulse_values,
-                                        spillover_nodes,
-                                        threshold) {
-  node_names <- colnames(precision_matrix)
-  if (is.null(pulse_values)) {
-    pulse_nodes <- if (is.null(targets)) {
-      strongest <- fit$nodes$node[which.max(fit$nodes$strength)]
-      strongest
-    } else {
-      unlist(quicknet_perturb_target_sets(targets, node_names)[[1]])
-    }
-    pulse_values <- stats::setNames(rep(0.60, length(pulse_nodes)), pulse_nodes)
-  }
-  if (is.null(spillover_nodes)) {
-    spillover_nodes <- setdiff(node_names, names(pulse_values))
-  }
-  if (length(spillover_nodes) > 0) quicknet_perturb_validate_nodes(spillover_nodes, node_names)
-  edge_table <- quicknet_perturb_edge_candidates(fit, edges = edges, threshold = threshold)
-  if (nrow(edge_table) == 0) {
-    stop("No edges are available for edge-block perturbation.", call. = FALSE)
-  }
-  unblocked <- quicknet_perturb_spillover_from_pulse(precision_matrix, pulse_values, spillover_nodes)
-
-  rows <- list()
-  for (edge_index in seq_len(nrow(edge_table))) {
-    node_i <- edge_table$node_i[edge_index]
-    node_j <- edge_table$node_j[edge_index]
-    blocked_precision <- quicknet_perturb_block_precision_edge(precision_matrix, node_i, node_j)
-    blocked <- quicknet_perturb_spillover_from_pulse(blocked_precision, pulse_values, spillover_nodes)
-    rows[[length(rows) + 1]] <- data.frame(
-      perturbation_type = "precision_edge_block",
-      blocked_edge = paste(node_i, node_j, sep = "--"),
-      node_i = node_i,
-      node_j = node_j,
-      weight = edge_table$weight[edge_index],
-      abs_weight = abs(edge_table$weight[edge_index]),
-      unblocked_spillover_sum = unblocked$spillover_sum,
-      blocked_spillover_sum = blocked$spillover_sum,
-      spillover_blocked = unblocked$spillover_sum - blocked$spillover_sum,
-      unblocked_abs_spillover = unblocked$spillover_abs_sum,
-      blocked_abs_spillover = blocked$spillover_abs_sum,
-      changed_node_count = sum(abs(blocked$final_state - unblocked$final_state) > 0.05),
-      stringsAsFactors = FALSE
-    )
-  }
-  metrics <- do.call(rbind, rows)
-  metrics <- metrics[order(-metrics$spillover_blocked, -metrics$abs_weight), , drop = FALSE]
-  rownames(metrics) <- NULL
-  list(metrics = metrics, perturbations = edge_table)
-}
-
-quicknet_perturb_combination <- function(precision_matrix, targets, dose, combination_size) {
-  node_names <- colnames(precision_matrix)
-  target_nodes <- if (is.null(targets)) node_names else unlist(targets)
-  target_nodes <- unique(target_nodes)
-  quicknet_perturb_validate_nodes(target_nodes, node_names)
-  if (length(target_nodes) < combination_size) {
-    stop("Not enough target nodes for the requested combination_size.", call. = FALSE)
-  }
-  baseline <- stats::setNames(rep(0, length(node_names)), node_names)
-  single <- lapply(target_nodes, function(node) {
-    quicknet_perturb_evaluate_gaussian(precision_matrix, node, dose, "single_dosage_reference", baseline)$metrics
-  })
-  single_table <- do.call(rbind, single)
-  single_lookup <- stats::setNames(single_table$burden_reduction, single_table$target)
-
-  combinations <- utils::combn(target_nodes, combination_size, simplify = FALSE)
-  rows <- lapply(combinations, function(target_set) {
-    metrics <- quicknet_perturb_evaluate_gaussian(precision_matrix, target_set, dose, "gaussian_combination_dosage", baseline)$metrics
-    expected_additive <- sum(single_lookup[target_set])
-    metrics$expected_additive_reduction <- expected_additive
-    metrics$synergy <- metrics$burden_reduction - expected_additive
-    metrics
-  })
-  metrics <- do.call(rbind, rows)
-  metrics <- metrics[order(-metrics$burden_reduction, -metrics$synergy), , drop = FALSE]
-  rownames(metrics) <- NULL
-  list(metrics = metrics, perturbations = single_table)
-}
-
-quicknet_perturb_sequence <- function(precision_matrix, targets, dose, steps) {
-  node_names <- colnames(precision_matrix)
-  remaining_nodes <- if (is.null(targets)) node_names else unique(unlist(targets))
-  quicknet_perturb_validate_nodes(remaining_nodes, node_names)
-  baseline <- stats::setNames(rep(0, length(node_names)), node_names)
-  selected_nodes <- character()
-  previous_reduction <- 0
-  rows <- list()
-
-  for (step in seq_len(min(steps, length(remaining_nodes)))) {
-    candidate_rows <- lapply(remaining_nodes, function(node) {
-      candidate_targets <- c(selected_nodes, node)
-      metrics <- quicknet_perturb_evaluate_gaussian(
-        precision_matrix,
-        candidate_targets,
-        dose,
-        paste0("greedy_gaussian_sequence_step_", step),
-        baseline
-      )$metrics
-      metrics$next_node <- node
-      metrics$incremental_burden_reduction <- metrics$burden_reduction - previous_reduction
-      metrics
-    })
-    candidates <- do.call(rbind, candidate_rows)
-    best <- candidates[order(-candidates$incremental_burden_reduction, -candidates$burden_reduction), , drop = FALSE][1, ]
-    chosen_node <- best$next_node[[1]]
-    selected_nodes <- c(selected_nodes, chosen_node)
-    remaining_nodes <- setdiff(remaining_nodes, chosen_node)
-    previous_reduction <- best$burden_reduction[[1]]
-    best$step <- step
-    best$chosen_node <- chosen_node
-    best$cumulative_targets <- paste(selected_nodes, collapse = "+")
-    rows[[length(rows) + 1]] <- best
-  }
-
-  metrics <- do.call(rbind, rows)
-  rownames(metrics) <- NULL
-  list(metrics = metrics, perturbations = metrics)
-}
-
 quicknet_perturb_ising_gibbs <- function(weight_matrix,
                                          thresholds,
                                          n_samples,
@@ -805,56 +507,12 @@ quicknet_perturb_validate_nodes <- function(nodes, node_names) {
   nodes
 }
 
-quicknet_perturb_state_table <- function(precision_matrix, metrics) {
-  node_names <- colnames(precision_matrix)
-  rows <- list()
-  for (row_index in seq_len(nrow(metrics))) {
-    target_nodes <- unlist(strsplit(metrics$target[row_index], "\\+", fixed = FALSE))
-    dose <- as.numeric(unlist(strsplit(as.character(metrics$dose[row_index]), "\\+", fixed = FALSE)))
-    target_values <- stats::setNames(-abs(rep(dose, length.out = length(target_nodes))), target_nodes)
-    final_state <- quicknet_perturb_conditioned_state(precision_matrix, target_values)
-    rows[[length(rows) + 1]] <- data.frame(
-      perturbation_id = row_index,
-      perturbation_type = metrics$perturbation_type[row_index],
-      target = metrics$target[row_index],
-      node = node_names,
-      baseline_state = 0,
-      final_state = as.numeric(final_state[node_names]),
-      state_change = as.numeric(final_state[node_names]),
-      stringsAsFactors = FALSE
-    )
-  }
-  do.call(rbind, rows)
-}
-
-quicknet_perturb_edge_candidates <- function(fit, edges, threshold) {
-  if (!is.null(edges)) {
-    edge_table <- as.data.frame(edges)
-    if (all(c("from", "to") %in% names(edge_table))) {
-      edge_table$node_i <- edge_table$from
-      edge_table$node_j <- edge_table$to
-    }
-    if (!all(c("node_i", "node_j") %in% names(edge_table))) {
-      stop("edges must contain from/to or node_i/node_j columns.", call. = FALSE)
-    }
-    if (!"weight" %in% names(edge_table)) {
-      edge_table$weight <- fit$graph[cbind(match(edge_table$node_i, rownames(fit$graph)), match(edge_table$node_j, colnames(fit$graph)))]
-    }
-    return(edge_table[, c("node_i", "node_j", "weight"), drop = FALSE])
-  }
-
-  edge_table <- quicknet_edge_table(fit$graph, drop_zero = TRUE, threshold = threshold)
-  out <- data.frame(
-    node_i = edge_table$from,
-    node_j = edge_table$to,
-    weight = edge_table$weight,
-    stringsAsFactors = FALSE
-  )
-  out[order(-abs(out$weight)), , drop = FALSE]
-}
-
 quicknet_perturb_rank <- function(metrics) {
-  if ("burden_reduction" %in% names(metrics)) {
+  preferred <- c("vpps", "incremental_pair_value", "objective", "communication_block", "system_benefit")
+  selected <- preferred[preferred %in% names(metrics)]
+  if (length(selected)) {
+    out <- metrics[order(-metrics[[selected[1]]]), , drop = FALSE]
+  } else if ("burden_reduction" %in% names(metrics)) {
     out <- metrics[order(-metrics$burden_reduction), , drop = FALSE]
   } else if ("activity_reduction" %in% names(metrics)) {
     out <- metrics[order(-metrics$activity_reduction), , drop = FALSE]
@@ -884,11 +542,11 @@ quicknet_perturb_plot_rank <- function(perturbation, top_n) {
   metrics <- perturbation$rankings
   value_column <- quicknet_perturb_plot_metric_column(
     metrics,
-    c("burden_reduction", "activity_reduction", "spillover_blocked", "synergy")
+    c("vpps", "incremental_pair_value", "objective", "communication_block", "system_benefit", "activity_reduction", "burden_reduction")
   )
   label_column <- quicknet_perturb_plot_label_column(
     metrics,
-    c("target", "blocked_edge", "chosen_node", "cumulative_targets", "perturbation_type")
+    c("target", "sequence", "blocked_edge", "chosen_node", "cumulative_targets", "perturbation_type")
   )
   df <- metrics[seq_len(min(nrow(metrics), top_n)), , drop = FALSE]
   df$plot_label <- as.character(df[[label_column]])
@@ -919,24 +577,28 @@ quicknet_perturb_plot_rank <- function(perturbation, top_n) {
 }
 
 quicknet_perturb_plot_dose_response <- function(perturbation) {
-  if (perturbation$method != "dosage") {
-    stop("type = 'dose_response' requires a dosage perturbation.", call. = FALSE)
+  if (!perturbation$method %in% c("dosage", "symperturb")) {
+    stop("type = 'dose_response' requires a dosage perturbation or symperturb analysis.", call. = FALSE)
   }
   metrics <- perturbation$metrics
-  if (!all(c("target", "dose", "burden_reduction") %in% names(metrics))) {
-    stop("Dose-response plotting requires target, dose, and burden_reduction fields.", call. = FALSE)
+  if (perturbation$method == "symperturb") {
+    metrics <- perturbation$dose_response
+    metrics$dose <- metrics$alpha
+  }
+  if (!all(c("target", "dose", "system_benefit") %in% names(metrics))) {
+    stop("Dose-response plotting requires target, dose, and system_benefit fields.", call. = FALSE)
   }
   df <- metrics
   df$dose_value <- quicknet_perturb_plot_numeric_dose(df$dose)
 
-  ggplot2::ggplot(df, ggplot2::aes(x = dose_value, y = burden_reduction, group = target, color = target)) +
+  ggplot2::ggplot(df, ggplot2::aes(x = dose_value, y = system_benefit, group = target, color = target)) +
     ggplot2::geom_line(linewidth = 0.8) +
     ggplot2::geom_point(size = 2.2) +
     ggplot2::labs(
       title = "Dose-response simulation",
       subtitle = quicknet_perturb_plot_subtitle(perturbation),
       x = "Dose",
-      y = "Burden reduction",
+      y = "Mean downstream improvement (baseline SD)",
       color = "Target",
       caption = quicknet_perturb_plot_caption()
     ) +
@@ -945,6 +607,7 @@ quicknet_perturb_plot_dose_response <- function(perturbation) {
 
 quicknet_perturb_plot_node_change <- function(perturbation, top_n, target, perturbation_id) {
   df <- perturbation$perturbations
+  if (!nrow(df)) stop("No node-level state results are available for this method.", call. = FALSE)
   value_column <- quicknet_perturb_plot_metric_column(df, c("state_change", "activity_change"))
   if (!"node" %in% names(df)) {
     stop("Node-change plotting requires a node-level perturbation table.", call. = FALSE)
@@ -968,6 +631,9 @@ quicknet_perturb_plot_node_change <- function(perturbation, top_n, target, pertu
 
   if (nrow(df) == 0) {
     stop("No node-level perturbation rows match the requested selection.", call. = FALSE)
+  }
+  if ("perturbation_id" %in% names(df)) {
+    df <- df[df$perturbation_id == df$perturbation_id[[1]], , drop = FALSE]
   }
   df$plot_value <- as.numeric(df[[value_column]])
   df <- df[order(-abs(df$plot_value)), , drop = FALSE]
@@ -994,51 +660,41 @@ quicknet_perturb_plot_edge_block <- function(perturbation, top_n) {
     stop("type = 'edge_block' requires an edge_block perturbation.", call. = FALSE)
   }
   metrics <- perturbation$metrics
-  if (!all(c("blocked_edge", "spillover_blocked") %in% names(metrics))) {
-    stop("Edge-block plotting requires blocked_edge and spillover_blocked fields.", call. = FALSE)
+  if (!all(c("blocked_edge", "communication_block") %in% names(metrics))) {
+    stop("Edge-block plotting requires blocked_edge and communication_block fields.", call. = FALSE)
   }
   df <- metrics[seq_len(min(nrow(metrics), top_n)), , drop = FALSE]
-  df$plot_value <- as.numeric(df$spillover_blocked)
+  df$plot_value <- as.numeric(df$communication_block)
   df <- df[order(df$plot_value), , drop = FALSE]
 
   ggplot2::ggplot(df, ggplot2::aes(x = stats::reorder(blocked_edge, plot_value), y = plot_value)) +
     ggplot2::geom_col(fill = "#79553d", width = 0.72) +
     ggplot2::coord_flip() +
     ggplot2::labs(
-      title = "Edge-block spillover simulation",
+      title = "Edge communication blocking",
       subtitle = quicknet_perturb_plot_subtitle(perturbation),
       x = "Blocked edge",
-      y = "Spillover blocked",
+      y = "Relative propagation loss",
       caption = quicknet_perturb_plot_caption()
     ) +
     ggplot2::theme_minimal(base_size = 12)
 }
 
 quicknet_perturb_plot_sequence <- function(perturbation) {
-  if (perturbation$method != "sequence") {
-    stop("type = 'sequence' requires a sequence perturbation.", call. = FALSE)
-  }
-  metrics <- perturbation$metrics
-  if (!all(c("step", "chosen_node", "burden_reduction", "incremental_burden_reduction") %in% names(metrics))) {
-    stop("Sequence plotting requires step, chosen_node, burden_reduction, and incremental_burden_reduction fields.", call. = FALSE)
-  }
-  df <- metrics
-  df$step_label <- paste0(df$step, ". ", df$chosen_node)
-
-  ggplot2::ggplot(df, ggplot2::aes(x = step, y = burden_reduction)) +
-    ggplot2::geom_col(ggplot2::aes(y = incremental_burden_reduction), fill = "#9a7b4f", alpha = 0.55, width = 0.62) +
+  paths <- perturbation$sequence_paths
+  if (!length(paths)) stop("Sequence plotting requires computed sequence paths.", call. = FALSE)
+  df <- paths[[1]]
+  ggplot2::ggplot(df, ggplot2::aes(x = step, y = system_benefit)) +
+    ggplot2::geom_col(ggplot2::aes(y = marginal_benefit), fill = "#9a7b4f", alpha = 0.55) +
     ggplot2::geom_line(color = "#2f5d7c", linewidth = 0.8) +
     ggplot2::geom_point(color = "#2f5d7c", size = 2.4) +
-    ggplot2::scale_x_continuous(breaks = df$step, labels = df$step_label) +
-    ggplot2::labs(
-      title = "Greedy perturbation sequence",
-      subtitle = quicknet_perturb_plot_subtitle(perturbation),
-      x = "Step and selected node",
-      y = "Burden reduction",
-      caption = quicknet_perturb_plot_caption()
-    ) +
-    ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 35, hjust = 1))
+    ggplot2::scale_x_continuous(breaks = df$step, labels = paste(df$step, df$chosen_node)) +
+    ggplot2::labs(title = "Highest-objective beam-search sequence",
+                  subtitle = quicknet_perturb_plot_subtitle(perturbation),
+                  x = "Step and selected node", y = "Mean downstream improvement (baseline SD)",
+                  caption = paste("Line: cumulative set benefit; bars: marginal benefit.",
+                                  quicknet_perturb_plot_caption())) +
+    ggplot2::theme_minimal(base_size = 12)
 }
 
 quicknet_perturb_plot_metric_column <- function(df, candidates) {
@@ -1068,7 +724,11 @@ quicknet_perturb_plot_axis_label <- function(column) {
     burden_reduction = "Burden reduction",
     activity_reduction = "Activity reduction",
     spillover_blocked = "Spillover blocked",
-    synergy = "Synergy",
+    vpps = "VPPS (within candidate set)",
+    incremental_pair_value = "Increment beyond the better single target (SD)",
+    objective = "Discounted benefit minus cost",
+    communication_block = "Relative propagation loss",
+    system_benefit = "Mean downstream improvement (baseline SD)",
     state_change = "State change",
     activity_change = "Activity change"
   )
@@ -1076,6 +736,10 @@ quicknet_perturb_plot_axis_label <- function(column) {
 }
 
 quicknet_perturb_plot_subtitle <- function(perturbation) {
+  if (!is.null(perturbation$metadata$reference_version)) {
+    return(paste0("SymPerturb Gaussian model (ridge = ", perturbation$settings$ridge,
+                  "); ", perturbation$method))
+  }
   paste0(perturbation$model, " model, ", perturbation$method, " perturbation")
 }
 

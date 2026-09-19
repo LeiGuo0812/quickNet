@@ -5,4 +5,5 @@
 ^tests/testthat/Rplots\.pdf$
 ^Rplots\.pdf$
 ^tmp$
+^docs$
 ^wang-et-al-2026-simulation-intervention-for-cross-sectional-network-models-based-on-the-r-packages-nodeidentifyr-and\.pdf$

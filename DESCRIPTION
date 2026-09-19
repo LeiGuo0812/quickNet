@@ -37,6 +37,7 @@ Imports:
     methods,
     parallel
 Suggests:
+    jsonlite,
     glmnet,
     graphicalVAR,
     lavaan,

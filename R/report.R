@@ -253,7 +253,18 @@ quicknet_report_power <- function(fit, digits = 3) {
 
 quicknet_report_perturbation <- function(fit, digits = 3) {
   metrics <- fit$metrics
-  if ("burden_reduction" %in% names(metrics)) {
+  if (!is.null(fit$metadata$reference_version)) {
+    text <- fit$report
+    if (nrow(fit$rankings)) {
+      best <- fit$rankings[1, , drop = FALSE]
+      column <- quicknet_perturb_plot_metric_column(best,
+        c("vpps", "incremental_pair_value", "objective", "communication_block", "system_benefit"))
+      label <- quicknet_perturb_plot_label_column(best, c("target", "sequence", "blocked_edge"))
+      # Keep the reference at the end of the prose report.
+      text <- paste0("Best target/configuration: ", best[[label]][1], ", ", column, " = ",
+                     round(best[[column]][1], digits), ".\n", text)
+    }
+  } else if ("burden_reduction" %in% names(metrics)) {
     best <- metrics[order(-metrics$burden_reduction), , drop = FALSE][1, ]
     text <- paste0(
       "Perturbation: ", fit$method, " for ", fit$model, ". ",
@@ -290,6 +301,11 @@ quicknet_report_perturbation <- function(fit, digits = 3) {
     rankings = fit$rankings,
     text = text
   )
+  for (nm in c("target_scores", "dose_response", "pair_scores", "robustness", "scenario_ranks",
+               "bootstrap", "bootstrap_draws", "bootstrap_indices", "sequence", "sequence_paths",
+               "network_edges", "metadata", "baseline", "moments")) {
+    if (!is.null(fit[[nm]])) report[[nm]] <- fit[[nm]]
+  }
   class(report) <- "quicknet_report"
   report
 }

@@ -727,6 +727,10 @@ quicknet_check_perturbation <- function(args) {
   if (!inherits(fit, "quicknet_fit")) {
     errors <- c(errors, "fit must be a quicknet_fit object.")
   } else if (!is.null(method)) {
+    allowed <- eval(formals(Perturbation)$method)
+    if (length(method) != 1L || is.na(method) || !method %in% allowed) {
+      return(list(errors = "Unknown perturbation method.", warnings = warnings))
+    }
     is_ising <- quicknet_is_ising_model(fit$model)
     if (method %in% c("ising_threshold", "nira") && !is_ising) {
       errors <- c(
@@ -740,6 +744,20 @@ quicknet_check_perturbation <- function(args) {
         "method = '", method,
         "' requires an EBICglasso, correlation, partial, or ordinal fit; use method = 'ising_threshold' or 'nira' for Ising fits."
       ))
+    }
+    if (!method %in% c("ising_threshold", "nira") && quicknet_supports_continuous_perturbation(fit$model)) {
+      dat <- fit$data
+      nodes <- colnames(fit$graph)
+      if ((!is.data.frame(dat) && !is.matrix(dat)) || !all(nodes %in% colnames(dat))) {
+        errors <- c(errors, "SymPerturb requires original numeric participant data in fit$data.")
+      } else {
+        dat <- dat[, nodes, drop = FALSE]
+        if (nrow(dat) < 3L || ncol(dat) < 3L || !all(vapply(as.data.frame(dat), is.numeric, logical(1)))) {
+          errors <- c(errors, "SymPerturb requires at least three rows and three numeric symptom columns.")
+        } else if (any(!is.finite(as.matrix(dat)))) {
+          errors <- c(errors, "SymPerturb requires finite data; handle missingness explicitly before analysis.")
+        }
+      }
     }
   }
   list(errors = errors, warnings = warnings)

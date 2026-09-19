@@ -16,7 +16,7 @@ test_that("Perturbation supports continuous quicknet_fit objects", {
 
   knockout <- Perturbation(fit, method = "knockout", targets = "mpg")
   expect_s3_class(knockout, "quicknet_perturbation")
-  expect_true(any(knockout$metrics$perturbation_type == "precision_edge_vKO"))
+  expect_true(any(knockout$metrics$perturbation_type == "state_vKO"))
 
   knockdown <- Perturbation(fit, method = "knockdown", targets = "mpg", remaining_strength = 0.50)
   expect_s3_class(knockdown, "quicknet_perturbation")
@@ -29,20 +29,21 @@ test_that("Perturbation supports continuous quicknet_fit objects", {
 
   blocked <- Perturbation(fit, method = "edge_block", targets = "mpg")
   expect_s3_class(blocked, "quicknet_perturbation")
-  expect_true(all(c("blocked_edge", "spillover_blocked") %in% names(blocked$metrics)))
+  expect_true(all(c("blocked_edge", "communication_block") %in% names(blocked$metrics)))
   expect_s3_class(get_perturbation_plot(blocked), "ggplot")
   expect_s3_class(get_perturbation_plot(blocked, type = "edge_block"), "ggplot")
   expect_error(get_perturbation_plot(blocked, type = "dose_response"), "requires a dosage perturbation")
 
-  combo <- Perturbation(fit, method = "combination", targets = c("mpg", "cyl", "disp"), combination_size = 2, dose = 0.5)
+  combo <- Perturbation(fit, method = "combination", targets = c("mpg", "cyl", "disp"), combination_size = 2, dose = 1)
   expect_s3_class(combo, "quicknet_perturbation")
-  expect_true("synergy" %in% names(combo$metrics))
+  expect_true("incremental_pair_value" %in% names(combo$metrics))
   expect_s3_class(get_perturbation_plot(combo, type = "rank"), "ggplot")
 
-  sequence <- Perturbation(fit, method = "sequence", targets = c("mpg", "cyl", "disp"), steps = 2, dose = 0.5)
+  sequence <- Perturbation(fit, method = "sequence", targets = c("mpg", "cyl", "disp"), steps = 2, dose = 1,
+                           modules = c(mpg = "performance", cyl = "engine", disp = "engine", hp = "engine", drat = "performance"))
   expect_s3_class(sequence, "quicknet_perturbation")
-  expect_true(all(c("step", "chosen_node", "incremental_burden_reduction") %in% names(sequence$metrics)))
-  expect_equal(nrow(sequence$metrics), 2)
+  expect_true(all(c("sequence", "objective", "final_set_benefit") %in% names(sequence$metrics)))
+  expect_equal(nrow(sequence$sequence_paths[[1]]), 2)
   expect_s3_class(get_perturbation_plot(sequence), "ggplot")
   expect_s3_class(get_perturbation_plot(sequence, type = "sequence"), "ggplot")
 })

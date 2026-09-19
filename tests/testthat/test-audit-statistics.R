@@ -76,16 +76,14 @@ test_that("NCT selected-edge results keep numeric p values and integer indices",
   expect_error(compare(list(c(1.5, 2))), "distinct valid variables")
 })
 
-test_that("Gaussian conditioning agrees with the analytic covariance formula", {
-  covariance <- matrix(c(1, .4, .2, .4, 1, .3, .2, .3, 1), 3,
-                       dimnames = list(c("a", "b", "c"), c("a", "b", "c")))
-  state <- quicknet_perturb_conditioned_state(solve(covariance), c(a = -1))
-  expect_equal(unname(state), c(-1, -.4, -.2))
-  state <- quicknet_perturb_conditioned_state(solve(covariance), c(a = -1, b = -.5))
-  expected_c <- covariance["c", c("a", "b")] %*%
-    solve(covariance[c("a", "b"), c("a", "b")], c(-1, -.5))
-  expect_equal(unname(state[["c"]]), as.numeric(expected_c))
-  expect_error(quicknet_perturb_conditioned_state(solve(covariance), c(a = NA_real_)), "target_values")
+test_that("linked state interventions agree with the analytic regression decomposition", {
+  covariance <- matrix(c(1, .4, .2, .4, 1, .3, .2, .3, 1), 3)
+  post <- quicknet_sym_moments(c(1, 1, 1), covariance, 1L, 1)
+  expect_equal(post$mean, c(0, .6, .8))
+  joint <- quicknet_sym_moments(c(1, 1, 1), covariance, c(1L, 2L), c(1, .5))
+  expected <- 1 + covariance[3, 1:2] %*% solve(covariance[1:2, 1:2], c(-1, -.5))
+  expect_equal(joint$mean[3], as.numeric(expected))
+  expect_error(quicknet_sym_moments(c(1, 1, 1), covariance, 1L, NA_real_), "dose")
 })
 
 test_that("perturbation parameters cannot silently produce invalid simulations", {
@@ -94,8 +92,8 @@ test_that("perturbation parameters cannot silently produce invalid simulations",
   expect_error(Perturbation(fit, dose = Inf), "dose")
   expect_error(Perturbation(fit, targets = character()), "at least one node")
   expect_error(Perturbation(fit, targets = list(c("mpg", "mpg"))), "unique")
-  expect_error(Perturbation(fit, method = "edge_block", spillover_nodes = "absent"), "Unknown node")
-  expect_error(Perturbation(fit, method = "edge_block", threshold = 2), "No edges")
+  expect_error(Perturbation(fit, method = "edge_block", spillover_nodes = "absent"), "retired")
+  expect_equal(nrow(Perturbation(fit, method = "edge_block", threshold = 2)$metrics), 0)
   graph <- matrix(0, 2, 2)
   thresholds <- c(a = 0, b = 0)
   expect_error(quicknet_perturb_ising_gibbs(graph, thresholds, 0, 2, 1, 1), "n_samples")
@@ -122,7 +120,7 @@ test_that("ranking plots keep distinct perturbation conditions in separate bars"
     plot <- get_perturbation_plot(result, type = "rank")
     bars <- ggplot2::ggplot_build(plot)$data[[1]]
     expect_equal(length(unique(bars$x)), nrow(result$metrics))
-    expect_equal(sort(bars$y), sort(result$metrics$burden_reduction))
+    expect_equal(sort(bars$y), sort(result$metrics$system_benefit))
     expect_error(get_perturbation_plot(result, top_n = 0), "top_n")
   }
 })

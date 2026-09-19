@@ -7,9 +7,9 @@
 Perturbation(
   fit,
   method = c("dosage", "knockout", "knockdown", "edge_block", "combination", "sequence",
-    "ising_threshold", "nira"),
+    "ising_threshold", "nira", "node_block", "symperturb"),
   targets = NULL,
-  dose = c(0.25, 0.5, 0.75, 1),
+  dose = c(0, 0.1, 0.25, 0.5, 0.75, 1),
   remaining_strength = 0.5,
   edges = NULL,
   combination_size = 2,
@@ -21,7 +21,7 @@ Perturbation(
   seed = 20260502,
   pulse_values = NULL,
   spillover_nodes = NULL,
-  threshold = 1e-10,
+  threshold = 0.03,
   perturbation_type = c("alleviating", "aggravating"),
   amount_of_SDs_perturbation = 2,
   run_moderation = TRUE,
@@ -39,7 +39,13 @@ Perturbation(
   ncores = NULL,
   store_samples = FALSE,
   engine = c("literature", "native"),
-  engine_iterations = 100L
+  engine_iterations = 100L,
+  config = list(),
+  modules = NULL,
+  anchors = NULL,
+  symptom_weights = NULL,
+  costs = NULL,
+  bootstrap_indices = NULL
 )
 }
 \arguments{
@@ -47,27 +53,32 @@ Perturbation(
 
 \item{method}{Perturbation method. Continuous networks support
 \code{"dosage"}, \code{"knockout"}, \code{"knockdown"},
-\code{"edge_block"}, \code{"combination"}, and \code{"sequence"}.
+\code{"edge_block"}, \code{"node_block"}, \code{"combination"},
+\code{"sequence"}, and the complete seven-utility \code{"symperturb"} workflow.
 Ising networks support \code{"ising_threshold"} and the formal
 \code{"nira"} workflow. The existing \code{"ising_threshold"} method is
 unchanged.}
 
-\item{targets}{Target node names. If \code{NULL}, all nodes are considered.}
+\item{targets}{Candidate node names. If \code{NULL}, all nodes are considered.
+State methods also accept a list of jointly intervened target sets.}
 
-\item{dose}{Numeric perturbation dose for Gaussian conditioning. Positive
-values are interpreted as reductions and internally applied as negative
-target states.}
+\item{dose}{State intervention fractions in [0,1]. Explicit values override
+\code{config$dose_grid} for dosage and full analysis. Knockout, combination,
+and sequence use unit dose. Knockdown accepts one or more fractions.}
 
-\item{remaining_strength}{Fraction of incident precision entries retained
-for knockdown. Use \code{0} for structural knockout.}
+\item{remaining_strength}{For knockdown, an alternative to \code{dose}:
+retained target location/scale fraction, so alpha = 1 - remaining_strength.
+This no longer attenuates precision-matrix edges. Do not supply both arguments.}
 
 \item{edges}{Optional edge table for \code{method = "edge_block"}. It can
 contain \code{from/to} or \code{node_i/node_j} columns. If \code{NULL}, all
-nonzero edges are considered.}
+nonzero topology edges incident to the candidate targets are considered.}
 
-\item{combination_size}{Number of targets in each combination.}
+\item{combination_size}{Must be 2 for the reference pair increment.}
 
-\item{steps}{Number of greedy sequence steps.}
+\item{steps}{Maximum sequence length for beam search. An explicitly supplied
+value overrides \code{config$sequence_length}. The standalone sequence method
+uses 4 when no sequence length is configured; full analysis defaults to 0.}
 
 \item{threshold_shift}{Threshold shift for Ising perturbation. Negative
 values lower target activation tendency.}
@@ -78,15 +89,17 @@ values lower target activation tendency.}
 
 \item{thinning}{Thinning interval for Ising perturbation.}
 
-\item{seed}{Random seed.}
+\item{seed}{Random seed. Explicitly supplied values override
+\code{config$random_seed} for continuous analysis; its reference default is
+20260727. Existing Ising defaults are preserved.}
 
-\item{pulse_values}{Named vector used by \code{method = "edge_block"} to
-define the source pulse.}
+\item{pulse_values, spillover_nodes}{Retired pulse-conditioning arguments.
+Non-NULL values raise a migration error; communication blocking now uses
+the finite-step adjacency propagation functional.}
 
-\item{spillover_nodes}{Optional nodes used to summarize spillover in
-\code{method = "edge_block"}.}
-
-\item{threshold}{Absolute threshold used to define nonzero edges.}
+\item{threshold}{Explicitly supplied values override
+\code{config$edge_threshold}. Thresholding applies only to topology, never
+to the state covariance.}
 
 \item{perturbation_type}{NIRA direction, \code{"alleviating"} or
 \code{"aggravating"}.}
@@ -112,13 +125,107 @@ settings.}
 
 \item{engine_iterations}{NIRA simulation sweeps per independently
 initialized condition; see \code{\link{NIRA}}.}
+
+\item{config}{Named list of SymPerturb settings, using the Python reference
+names and defaults; see Details. Unknown names are rejected.}
+
+\item{modules}{Named vector assigning each symptom to a module. Full analysis
+and sequence optimization require at least two modules (sequence pool ordering
+uses the same scored candidate table as the full reference analysis).
+A character/factor \code{groups} vector from
+the original fit can also supply this mapping.}
+
+\item{anchors}{Named numeric vector of target anchors; unspecified nodes use 0.}
+
+\item{symptom_weights}{Named non-negative outcome weights; unspecified nodes
+use 1. An outcome set with zero total weight uses its unweighted mean.}
+
+\item{costs}{Named non-negative sequence costs; unspecified nodes use 0.}
+
+\item{bootstrap_indices}{Optional integer matrix with
+\code{config$bootstrap_replicates} rows and one column per participant.
+Entries are one-based participant indices. Use this with full analysis to
+reproduce precisely the same resamples across languages.}
 }
 \value{
 A \code{quicknet_perturbation} object, or a
 \code{quicknet_nira} object for \code{method = "nira"}. Results are
 model-implied in silico simulations and should not be interpreted as causal
-intervention effects.
+intervention effects. Continuous results include \code{network},
+\code{network_edges}, \code{metadata}, \code{baseline}, \code{metrics},
+\code{rankings}, and state \code{moments}/\code{perturbations} when applicable.
+State rankings use \code{system_benefit} (weighted standardized non-target
+improvement); raw \code{burden_reduction} is descriptive only.
+Combination metrics use \code{incremental_pair_value}, replacing \code{synergy}.
+Topology metrics use \code{communication_block}, replacing pulse spillover.
+Sequence results retain all final beam candidates plus \code{sequence_paths}.
+Full analysis additionally includes \code{target_scores}, \code{dose_response},
+\code{pair_scores}, \code{robustness}, \code{scenario_ranks}, \code{bootstrap},
+\code{bootstrap_draws}, \code{bootstrap_indices}, and \code{sequence}.
+\code{summary()} returns the primary metrics table; \code{quicknet_report()}
+retains the full analysis tables.
 }
 \description{
 Virtual perturbation and intervention simulation
+}
+\details{
+Continuous methods re-estimate a Gaussian network from the original finite
+numeric participant data in \code{fit$data}, using sample covariance plus
+ridge times its diagonal. The fitted quickNet graph is not the state model.
+At least three participants and three symptoms are required. Missing values
+must be handled explicitly before analysis. The state operator updates both
+mean and covariance; exact linked knockout has zero target variance and never
+re-estimates a network containing that constant target column.
+
+The supported \code{config} entries and defaults are:
+\describe{
+\item{Network}{\code{ridge = 0.02}, \code{edge_threshold = 0.03}.}
+\item{State}{\code{bounds = c(0,4)} (use NULL for unbounded outcomes),
+\code{state_map = "linked"} (also "location_only", "scale_only", "independent"),
+\code{mu_power = 1}, \code{sigma_power = 1}. Independent maps use separate
+positive powers of (1-alpha). Location-only and scale-only maps are sensitivity
+analyses and do not impose the linked exact-knockout endpoint.}
+\item{Doses}{\code{dose_grid = c(0,.10,.25,.50,.75,1)},
+\code{dose_efficiency_grid = c(.25,.50,.75)},
+\code{responsiveness_epsilon = .10}.}
+\item{Utilities}{\code{breadth_threshold = .10}, \code{module_threshold = .20},
+\code{combination_partner_k = 5}, \code{combination_mode = "signed"}
+("positive" enables historical exploratory positive-part averaging),
+\code{vpps_weights = numeric()} (named utility weights; unspecified weights are 1).}
+\item{Topology}{\code{block_fraction = .80}, \code{propagation_steps = 6},
+\code{propagation_gamma = .45}, \code{propagation_absolute = TRUE},
+\code{adjacency_normalization = "raw"} (also "row" or "spectral").}
+\item{Uncertainty}{\code{run_robustness_scenarios = TRUE},
+\code{bootstrap_replicates = 0}, \code{bootstrap_top_k = 5},
+\code{random_seed = 20260727}. These are run by the full workflow only.
+Bootstrap uses R's RNG; equal numeric seeds do not imply equal NumPy samples.
+Use shared \code{bootstrap_indices} for cross-language numerical equality.}
+\item{Sequence}{\code{sequence_length = 0}, \code{sequence_pool = 8},
+\code{sequence_beam_width = 20}, \code{sequence_eta = .90},
+\code{sequence_cost_lambda = 0}.}
+}
+
+Seven utilities are efficacy, dose efficiency, breadth, cross-module reach,
+communication block, combination value, and responsiveness. Each is scaled
+within the candidate set to 0--100 (constant dimensions score 50); VPPS is
+their weighted mean. Robustness is separate. The complete pipeline is refit
+for every bootstrap replicate. Pair value compares the joint benefit against
+the better single-target benefit on the common non-target set; it is not
+additive synergy. Sequence search optimizes discounted marginal downstream
+benefit minus cost, and does not identify biological time ordering.
+}
+\examples{
+fit <- quickNet(mtcars[, 1:5], model = "correlation", pie = FALSE,
+                DoNotPlot = TRUE)
+Perturbation(fit, "knockout", targets = "mpg", config = list(bounds = NULL))
+modules <- c(mpg = "performance", cyl = "engine", disp = "engine",
+             hp = "engine", drat = "performance")
+result <- Perturbation(fit, "symperturb", modules = modules,
+                      config = list(bounds = NULL, run_robustness_scenarios = FALSE))
+summary(result)
+}
+\references{
+Zhu, Z., Yu, J., Hu, T., Yang, Z., and Wang, J. (2026).
+SymPerturb converts symptom-network structure into testable intervention
+priorities. arXiv:2607.28673v1. Revised method specification and SymPerturb 0.1.0.
 }

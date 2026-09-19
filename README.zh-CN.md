@@ -535,7 +535,8 @@ dosage <- Perturbation(
   fit,
   method = "dosage",
   targets = c("mpg", "cyl"),
-  dose = c(0.25, 0.50, 1.00)
+  dose = c(0.25, 0.50, 1.00),
+  config = list(bounds = NULL)
 )
 
 dosage$metrics
@@ -548,18 +549,44 @@ get_perturbation_plot(dosage, type = "dose_response")
 get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1)
 ```
 
-连续网络支持 Gaussian conditioning、虚拟敲除、虚拟敲降、precision-edge blocking、组合扰动和贪婪顺序优化：
+连续干预现按 SymPerturb 0.1.0 修订规范实现。算法从 `fit$data` 重新估计原始均值和加岭正则的协方差，不把既有网络图直接当作状态模型。拓扑边阈值与状态协方差分别处理。量表边界默认为 `[0,4]`；本例 `mtcars` 不使用该量表边界，因此设置 `bounds = NULL`。
+
+输入须保留至少 3 名参与者、3 个数值型症状变量，且不含缺失值或无穷值。`symperturb` 和 `sequence` 都需要覆盖全部症状、至少包含两个模块的命名向量 `modules`，以使用相同的评分和候选表。原拟合对象中的字符型／因子型 `groups` 向量也可提供模块映射。
 
 ```r
-Perturbation(fit, method = "knockout", targets = "mpg")
-Perturbation(fit, method = "knockdown", targets = "mpg", remaining_strength = 0.50)
-blocked <- Perturbation(fit, method = "edge_block", targets = "mpg")
-Perturbation(fit, method = "combination", targets = c("mpg", "cyl", "disp"))
-sequence <- Perturbation(fit, method = "sequence", targets = c("mpg", "cyl", "disp"), steps = 2)
+cfg <- list(bounds = NULL)
+Perturbation(fit, "knockout", targets = "mpg", config = cfg)
+Perturbation(fit, "knockdown", targets = "mpg", dose = 0.50, config = cfg)
+blocked <- Perturbation(fit, "edge_block", targets = "mpg", config = cfg)
+Perturbation(fit, "node_block", targets = "mpg", config = cfg)
+Perturbation(fit, "combination", targets = c("mpg", "cyl", "disp"), config = cfg)
+modules <- c(mpg = "performance", cyl = "engine", disp = "engine",
+             hp = "engine", drat = "performance", wt = "performance")
+sequence <- Perturbation(fit, "sequence", targets = c("mpg", "cyl", "disp"),
+                         steps = 2, modules = modules, config = cfg)
+get_perturbation_plot(blocked, "edge_block")
+get_perturbation_plot(sequence, "sequence")
 
-get_perturbation_plot(blocked, type = "edge_block")
-get_perturbation_plot(sequence, type = "sequence")
+result <- Perturbation(fit, "symperturb", modules = modules,
+  config = list(bounds = NULL, sequence_length = 2,
+                bootstrap_replicates = 100, bootstrap_top_k = 2))
+result$target_scores    # 七维原始效用、标准化效用、VPPS 和排名
+result$pair_scores     # 相对于较优单靶点的有符号增量
+result$scenario_ranks  # 13 个敏感性场景；稳健性不计入 VPPS
+result$bootstrap       # 全流程区间和进入前 k 名的概率
+result$sequence        # 束搜索保留的最终序列及其目标函数值
+quicknet_report(result)
 ```
+
+接口迁移：`remaining_strength` 现在表示目标状态位置／尺度的保留比例，不再削弱连接。`knockout` 不再额外输出结构删边结果。状态干预按 `system_benefit`（非目标加权标准化改善）排序，原始 `burden_reduction` 仅供描述。组合采用单位剂量，并用共同非目标集合上的 `incremental_pair_value` 取代加性 `synergy`。边／节点阻断输出有限步传播量的相对损失 `communication_block`，不再评价源脉冲；旧 `pulse_values`、`spillover_nodes` 会提示迁移错误。序列采用包含折扣和成本的束搜索。完整参数及返回字段见 `?Perturbation`。
+
+七维 VPPS 包括 efficacy、dose efficiency、breadth、cross-module、communication block、combination value、responsiveness；稳健性单独报告。每次 bootstrap 都重新估计网络、计算效用并在候选集合内标准化和排名。
+
+R 实现不依赖 Python 运行环境。数值回归数据由本地 Python 参考包生成。bootstrap 使用 R 的随机数发生器；跨语言逐值比较时应传入相同的 `bootstrap_indices`（从 1 开始），不能假定相同整数种子产生相同样本。
+
+验证结果：七组参考配置及 Python 包提供的 12 节点示例均在数值容差内一致。示例的七张结果表最大绝对差约为 `6.7e-13`，其中包含 25 次共享索引的 bootstrap。全部 1,552 项包测试断言通过，`R CMD check --no-manual` 为 0 errors、0 warnings、0 notes。检验范围、迁移规则及复现命令见[算法与验证记录](docs/symperturb-validation.md)。
+
+参考文献：Zhu, Z., Yu, J., Hu, T., Yang, Z., & Wang, J. (2026). *SymPerturb converts symptom-network structure into testable intervention priorities*. arXiv:2607.28673v1；采用修订方法规范及 SymPerturb 0.1.0。
 
 对于 Ising 模型，原有的 `ising_threshold` 方法仍作为轻量的单链敏感性分析保留：
 
