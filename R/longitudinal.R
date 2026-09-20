@@ -5,17 +5,24 @@
 #' @param waves Wave identifiers used in column names.
 #' @param id ID variable. If absent, row numbers are used as IDs.
 #' @param prefix Separator between node and wave in wide columns.
-#' @param standardize Should panel variables be standardized before fitting?
+#' @param standardize Backend standardization. NULL inherits TRUE in glmnet
+#'   and \code{"none"} in psychonetrics; psychonetrics also accepts \code{"z"},
+#'   \code{"quantile"} and \code{"z_per_wave"}.
+#' @param standardize_data CLPN preprocessing: standardize each wave before
+#'   pooling transitions? Defaults to FALSE, separate from glmnet standardization.
 #' @param alpha Elastic-net mixing parameter passed to \code{glmnet}.
 #' @param lambda_rule Lambda selection rule. One of \code{"lambda.1se"} or \code{"lambda.min"}.
 #' @param nfolds Number of cross-validation folds.
-#' @param seed Random seed used for cross-validation folds.
+#' @param seed Optional random seed for cross-validation folds. NULL uses the
+#'   current R random-number state.
 #' @param model Panel model. One of \code{"clpn"}, \code{"ri_clpm"},
 #' \code{"panel_gvar"}, or \code{"panel_var"}.
 #' @param ri_type Innovation structure used by \code{psychonetrics::ri_clpm()}.
 #' @param stationary Optional stationarity constraints passed to
 #' \code{psychonetrics::ri_clpm_stationary()}.
-#' @param ... Additional arguments passed to psychonetrics panel backends.
+#' @param ... Named controls passed directly to cv.glmnet or the selected
+#'   psychonetrics constructor. CLPN fixes Gaussian outcomes, pools adjacent
+#'   waves and groups CV folds by participant; it reports the actual fold count.
 #'
 #' @return A \code{quicknet_fit} object. The edge matrix uses rows as outcomes/to nodes and columns as predictors/from nodes.
 #' @export
@@ -24,25 +31,36 @@ PanelNet <- function(data,
                      waves,
                      id = "id",
                      prefix = "_t",
-                     standardize = TRUE,
+                     standardize = NULL,
                      alpha = 1,
                      lambda_rule = c("lambda.1se", "lambda.min"),
                      nfolds = 10,
-                     seed = 20260502,
+                     seed = NULL,
                      model = "clpn",
-                     ri_type = c("ggm", "cov", "chol", "prec"),
+                     ri_type = c("cov", "chol", "prec", "ggm", "cor"),
                      stationary = NULL,
+                     standardize_data = FALSE,
                      ...) {
+  supplied <- names(match.call())
   model <- match.arg(model, c("clpn", "ri_clpm", "panel_gvar", "panel_var"))
+  if (model != "clpn" && isTRUE(standardize_data)) stop("standardize_data applies only to CLPN.", call. = FALSE)
+  standardize <- standardize %||% if (model == "clpn") TRUE else "none"
   lambda_rule <- match.arg(lambda_rule)
   ri_type <- match.arg(ri_type)
+  if (model != "clpn" && any(c("alpha", "lambda_rule", "nfolds", "seed") %in% supplied)) {
+    stop("alpha, lambda_rule, nfolds and seed apply only to the CLPN model.", call. = FALSE)
+  }
+  if (model != "ri_clpm" && (!is.null(stationary) || "ri_type" %in% supplied)) {
+    stop("ri_type and stationary apply only to ri_clpm.", call. = FALSE)
+  }
   quicknet_validate_input(
     data,
     model = model,
     nodes = nodes,
     waves = waves,
     id = id,
-    prefix = prefix
+    prefix = prefix,
+    missing = if (model == "clpn") "listwise" else list(...)$missing %||% "auto"
   )
   panel_data <- as.data.frame(data)
   if (!id %in% colnames(panel_data)) {
@@ -72,7 +90,7 @@ PanelNet <- function(data,
     waves = waves,
     id = id,
     prefix = prefix,
-    standardize = standardize
+    standardize = standardize_data
   )
   fit <- quicknet_clpn_glmnet(
     predictors = design$predictors,
@@ -81,7 +99,8 @@ PanelNet <- function(data,
     lambda_rule = lambda_rule,
     nfolds = nfolds,
     seed = seed,
-    groups = design$meta$id
+    groups = design$meta$id,
+    backend_args = quicknet_merge_args(list(standardize = standardize), list(...))
   )
   mat <- fit$edge_matrix
   cross_lagged <- mat
@@ -110,9 +129,15 @@ PanelNet <- function(data,
       prefix = prefix,
       backend = "glmnet::cv.glmnet",
       standardize = standardize,
+      standardize_data = standardize_data,
       alpha = alpha,
       lambda_rule = lambda_rule,
-      nfolds = nfolds,
+      nfolds = length(unique(fit$foldid)),
+      requested_nfolds = nfolds,
+      backend_args = list(...),
+      backend_version = as.character(utils::packageVersion("glmnet")),
+      backend_settings = fit$settings,
+      method_presets = list(family = "gaussian", folds = "grouped by participant", design = "pooled adjacent waves"),
       seed = seed,
       call = match.call()
     )
@@ -124,18 +149,22 @@ PanelNet <- function(data,
 #' @param data Long-format intensive longitudinal data.
 #' @param vars Variables to include as network nodes.
 #' @param id ID variable.
-#' @param day Day variable.
-#' @param beep Beep or measurement-occasion variable within day.
+#' @param day Optional day variable. NULL leaves it unspecified in the backend.
+#' @param beep Optional measurement-occasion variable within day.
 #' @param model Longitudinal model. One of \code{"graphicalVAR"},
 #' \code{"mlVAR"}, or \code{"psychonetrics_gvar"}.
 #' @param gamma EBIC hyperparameter in [0,1]. NULL selects 0.5 for
 #'   graphicalVAR. Ignored for mlVAR and psychonetrics_gvar.
-#' @param scale Should variables be scaled?
-#' @param centerWithin Should variables be person-mean centered?
+#' @param scale NULL inherits TRUE in graphicalVAR/mlVAR and no standardization
+#'   in psychonetrics. A logical value explicitly selects scaling.
+#' @param centerWithin NULL inherits TRUE in graphicalVAR and FALSE in
+#'   psychonetrics. Not an mlVAR control; use its native scaleWithin if intended.
 #' @param lags Positive integer vector of lags used by \code{mlVAR}.
-#' @param estimator Estimator used by \code{mlVAR}.
-#' @param temporal Temporal effect structure used by \code{mlVAR}.
-#' @param contemporaneous Contemporaneous effect structure used by \code{mlVAR}.
+#' @param estimator NULL inherits the mlVAR or psychonetrics estimator.
+#' @param temporal NULL inherits the backend temporal structure. mlVAR resolves
+#'   its default to correlated effects for at most six nodes, otherwise orthogonal.
+#' @param contemporaneous mlVAR contemporaneous structure; NULL inherits its
+#'   data-dependent default.
 #' @param nCores Number of cores used by \code{mlVAR}.
 #' @param ... Additional arguments passed to the selected backend.
 #'
@@ -148,23 +177,32 @@ PanelNet <- function(data,
 LongitudinalNet <- function(data,
                             vars,
                             id = "id",
-                            day = "day",
-                            beep = "beep",
+                            day = NULL,
+                            beep = NULL,
                             model = "graphicalVAR",
                             gamma = NULL,
-                            scale = TRUE,
-                            centerWithin = TRUE,
+                            scale = NULL,
+                            centerWithin = NULL,
                             lags = 1,
-                            estimator = "lmer",
-                            temporal = "fixed",
-                            contemporaneous = "fixed",
+                            estimator = NULL,
+                            temporal = NULL,
+                            contemporaneous = NULL,
                             nCores = 1,
                             ...) {
   model <- match.arg(model, c("graphicalVAR", "mlVAR", "psychonetrics_gvar"))
   gamma <- quicknet_resolve_gamma(model, gamma)
   lags <- quicknet_validate_lags(lags)
-  temporal_setting <- temporal
-  contemporaneous_setting <- contemporaneous
+  if (model == "graphicalVAR" && (!is.null(estimator) || !is.null(temporal) || !is.null(contemporaneous) || nCores != 1)) {
+    stop("estimator, temporal, contemporaneous and nCores are not supported by graphicalVAR.", call. = FALSE)
+  }
+  if (model == "psychonetrics_gvar" && (!is.null(contemporaneous) || nCores != 1)) stop("psychonetrics_gvar fixes contemporaneous = 'ggm' and does not use nCores.", call. = FALSE)
+  if (model != "mlVAR" && !identical(as.integer(lags), 1L)) stop("This backend supports only lag 1 in LongitudinalNet.", call. = FALSE)
+  if (model == "mlVAR" && !is.null(centerWithin)) stop("centerWithin is not an mlVAR argument; use scaleWithin if intended.", call. = FALSE)
+  scale <- scale %||% (model != "psychonetrics_gvar")
+  centerWithin <- centerWithin %||% (model == "graphicalVAR")
+  if (model == "mlVAR") estimator <- estimator %||% "default"
+  temporal_setting <- temporal %||% "default"
+  contemporaneous_setting <- contemporaneous %||% "default"
   quicknet_validate_input(
     data,
     model = model,
@@ -178,7 +216,8 @@ LongitudinalNet <- function(data,
   if (length(missing_cols) > 0) {
     stop("Missing required columns: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
-  dat <- data[order(data[[id]], data[[day]], data[[beep]]), , drop = FALSE]
+  index <- c(id, day, beep)
+  dat <- data[do.call(order, as.data.frame(data[, index, drop = FALSE])), , drop = FALSE]
 
   if (model == "psychonetrics_gvar") {
     if (!requireNamespace("psychonetrics", quietly = TRUE)) {
@@ -191,6 +230,9 @@ LongitudinalNet <- function(data,
       day = day,
       beep = beep,
       scale = scale,
+      centerWithin = centerWithin,
+      estimator = estimator,
+      temporal = temporal,
       call = match.call(),
       ...
     ))
@@ -200,21 +242,14 @@ LongitudinalNet <- function(data,
     if (!requireNamespace("graphicalVAR", quietly = TRUE)) {
       stop("Package 'graphicalVAR' is required for LongitudinalNet(model = 'graphicalVAR').", call. = FALSE)
     }
-    invisible(utils::capture.output({
-      fit <- suppressMessages(graphicalVAR::mlGraphicalVAR(
-        data = dat,
-        vars = vars,
-        beepvar = beep,
-        dayvar = day,
-        idvar = id,
-        scale = scale,
-        centerWithin = centerWithin,
-        gamma = gamma,
-        verbose = FALSE,
-        subjectNetworks = FALSE,
-        ...
-      ))
-    }))
+    args <- quicknet_backend_args(list(...), graphicalVAR::mlGraphicalVAR,
+      reserved = c("data", "vars", "idvar", "dayvar", "beepvar", "scale", "centerWithin", "gamma", "lags"),
+      extra = names(formals(graphicalVAR::graphicalVAR)))
+    args <- quicknet_merge_args(list(scale = scale, centerWithin = centerWithin, gamma = gamma, verbose = FALSE,
+      subjectNetworks = quicknet_backend_default(graphicalVAR::mlGraphicalVAR, "subjectNetworks")), args)
+    fit <- do.call(graphicalVAR::mlGraphicalVAR, c(list(data = dat, vars = vars, idvar = id),
+      if (!is.null(day)) list(dayvar = day), if (!is.null(beep)) list(beepvar = beep), args))
+    provenance <- quicknet_backend_provenance("graphicalVAR", "mlGraphicalVAR", list(...), args)
     temporal <- quicknet_from_qgraph_matrix(fit$fixedPDC, directed = TRUE)
     contemporaneous <- as.matrix(fit$fixedPCC)
     between <- as.matrix(fit$betweenNet)
@@ -223,23 +258,17 @@ LongitudinalNet <- function(data,
     if (!requireNamespace("mlVAR", quietly = TRUE)) {
       stop("Package 'mlVAR' is required for LongitudinalNet(model = 'mlVAR').", call. = FALSE)
     }
-    invisible(utils::capture.output({
-      fit <- suppressMessages(mlVAR::mlVAR(
-        data = dat,
-        vars = vars,
-        idvar = id,
-        lags = lags,
-        dayvar = day,
-        beepvar = beep,
-        estimator = estimator,
-        temporal = temporal_setting,
-        contemporaneous = contemporaneous_setting,
-        nCores = nCores,
-        verbose = FALSE,
-        scale = scale,
-        ...
-      ))
-    }))
+    args <- quicknet_backend_args(list(...), mlVAR::mlVAR,
+      reserved = c("data", "vars", "idvar", "dayvar", "beepvar", "lags", "estimator", "temporal", "contemporaneous", "nCores", "scale"))
+    args <- quicknet_merge_args(list(lags = lags, estimator = estimator, temporal = temporal_setting,
+      contemporaneous = contemporaneous_setting, nCores = nCores, verbose = FALSE, scale = scale), args)
+    fit <- do.call(mlVAR::mlVAR, c(list(data = dat, vars = vars, idvar = id),
+      if (!is.null(day)) list(dayvar = day), if (!is.null(beep)) list(beepvar = beep), args))
+    estimator <- fit$input$estimator
+    temporal_setting <- fit$input$temporal
+    if (contemporaneous_setting == "default") contemporaneous_setting <- if (length(vars) > 6) "orthogonal" else "correlated"
+    settings <- quicknet_merge_args(args, list(estimator = estimator, temporal = temporal_setting, contemporaneous = contemporaneous_setting))
+    provenance <- quicknet_backend_provenance("mlVAR", "mlVAR", list(...), settings)
     temporal_by_lag <- quicknet_mlvar_temporal_networks(fit, vars, lags)
     temporal <- temporal_by_lag[[1]]
     contemporaneous <- quicknet_mlvar_get_net(fit, "contemporaneous", vars)
@@ -271,7 +300,7 @@ LongitudinalNet <- function(data,
     edges = edges,
     nodes = nodes,
     fit = fit,
-    meta = list(
+    meta = c(list(
       data_type = "intensive_longitudinal",
       directed = TRUE,
       row_is = "to",
@@ -282,15 +311,14 @@ LongitudinalNet <- function(data,
       beep = beep,
       gamma = gamma,
       scale = scale,
-      centerWithin = centerWithin,
+      centerWithin = if (model == "graphicalVAR") centerWithin else NULL,
       lags = if (model == "mlVAR") lags else NULL,
       estimator = if (model == "mlVAR") estimator else NULL,
       temporal = if (model == "mlVAR") temporal_setting else NULL,
       contemporaneous = if (model == "mlVAR") contemporaneous_setting else NULL,
       nCores = if (model == "mlVAR") nCores else NULL,
-      backend_args = list(...),
       call = match.call()
-    )
+    ), provenance)
   )
 }
 
@@ -326,6 +354,8 @@ LongitudinalStability <- function(fit, nboot = 100, seed = 20260502, nfolds = NU
       call. = FALSE
     )
   }
+  quicknet_check_row_args(fit$meta$backend_args, "Longitudinal stability")
+  if (fit$model != "clpn" && !is.null(nfolds)) stop("nfolds applies only to CLPN.", call. = FALSE)
   set.seed(seed)
   if (fit$model == "clpn") {
     return(quicknet_panel_bootstrap_stability(fit, nboot = nboot, seed = seed, nfolds = nfolds %||% fit$meta$nfolds))
@@ -398,8 +428,11 @@ quicknet_clpn_glmnet <- function(predictors,
                                  alpha = 1,
                                  lambda_rule = c("lambda.1se", "lambda.min"),
                                  nfolds = 10,
-                                 seed = 20260502,
-                                 groups = NULL) {
+                                 seed = NULL,
+                                 groups = NULL,
+                                 backend_args = list()) {
+  if (!quicknet_is_positive_integer(nfolds) || nfolds < 3) stop("nfolds must be an integer of at least 3.", call. = FALSE)
+  if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) || alpha < 0 || alpha > 1) stop("alpha must be one finite number in [0, 1].", call. = FALSE)
   lambda_rule <- match.arg(lambda_rule)
   predictors <- as.matrix(predictors)
   outcomes <- as.matrix(outcomes)
@@ -408,7 +441,7 @@ quicknet_clpn_glmnet <- function(predictors,
   predictability <- data.frame(node = nodes, cv_r_squared = NA_real_, lambda = NA_real_, nonzero_predictors = NA_integer_)
   fits <- list()
 
-  set.seed(seed)
+  if (!is.null(seed)) set.seed(seed)
   if (is.null(groups)) {
     nfolds <- max(3, min(nfolds, nrow(predictors)))
     foldid <- sample(rep(seq_len(nfolds), length.out = nrow(predictors)))
@@ -425,17 +458,16 @@ quicknet_clpn_glmnet <- function(predictors,
     foldid <- group_folds[match(groups, unique_groups)]
   }
 
+  args <- quicknet_backend_args(backend_args, glmnet::cv.glmnet,
+    reserved = c("x", "y", "alpha", "family", "nfolds", "foldid"),
+    extra = names(formals(glmnet::glmnet)))
+  if (!is.null(args$type.measure) && !args$type.measure %in% c("default", "mse")) {
+    stop("CLPN cv_r_squared requires the Gaussian MSE criterion; type.measure must be 'mse' or 'default'.", call. = FALSE)
+  }
+  args <- quicknet_merge_args(list(alpha = alpha, family = "gaussian", nfolds = nfolds, foldid = foldid), args)
   for (target in nodes) {
     y <- outcomes[, target]
-    cv_fit <- glmnet::cv.glmnet(
-      x = predictors,
-      y = y,
-      alpha = alpha,
-      family = "gaussian",
-      standardize = FALSE,
-      nfolds = nfolds,
-      foldid = foldid
-    )
+    cv_fit <- do.call(glmnet::cv.glmnet, c(list(x = predictors, y = y), args))
     lambda_value <- if (lambda_rule == "lambda.1se") cv_fit$lambda.1se else cv_fit$lambda.min
     coefficients <- as.matrix(stats::coef(cv_fit, s = lambda_value))
     edge_matrix[target, ] <- as.numeric(coefficients[colnames(predictors), 1])
@@ -454,7 +486,8 @@ quicknet_clpn_glmnet <- function(predictors,
     predictability = predictability,
     fits = fits,
     lambda_rule = lambda_rule,
-    foldid = foldid
+    foldid = foldid,
+    settings = args
   )
 }
 
@@ -478,16 +511,16 @@ quicknet_psychonetrics_panel_fit <- function(data,
     waves = waves,
     id = id,
     prefix = prefix,
-    standardize = standardize
+    standardize = FALSE
   )
   vars_matrix <- quicknet_panel_vars_matrix(nodes, waves, prefix)
 
-  raw_model <- switch(
-    model,
-    ri_clpm = psychonetrics::ri_clpm(dat$data, vars = vars_matrix, type = ri_type, verbose = FALSE, ...),
-    panel_gvar = psychonetrics::panelgvar(dat$data, vars = vars_matrix, verbose = FALSE, ...),
-    panel_var = psychonetrics::panelvar(dat$data, vars = vars_matrix, verbose = FALSE, ...)
-  )
+  fun <- switch(model, ri_clpm = "ri_clpm", panel_gvar = "panelgvar", panel_var = "panelvar")
+  args <- quicknet_psychonetrics_args(fun,
+    c(list(data = dat$data, vars = vars_matrix, verbose = FALSE,
+      standardize = if (is.character(standardize)) standardize else if (isTRUE(standardize)) "z_per_wave" else "none"),
+      if (model == "ri_clpm") list(type = ri_type)), list(...))
+  raw_model <- do.call(get(fun, asNamespace("psychonetrics")), args)
   if (model == "ri_clpm" && !is.null(stationary)) {
     raw_model <- psychonetrics::ri_clpm_stationary(raw_model, stationary = stationary)
   }
@@ -540,6 +573,9 @@ quicknet_psychonetrics_panel_fit <- function(data,
       ri_type = if (model == "ri_clpm") ri_type else NULL,
       stationary = stationary,
       backend_args = list(...),
+      backend_version = as.character(utils::packageVersion("psychonetrics")),
+      backend_settings = quicknet_psychonetrics_settings(fit, args),
+      estimator = fit@estimator,
       call = call
     )
   )
@@ -551,19 +587,19 @@ quicknet_psychonetrics_gvar_fit <- function(data,
                                             day,
                                             beep,
                                             scale,
+                                            centerWithin,
+                                            estimator,
+                                            temporal,
                                             call,
                                             ...) {
-  standardize <- if (isTRUE(scale)) "z" else "none"
-  raw_model <- psychonetrics::gvar(
-    data = data,
-    vars = vars,
-    idvar = id,
-    dayvar = day,
-    beepvar = beep,
-    standardize = standardize,
-    verbose = FALSE,
-    ...
-  )
+  dots <- list(...)
+  standardize <- dots$standardize %||% if (isTRUE(scale)) "z" else "none"
+  dots$standardize <- NULL
+  args <- quicknet_psychonetrics_args("gvar", c(list(data = data, vars = vars, idvar = id,
+    standardize = standardize, centerWithin = centerWithin, verbose = FALSE),
+    if (!is.null(day)) list(dayvar = day), if (!is.null(beep)) list(beepvar = beep),
+    if (!is.null(estimator)) list(estimator = estimator), if (!is.null(temporal)) list(temporal = temporal)), dots)
+  raw_model <- do.call(psychonetrics::gvar, args)
   fit <- quicknet_psychonetrics_run(raw_model)
   temporal <- quicknet_psychonetrics_matrix(fit, "beta", vars)
   contemporaneous <- quicknet_psychonetrics_first_matrix(fit, c("omega_zeta", "sigma_zeta", "kappa_zeta"), vars)
@@ -593,6 +629,11 @@ quicknet_psychonetrics_gvar_fit <- function(data,
       beep = beep,
       scale = scale,
       standardize = standardize,
+      temporal = args$temporal,
+      centerWithin = centerWithin,
+      backend_version = as.character(utils::packageVersion("psychonetrics")),
+      backend_settings = quicknet_psychonetrics_settings(fit, args),
+      estimator = fit@estimator,
       backend_args = list(...),
       call = call
     )
@@ -604,7 +645,6 @@ quicknet_panel_psychonetrics_data <- function(data, nodes, waves, id, prefix, st
   required_columns <- unlist(lapply(waves, function(wave) paste0(nodes, prefix, wave)))
   if (!id %in% colnames(dat)) dat[[id]] <- seq_len(nrow(dat))
   dat <- dat[, c(id, required_columns), drop = FALSE]
-  dat <- dat[stats::complete.cases(dat), , drop = FALSE]
   if (isTRUE(standardize)) {
     dat[required_columns] <- lapply(dat[required_columns], function(x) as.numeric(scale(x)))
   }
@@ -817,13 +857,14 @@ quicknet_panel_bootstrap_stability <- function(fit, nboot, seed, nfolds) {
       rows
     }))
     boot_fit <- tryCatch(
-      PanelNet(
+      quicknet_refit_with_backend_args(PanelNet, fit,
         sampled_data,
         nodes = fit$meta$nodes,
         waves = fit$meta$waves,
         id = fit$meta$id,
         prefix = fit$meta$prefix,
         standardize = fit$meta$standardize,
+        standardize_data = fit$meta$standardize_data %||% FALSE,
         alpha = fit$meta$alpha,
         lambda_rule = fit$meta$lambda_rule,
         nfolds = nfolds,
@@ -878,7 +919,6 @@ quicknet_psychonetrics_panel_bootstrap_stability <- function(fit, nboot, seed) {
         prefix = fit$meta$prefix,
         standardize = fit$meta$standardize,
         model = fit$model,
-        ri_type = fit$meta$ri_type %||% "ggm",
         stationary = fit$meta$stationary
       ),
       error = function(e) NULL
@@ -948,9 +988,9 @@ quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
         scale = fit$meta$scale,
         centerWithin = fit$meta$centerWithin,
         lags = fit$meta$lags %||% 1,
-        estimator = fit$meta$estimator %||% "lmer",
-        temporal = fit$meta$temporal %||% "fixed",
-        contemporaneous = fit$meta$contemporaneous %||% "fixed",
+        estimator = if (fit$model != "graphicalVAR") fit$meta$estimator else NULL,
+        temporal = fit$meta$temporal,
+        contemporaneous = fit$meta$contemporaneous,
         nCores = fit$meta$nCores %||% 1
       ),
       error = function(e) NULL
@@ -1004,5 +1044,14 @@ quicknet_bind_rows_fill <- function(...) {
 }
 
 quicknet_refit_with_backend_args <- function(fun, fit, ...) {
-  do.call(fun, c(list(...), fit$meta$backend_args %||% list()))
+  args <- list(...)
+  if (fit$model == "clpn" && is.null(fit$meta$standardize_data)) {
+    args$standardize_data <- fit$meta$standardize %||% TRUE
+    args$standardize <- FALSE
+  }
+  if (fit$model == "graphicalVAR" && is.null(fit$meta$backend_settings) &&
+      is.null(fit$meta$backend_args$subjectNetworks)) args$subjectNetworks <- FALSE
+  if (fit$model == "ri_clpm") args$ri_type <- fit$meta$ri_type
+  if (fit$model == "mlVAR") args$centerWithin <- NULL
+  do.call(fun, quicknet_merge_args(fit$meta$backend_args %||% list(), args))
 }

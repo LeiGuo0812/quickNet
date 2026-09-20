@@ -10,9 +10,9 @@ TimeVaryingNet(
   types,
   levels,
   timepoints = NULL,
-  estpoints = c(0.25, 0.5, 0.75),
-  bandwidth = 0.2,
-  lags = 1,
+  estpoints = NULL,
+  bandwidth = NULL,
+  lags = NULL,
   lambdaSel = "EBIC",
   gamma = NULL,
   scale = TRUE,
@@ -31,13 +31,15 @@ TimeVaryingNet(
 \item{timepoints}{Numeric time index scaled to the interval used by
 \code{mgm::tvmvar()}. Defaults to an equally spaced 0-1 sequence.}
 
-\item{estpoints}{Estimation points for local networks.}
+\item{estpoints}{Required estimation points for local networks; no source default.}
 
-\item{bandwidth}{Kernel bandwidth.}
+\item{bandwidth}{Required kernel bandwidth; no source default.}
 
-\item{lags}{Positive integer vector of temporal lags.}
+\item{lags}{Required positive integer vector of temporal lags; the backend
+has no default. Use \code{lags = 1} for a first-order VAR.}
 
-\item{lambdaSel}{Lambda selection method passed to \code{mgm::tvmvar()}.}
+\item{lambdaSel}{Lambda selection method passed to \code{mgm::tvmvar()};
+its source default is EBIC.}
 
 \item{gamma}{EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
 NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL

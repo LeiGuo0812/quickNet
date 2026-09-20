@@ -23,6 +23,7 @@ quicknet_fit_gamma <- function(fit) {
   if (is.null(quicknet_default_gamma(fit$model))) return(NULL)
   raw <- if (is.list(fit$fit)) fit$fit else list()
   backend_call <- if (is.list(raw$call)) raw$call else list()
+  if (isFALSE(backend_call$regularize)) return(NULL)
   selection <- backend_call$lambdaSel %||% fit$meta$lambdaSel %||% "EBIC"
   if (!identical(selection, "EBIC")) return(NULL)
   backend_gamma <- switch(fit$model,
@@ -41,7 +42,10 @@ quicknet_fit_gamma <- function(fit) {
 
 quicknet_refit_gamma <- function(fit) {
   gamma <- quicknet_fit_gamma(fit)
-  if (!is.null(quicknet_default_gamma(fit$model)) && is.null(gamma)) {
+  selection <- if (is.list(fit$fit$call)) fit$fit$call$lambdaSel else NULL
+  active <- identical(selection %||% fit$meta$lambdaSel %||% "EBIC", "EBIC")
+  if (is.list(fit$fit$call) && isFALSE(fit$fit$call$regularize)) active <- FALSE
+  if (active && !is.null(quicknet_default_gamma(fit$model)) && is.null(gamma)) {
     stop("The fitted object's EBIC gamma is unknown; refit the original data first.", call. = FALSE)
   }
   gamma
@@ -51,15 +55,9 @@ quicknet_nct_fit_settings <- function(fit) {
   if (!fit$model %in% c("EBICglasso", "ising", "mgm", "correlation", "partial", "ordinal")) {
     stop("NetCompare requires cross-sectional exploratory fits.", call. = FALSE)
   }
-  gamma <- quicknet_fit_gamma(fit)
-  if (!is.null(quicknet_default_gamma(fit$model)) && is.null(gamma)) {
-    stop("The fitted object's EBIC gamma is unknown; refit it before comparison.", call. = FALSE)
-  }
-  list(model = fit$model, gamma = gamma,
-    cor_method = fit$meta$cor_method %||% "pearson",
-    ordinal_method = fit$meta$ordinal_method %||% "polychoric",
-    missing = fit$meta$missing %||% "listwise",
-    AND = fit$meta$AND %||% TRUE, types = fit$meta$types, levels = fit$meta$levels)
+  args <- quicknet_cross_refit_args(fit)
+  quicknet_check_row_args(args$backend_args, "Network comparison")
+  args
 }
 
 quicknet_nct_refit <- function(x, settings) {

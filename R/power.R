@@ -3,15 +3,17 @@
 #' @param method Planning method. \code{"monte_carlo"} runs a transparent
 #' simulation for Gaussian graphical models. \code{"powerly"} delegates GGM
 #' planning to \code{powerly::powerly()}.
-#' @param nodes Number of network nodes.
+#' @param nodes Number of network nodes. Required for powerly; defaults to 8
+#'   for quickNet's Monte Carlo design.
 #' @param density Expected proportion of nonzero edges in the assumed true
-#' network.
+#' network. Required for powerly; Monte Carlo defaults to 0.30.
 #' @param positive Proportion of nonzero edges with positive signs.
 #' @param edge_strength Absolute nonzero edge-weight range used for the assumed
 #' true partial-correlation network.
 #' @param sample_sizes Candidate sample sizes for \code{method = "monte_carlo"}.
 #' If \code{NULL}, an adaptive grid is generated from \code{nodes}.
-#' @param replications Monte Carlo replications per candidate sample size.
+#' @param replications Replications per sample size. NULL inherits 30 for
+#'   powerly and uses 100 for the quickNet Monte Carlo design.
 #' @param target_metric Metric used for the power criterion. Supported values
 #' are \code{"sensitivity"}, \code{"specificity"}, \code{"mcc"},
 #' \code{"edge_weight_correlation"}, and \code{"rmse"}.
@@ -20,37 +22,53 @@
 #' achieve the target value.
 #' @param gamma EBIC hyperparameter in [0,1]. NULL selects 0.5 for
 #'   Monte Carlo EBICglasso estimation. Ignored for partial/correlation
-#'   estimators and for method = 'powerly'; configure that backend via
-#'   powerly_args instead. Inactive gamma is stored as NULL in settings
+#'   estimators and for method = 'powerly'. Powerly's internal GGM estimator
+#'   uses its own gamma default (0.5), recorded separately as backend_gamma;
+#'   the top-level gamma does not configure it. Inactive gamma is stored as NULL in settings
 #'   and NA in Monte Carlo result rows.
 #' @param estimator Network estimator used in the Monte Carlo loop.
-#' @param seed Random seed.
-#' @param powerly_args Optional named list passed to \code{powerly::powerly()}.
+#' @param seed Optional random seed. NULL preserves the current RNG state.
+#' @param powerly_args Legacy optional list. Named arguments through ... are
+#'   preferred and override entries in this list; no parameter object is needed.
 #' @param threshold Absolute threshold used to define selected edges.
-#' @param ... Arguments passed from \code{SampleSize()} to
-#' \code{NetworkPower()}.
+#' @param ... Named powerly controls, including required range_lower and
+#'   range_upper, e.g. \code{range_lower = 100, range_upper = 500, samples = 30}.
+#'   SampleSize forwards its arguments to NetworkPower.
 #'
 #' @return A \code{quicknet_power} object. Results depend on the assumed true
 #' network and simulation design; they should be reported as design-based
 #' planning evidence, not as a universal sample size rule.
 #' @export
 NetworkPower <- function(method = c("monte_carlo", "powerly"),
-                         nodes = 8,
-                         density = 0.30,
-                         positive = 0.70,
-                         edge_strength = c(0.15, 0.45),
+                         nodes = NULL,
+                         density = NULL,
+                         positive = NULL,
+                         edge_strength = NULL,
                          sample_sizes = NULL,
-                         replications = 100,
-                         target_metric = c("mcc", "sensitivity", "specificity", "edge_weight_correlation", "rmse"),
+                         replications = NULL,
+                         target_metric = NULL,
                          target_value = 0.60,
                          target_probability = 0.80,
                          gamma = NULL,
                          estimator = c("EBICglasso", "partial", "correlation"),
-                         seed = 20260502,
+                         seed = NULL,
                          powerly_args = list(),
-                         threshold = 1e-10) {
+                         threshold = 1e-10,
+                         ...) {
+  supplied <- names(match.call())
   method <- match.arg(method)
-  target_metric <- match.arg(target_metric)
+  if (method == "powerly" && any(c("estimator", "threshold") %in% supplied)) stop("estimator and threshold are controls for the Monte Carlo branch.", call. = FALSE)
+  dots <- list(...)
+  if (method == "monte_carlo" && (length(dots) || length(powerly_args))) stop("Additional backend arguments apply only to method = 'powerly'.", call. = FALSE)
+  if (method == "powerly" && (is.null(nodes) || is.null(density))) stop("nodes and density must be specified for powerly's network generator.", call. = FALSE)
+  if (method == "powerly" && !is.null(sample_sizes)) stop("Use range_lower and range_upper for powerly; sample_sizes applies only to Monte Carlo planning.", call. = FALSE)
+  nodes <- nodes %||% 8
+  density <- density %||% 0.30
+  positive <- positive %||% if (method == "powerly") 0.9 else 0.7
+  edge_strength <- edge_strength %||% if (method == "powerly") c(0.5, 1) else c(0.15, 0.45)
+  replications <- replications %||% if (method == "powerly") 30 else 100
+  target_metric <- target_metric %||% if (method == "powerly") "sensitivity" else "mcc"
+  target_metric <- match.arg(target_metric, c("mcc", "sensitivity", "specificity", "edge_weight_correlation", "rmse"))
   estimator <- match.arg(estimator)
   if (!quicknet_is_positive_integer(nodes) || nodes < 3) {
     stop("nodes must be an integer of at least 3.", call. = FALSE)
@@ -88,7 +106,8 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
       target_value = target_value,
       target_probability = target_probability,
       seed = seed,
-      powerly_args = powerly_args
+      powerly_args = quicknet_merge_args(powerly_args, dots),
+      replications = replications
     ))
   }
 
@@ -200,7 +219,7 @@ quicknet_power_monte_carlo <- function(nodes,
                                        seed,
                                        threshold) {
   quicknet_power_validate_design(nodes, density, positive, edge_strength, sample_sizes, replications)
-  set.seed(seed)
+  if (!is.null(seed)) set.seed(seed)
   true_network <- quicknet_power_true_network(nodes, density, positive, edge_strength)
   covariance <- quicknet_power_covariance_from_partial(true_network)
 
@@ -274,7 +293,8 @@ quicknet_power_powerly <- function(nodes,
                                    target_value,
                                    target_probability,
                                    seed,
-                                   powerly_args) {
+                                   powerly_args,
+                                   replications = 30) {
   if (!requireNamespace("powerly", quietly = TRUE)) {
     stop("Package 'powerly' is required for NetworkPower(method = 'powerly').", call. = FALSE)
   }
@@ -287,12 +307,9 @@ quicknet_power_powerly <- function(nodes,
   if (!target_metric %in% names(metric_map)) {
     stop("powerly backend supports sensitivity, specificity, mcc, and edge_weight_correlation.", call. = FALSE)
   }
-  set.seed(seed)
+  if (!is.null(seed)) set.seed(seed)
   defaults <- list(
-    range_lower = 100,
-    range_upper = 500,
-    samples = 5,
-    replications = 100,
+    replications = replications,
     model = "ggm",
     nodes = nodes,
     density = density,
@@ -304,16 +321,29 @@ quicknet_power_powerly <- function(nodes,
     statistic_value = target_probability,
     monotone = TRUE,
     increasing = TRUE,
-    boots = 1000,
     lower_ci = 0.025,
     upper_ci = 0.975,
     verbose = FALSE
   )
-  args <- utils::modifyList(defaults, powerly_args)
+  powerly_args <- quicknet_backend_args(powerly_args, powerly::powerly,
+    reserved = c("model"), extra = c("nodes", "density", "positive", "constant", "range"))
+  args <- quicknet_merge_args(defaults, powerly_args)
+  if (is.null(args$range_lower) || is.null(args$range_upper)) stop("range_lower and range_upper must be specified; powerly has no defaults for them.", call. = FALSE)
+  if (args$statistic != "power") stop("NetworkPower requires statistic = 'power' to report target-achievement probabilities.", call. = FALSE)
+  if (!args$measure %in% metric_map) stop("Unsupported powerly measure.", call. = FALSE)
+  target_metric <- names(metric_map)[match(args$measure, metric_map)]
+  target_value <- args$measure_value
+  target_probability <- args$statistic_value
+  for (name in c("samples", "boots", "tolerance", "iterations", "cores", "cluster_type", "save_memory", "solver_type", "spline_df")) {
+    if (!name %in% names(args)) args[name] <- list(quicknet_backend_default(powerly::powerly, name))
+  }
   fit <- do.call(powerly::powerly, args)
   recommendation <- quicknet_power_powerly_recommendation(fit, target_probability)
   summary <- quicknet_power_powerly_summary(fit, target_metric, target_value)
-  settings <- c(args, list(seed = seed, target_metric = target_metric, target_probability = target_probability))
+  native_estimator <- get("GgmModel", asNamespace("powerly"))$public_methods$estimate
+  settings <- c(args, list(seed = seed, target_metric = target_metric,
+    target_probability = target_probability, backend_version = as.character(utils::packageVersion("powerly")),
+    backend_estimator = "qgraph::EBICglasso", backend_gamma = quicknet_backend_default(native_estimator, "gamma")))
   report <- if (isTRUE(recommendation$reached[[1]])) {
     paste0("Powerly bootstrap median sample-size estimate = ", recommendation$recommended_n[[1]],
            "; the fitted target-achievement probability at this estimate is ",

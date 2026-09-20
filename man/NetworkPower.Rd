@@ -7,21 +7,21 @@
 \usage{
 NetworkPower(
   method = c("monte_carlo", "powerly"),
-  nodes = 8,
-  density = 0.3,
-  positive = 0.7,
-  edge_strength = c(0.15, 0.45),
+  nodes = NULL,
+  density = NULL,
+  positive = NULL,
+  edge_strength = NULL,
   sample_sizes = NULL,
-  replications = 100,
-  target_metric = c("mcc", "sensitivity", "specificity", "edge_weight_correlation",
-    "rmse"),
+  replications = NULL,
+  target_metric = NULL,
   target_value = 0.6,
   target_probability = 0.8,
   gamma = NULL,
   estimator = c("EBICglasso", "partial", "correlation"),
-  seed = 20260502,
+  seed = NULL,
   powerly_args = list(),
-  threshold = 1e-10
+  threshold = 1e-10,
+  ...
 )
 
 SampleSize(...)
@@ -31,10 +31,11 @@ SampleSize(...)
 simulation for Gaussian graphical models. \code{"powerly"} delegates GGM
 planning to \code{powerly::powerly()}.}
 
-\item{nodes}{Number of network nodes.}
+\item{nodes}{Number of network nodes. Required for powerly; defaults to 8
+for quickNet's Monte Carlo design.}
 
 \item{density}{Expected proportion of nonzero edges in the assumed true
-network.}
+network. Required for powerly; Monte Carlo defaults to 0.30.}
 
 \item{positive}{Proportion of nonzero edges with positive signs.}
 
@@ -44,7 +45,8 @@ true partial-correlation network.}
 \item{sample_sizes}{Candidate sample sizes for \code{method = "monte_carlo"}.
 If \code{NULL}, an adaptive grid is generated from \code{nodes}.}
 
-\item{replications}{Monte Carlo replications per candidate sample size.}
+\item{replications}{Replications per sample size. NULL inherits 30 for
+powerly and uses 100 for the quickNet Monte Carlo design.}
 
 \item{target_metric}{Metric used for the power criterion. Supported values
 are \code{"sensitivity"}, \code{"specificity"}, \code{"mcc"},
@@ -57,20 +59,23 @@ achieve the target value.}
 
 \item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
 Monte Carlo EBICglasso estimation. Ignored for partial/correlation
-estimators and for method = 'powerly'; configure that backend via
-powerly_args instead. Inactive gamma is stored as NULL in settings
+estimators and for method = 'powerly'. Powerly's internal GGM estimator
+uses its own gamma default (0.5), recorded separately as backend_gamma;
+the top-level gamma does not configure it. Inactive gamma is stored as NULL in settings
 and NA in Monte Carlo result rows.}
 
 \item{estimator}{Network estimator used in the Monte Carlo loop.}
 
-\item{seed}{Random seed.}
+\item{seed}{Optional random seed. NULL preserves the current RNG state.}
 
-\item{powerly_args}{Optional named list passed to \code{powerly::powerly()}.}
+\item{powerly_args}{Legacy optional list. Named arguments through ... are
+preferred and override entries in this list; no parameter object is needed.}
 
 \item{threshold}{Absolute threshold used to define selected edges.}
 
-\item{...}{Arguments passed from \code{SampleSize()} to
-\code{NetworkPower()}.}
+\item{...}{Named powerly controls, including required range_lower and
+range_upper, e.g. \code{range_lower = 100, range_upper = 500, samples = 30}.
+SampleSize forwards its arguments to NetworkPower.}
 }
 \value{
 A \code{quicknet_power} object. Results depend on the assumed true

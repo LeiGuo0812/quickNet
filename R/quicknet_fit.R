@@ -370,8 +370,7 @@ quicknet_make_positive_definite <- function(mat) {
 }
 
 quicknet_partial_cor <- function(correlation_matrix) {
-  correlation_matrix <- quicknet_make_positive_definite(correlation_matrix)
-  precision <- solve(correlation_matrix)
+  precision <- solve(as.matrix(correlation_matrix))
   partial <- -stats::cov2cor(precision)
   diag(partial) <- 0
   colnames(partial) <- rownames(partial) <- colnames(correlation_matrix)
@@ -380,100 +379,92 @@ quicknet_partial_cor <- function(correlation_matrix) {
 
 quicknet_fit_cross_sectional <- function(data,
                                          model = c("EBICglasso", "correlation", "partial", "ising", "ordinal", "mgm"),
-                                         cor_method = c("pearson", "spearman", "kendall"),
-                                         missing = c("listwise", "none"),
+                                         cor_method = NULL,
+                                         missing = NULL,
                                          gamma = NULL,
                                          ordinal_method = c("polychoric", "spearman", "pearson"),
                                          AND = TRUE,
                                          types = NULL,
-                                         levels = NULL) {
+                                         levels = NULL,
+                                         backend_args = list(),
+                                         repair_pd = FALSE) {
   model <- match.arg(model)
-  cor_method <- match.arg(cor_method)
-  missing <- match.arg(missing)
+  if (!is.null(cor_method)) cor_method <- match.arg(cor_method, c("pearson", "spearman", "kendall"))
+  missing <- quicknet_cross_missing(model, missing %||% if (model == "EBICglasso") backend_args$missing else NULL)
   ordinal_method <- match.arg(ordinal_method)
-  gamma <- quicknet_resolve_gamma(model, gamma)
-
-  dat <- quicknet_complete_numeric_data(data, missing = missing)
+  dat <- quicknet_complete_numeric_data(data, missing = if (missing == "listwise") "listwise" else "none")
+  if (missing == "stop" && anyNA(dat)) stop("Missing data detected.", call. = FALSE)
   node_names <- colnames(dat)
+  selection <- NULL
+  provenance <- list()
 
   if (model == "EBICglasso") {
-    fit <- bootnet::estimateNetwork(dat, default = "EBICglasso", tuning = gamma, verbose = FALSE)
+    args <- quicknet_backend_args(backend_args, bootnet::bootnet_EBICglasso,
+      reserved = c("data", "unlock"), extra = setdiff(names(formals(qgraph::EBICglasso)), c("S", "n", "gamma", "...")))
+    if (!is.null(gamma) && !is.null(args$tuning) && !identical(as.numeric(gamma), as.numeric(args$tuning))) {
+      stop("gamma and tuning conflict.", call. = FALSE)
+    }
+    gamma <- quicknet_resolve_gamma(model, gamma %||% args$tuning)
+    if (!is.null(cor_method)) {
+      if (!is.null(args$corMethod) && args$corMethod != "cor") stop("cor_method requires corMethod = 'cor'.", call. = FALSE)
+      if (!is.null(args$corArgs$method) && args$corArgs$method != cor_method) stop("cor_method and corArgs$method conflict.", call. = FALSE)
+      args$corMethod <- "cor"
+      args$corArgs <- quicknet_merge_args(args$corArgs %||% list(), list(method = cor_method))
+    }
+    if (!is.null(args$missing) && args$missing != missing) stop("Specify missing through the missing argument.", call. = FALSE)
+    args <- quicknet_merge_args(list(verbose = FALSE), args)
+    args$tuning <- gamma
+    args$missing <- if (missing == "none") "stop" else missing
+    fit <- do.call(bootnet::estimateNetwork, c(list(data = dat, default = "EBICglasso"), args))
     mat <- as.matrix(fit$graph)
-  } else if (model %in% c("correlation", "partial")) {
-    correlation_matrix <- stats::cor(dat, use = "pairwise.complete.obs", method = cor_method)
-    correlation_matrix <- quicknet_make_positive_definite(correlation_matrix)
+    provenance <- quicknet_backend_provenance("bootnet", "bootnet_EBICglasso", args, fit$arguments)
+  } else if (model %in% c("correlation", "partial") || (model == "ordinal" && ordinal_method != "polychoric")) {
+    args <- quicknet_backend_args(backend_args, stats::cor, reserved = c("x", "y", "use", "method"))
+    cor_method <- if (model == "ordinal") ordinal_method else cor_method %||% "pearson"
+    use <- if (repair_pd) "pairwise.complete.obs" else switch(missing, listwise = "complete.obs", pairwise = "pairwise.complete.obs", "everything")
+    args <- c(args, list(use = use, method = cor_method))
+    correlation_matrix <- do.call(stats::cor, c(list(x = dat), args))
+    if (repair_pd) correlation_matrix <- quicknet_make_positive_definite(correlation_matrix)
+    if (any(!is.finite(correlation_matrix))) stop("Correlation matrix contains non-finite values; select an explicit missing-data rule or check constant variables.", call. = FALSE)
     fit <- list(correlation = correlation_matrix)
-    mat <- if (model == "correlation") correlation_matrix else quicknet_partial_cor(correlation_matrix)
+    mat <- if (model == "partial") quicknet_partial_cor(correlation_matrix) else correlation_matrix
+    gamma <- quicknet_resolve_gamma(model, gamma)
+    provenance <- quicknet_backend_provenance("stats", "cor", args)
   } else if (model == "ising") {
-    dat[] <- lapply(dat, as.integer)
-    is_binary <- vapply(dat, function(x) all(stats::na.omit(unique(x)) %in% c(0L, 1L)), logical(1))
-    if (!all(is_binary)) {
-      stop("Ising model requires all variables to be coded 0/1.", call. = FALSE)
-    }
+    is_binary <- vapply(dat, function(x) all(stats::na.omit(unique(x)) %in% c(0, 1)), logical(1))
+    if (!all(is_binary)) stop("Ising model requires all variables to be coded 0/1.", call. = FALSE)
+    if (anyNA(dat)) stop("IsingFit does not support missing data; select missing = 'listwise' explicitly.", call. = FALSE)
     has_variation <- vapply(dat, function(x) length(unique(x)) == 2, logical(1))
-    if (!all(has_variation)) {
-      stop(
-        "Ising model requires every variable to contain both 0 and 1. No variation in: ",
-        paste(names(has_variation)[!has_variation], collapse = ", "),
-        call. = FALSE
-      )
-    }
-
-    fit <- IsingFit::IsingFit(
-      x = dat,
-      family = "binomial",
-      AND = AND,
-      gamma = gamma,
-      plot = FALSE,
-      progressbar = FALSE
-    )
+    if (!all(has_variation)) stop("Ising model requires every variable to contain both 0 and 1. No variation in: ", paste(names(has_variation)[!has_variation], collapse = ", "), call. = FALSE)
+    args <- quicknet_backend_args(backend_args, IsingFit::IsingFit,
+      reserved = c("x", "family", "AND", "gamma"))
+    gamma <- quicknet_resolve_gamma(model, gamma)
+    args <- quicknet_merge_args(list(family = "binomial", AND = AND, gamma = gamma,
+                                    plot = FALSE, progressbar = FALSE), args)
+    fit <- do.call(IsingFit::IsingFit, c(list(x = dat), args))
     mat <- as.matrix(fit$weiadj)
+    provenance <- quicknet_backend_provenance("IsingFit", "IsingFit", args)
   } else if (model == "ordinal") {
-    dat[] <- lapply(dat, as.integer)
-    if (ordinal_method == "polychoric") {
-      fit <- psych::polychoric(
-        dat,
-        smooth = TRUE,
-        correct = 0.5,
-        progress = FALSE,
-        na.rm = TRUE,
-        max.cat = max(vapply(dat, function(x) length(unique(x)), integer(1)))
-      )
-      mat <- fit$rho
-    } else {
-      mat <- stats::cor(dat, use = "pairwise.complete.obs", method = ordinal_method)
-      fit <- list(correlation = mat, method = ordinal_method)
-    }
-    mat <- quicknet_make_positive_definite(mat)
+    args <- quicknet_backend_args(backend_args, psych::polychoric, reserved = c("x"))
+    args <- quicknet_merge_args(list(progress = FALSE), args)
+    fit <- do.call(psych::polychoric, c(list(x = dat), args))
+    mat <- if (repair_pd) quicknet_make_positive_definite(fit$rho) else as.matrix(fit$rho)
+    gamma <- quicknet_resolve_gamma(model, gamma)
+    provenance <- quicknet_backend_provenance("psych", "polychoric", args)
   } else if (model == "mgm") {
-    if (is.null(types)) {
-      types <- rep("g", ncol(dat))
-    }
-    if (is.null(levels)) {
-      levels <- ifelse(
-        types == "c",
-        vapply(dat, function(x) length(unique(x)), integer(1)),
-        1L
-      )
-    }
-    if (length(types) != ncol(dat) || length(levels) != ncol(dat)) {
-      stop("types and levels must have one entry per network variable.", call. = FALSE)
-    }
+    if (is.null(types) || is.null(levels)) stop("types and levels must be specified for mgm; the source estimator does not infer them.", call. = FALSE)
     quicknet_dynamic_validate(dat, node_names, types, levels)
-    fit <- mgm::mgm(
-      data = as.matrix(dat),
-      type = types,
-      level = levels,
-      k = 2,
-      lambdaSel = "EBIC",
-      lambdaGam = gamma,
-      ruleReg = "OR",
-      scale = TRUE,
-      pbar = FALSE,
-      signInfo = FALSE,
-      warnings = FALSE
-    )
+    args <- quicknet_backend_args(backend_args, mgm::mgm, reserved = c("data", "type", "level"))
+    if (!is.null(gamma) && !is.null(args$lambdaGam) && !identical(as.numeric(gamma), as.numeric(args$lambdaGam))) stop("gamma and lambdaGam conflict.", call. = FALSE)
+    selection <- args$lambdaSel %||% "CV"
+    gamma <- quicknet_resolve_gamma(model, gamma %||% args$lambdaGam, selection)
+    args <- quicknet_merge_args(list(pbar = FALSE), args)
+    if (!is.null(gamma)) args$lambdaGam <- gamma
+    fit <- do.call(mgm::mgm, c(list(data = as.matrix(dat), type = types, level = levels), args))
     mat <- quicknet_apply_signs(fit$pairwise$wadj, fit$pairwise$signs)
+    selection <- fit$call$lambdaSel
+    gamma <- if (isFALSE(fit$call$regularize)) NULL else quicknet_resolve_gamma(model, fit$call$lambdaGam, selection)
+    provenance <- quicknet_backend_provenance("mgm", "mgm", args, fit$call)
   }
 
   diag(mat) <- 0
@@ -499,35 +490,72 @@ quicknet_fit_cross_sectional <- function(data,
     networks = list(default = mat),
     nodes = node_table,
     fit = fit,
-    meta = list(
+    meta = c(list(
       data_type = "cross_sectional",
       directed = FALSE,
+      repair_pd = if (model %in% c("correlation", "partial", "ordinal")) repair_pd else NULL,
       missing = missing,
-      cor_method = cor_method,
+      cor_method = if (model %in% c("EBICglasso", "correlation", "partial", "ordinal")) cor_method else NULL,
       ordinal_method = if (model == "ordinal") ordinal_method else NULL,
       gamma = gamma,
-      lambdaSel = if (model == "mgm") "EBIC" else NULL,
+      lambdaSel = selection,
       AND = if (model == "ising") AND else NULL,
       types = if (model == "mgm") types else NULL,
       levels = if (model == "mgm") levels else NULL,
       n = nrow(dat),
       p = ncol(dat),
       call = match.call()
-    )
+    ), provenance)
   )
 }
 
 quicknet_refit_like <- function(data, fit) {
-  quicknet_fit_cross_sectional(
-    data = data,
+  args <- quicknet_cross_refit_args(fit)
+  quicknet_check_row_args(args$backend_args, "Resampling")
+  do.call(quicknet_fit_cross_sectional, c(list(data = data), args))
+}
+
+quicknet_cross_refit_args <- function(fit) {
+  backend_args <- fit$meta$backend_args %||% list()
+  raw <- if (is.list(fit$fit)) fit$fit else list()
+  cor_method <- fit$meta$cor_method
+  if (fit$model == "mgm") {
+    saved <- if (is.list(raw$call)) raw$call else list()
+    saved <- saved[intersect(names(saved), setdiff(names(formals(mgm::mgm)), c("...", "data", "type", "level")))]
+    if (!is.null(saved$weights) && all(saved$weights == 1)) saved$weights <- NULL
+    backend_args <- quicknet_merge_args(backend_args, saved)
+    backend_args$lambdaSel <- backend_args$lambdaSel %||% fit$meta$lambdaSel
+    if (is.null(backend_args$lambdaSel)) stop("The fitted MGM selection method is unknown; refit the original data first.", call. = FALSE)
+  }
+  if (fit$model == "EBICglasso" && is.list(raw$arguments)) {
+    saved <- raw$arguments[intersect(names(raw$arguments), quicknet_cross_backend_names("EBICglasso"))]
+    backend_args <- quicknet_merge_args(backend_args, saved)
+    # Earlier quickNet versions recorded cor_method even though bootnet did not
+    # receive it. The estimator's own arguments take precedence.
+    method <- saved$corMethod
+    if (is.null(method) && is.function(raw$estimator) && "corMethod" %in% names(formals(raw$estimator))) {
+      method <- quicknet_backend_default(raw$estimator, "corMethod", first = TRUE)
+    }
+    if (!is.null(method)) {
+      backend_args$corMethod <- method[[1L]]
+      cor_method <- if (identical(method[[1L]], "cor")) saved$corArgs$method %||% "pearson" else NULL
+    }
+  }
+  reserved <- switch(fit$model, EBICglasso = c("tuning", "missing"), ising = c("family", "AND", "gamma"), correlation = c("use", "method"), partial = c("use", "method"), character())
+  if (fit$model == "ordinal" && !identical(fit$meta$ordinal_method, "polychoric")) reserved <- c("use", "method")
+  backend_args[intersect(names(backend_args), reserved)] <- NULL
+  list(
     model = fit$model,
-    cor_method = fit$meta$cor_method %||% "pearson",
-    missing = fit$meta$missing %||% "listwise",
+    cor_method = cor_method,
+    missing = fit$meta$missing,
     gamma = quicknet_refit_gamma(fit),
     ordinal_method = fit$meta$ordinal_method %||% "polychoric",
-    AND = fit$meta$AND %||% TRUE,
+    AND = if (fit$model == "ising") raw$AND %||% fit$meta$AND %||% TRUE else TRUE,
     types = fit$meta$types,
-    levels = fit$meta$levels
+    levels = fit$meta$levels,
+    backend_args = backend_args,
+    repair_pd = fit$meta$repair_pd %||% (fit$model %in% c("correlation", "partial", "ordinal") &&
+      is.null(fit$meta$backend_args) && !is.null(fit$meta$call))
   )
 }
 

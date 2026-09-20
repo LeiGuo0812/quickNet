@@ -89,6 +89,13 @@ quicknet_check_input <- function(data, model, args = list()) {
   if (!key %in% names(specs)) {
     stop("Unknown model/function: ", model, call. = FALSE)
   }
+  if (is.null(args$missing)) {
+    args$missing <- if (key %in% c("EBICglasso", "correlation", "partial", "ordinal", "ising", "mgm")) {
+      quicknet_cross_missing(key)
+    } else if (key %in% c("ri_clpm", "panel_gvar", "panel_var", "confirmatory_ggm", "confirmatory_cor", "confirmatory_covariance", "confirmatory_precision", "lvm", "lnm", "rnm", "lrnm")) "auto" else "listwise"
+  }
+  args$require_complete <- identical(args$missing, "stop") ||
+    (key %in% c("correlation", "partial", "ising", "mgm") && identical(args$missing, "none"))
   messages <- list(errors = character(), warnings = character())
   validator <- switch(
     key,
@@ -142,30 +149,30 @@ quicknet_check_input <- function(data, model, args = list()) {
 
 quicknet_input_specs <- function() {
   list(
-    EBICglasso = quicknet_input_spec("wide data.frame/matrix", "data", "continuous numeric columns", "listwise by default", "non-numeric columns; too few complete rows"),
-    correlation = quicknet_input_spec("wide data.frame/matrix", "data", "continuous numeric columns", "listwise by default", "non-numeric columns; constant variables"),
-    partial = quicknet_input_spec("wide data.frame/matrix", "data", "continuous numeric columns", "listwise by default", "singular correlation matrices; too few rows"),
-    ordinal = quicknet_input_spec("wide data.frame/matrix", "data", "ordered numeric category codes", "listwise by default", "too many/few categories; sparse categories"),
-    ising = quicknet_input_spec("wide data.frame/matrix", "data", "binary 0/1 columns with both values present", "listwise by default", "values not coded 0/1; no variation"),
-    mgm = quicknet_input_spec("wide data.frame/matrix", "data, types, levels", "numeric columns; types/levels match columns", "listwise by default", "wrong type/level length; categorical levels not coded numerically"),
+    EBICglasso = quicknet_input_spec("wide data.frame/matrix", "data", "continuous numeric columns", "backend pairwise default; explicit listwise available", "non-numeric columns; too few complete rows"),
+    correlation = quicknet_input_spec("wide data.frame/matrix", "data", "continuous numeric columns", "explicit rule required for incomplete data", "non-numeric columns; constant variables"),
+    partial = quicknet_input_spec("wide data.frame/matrix", "data", "continuous numeric columns", "explicit rule required for incomplete data", "singular correlation matrices; too few rows"),
+    ordinal = quicknet_input_spec("wide data.frame/matrix", "data", "ordered numeric category codes", "backend pairwise default", "too many/few categories; sparse categories"),
+    ising = quicknet_input_spec("wide data.frame/matrix", "data", "binary 0/1 columns with both values present", "complete data required; explicit listwise available", "values not coded 0/1; no variation"),
+    mgm = quicknet_input_spec("wide data.frame/matrix", "data, types, levels", "numeric columns; types/levels match columns", "complete data required; explicit listwise available", "wrong type/level length; categorical levels not coded numerically"),
     clpn = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; fewer than two waves"),
-    ri_clpm = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "requires at least three waves for stable RI-CLPM interpretation"),
-    panel_gvar = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; unstable between-person network with small samples"),
-    panel_var = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "complete cases used", "missing wave columns; contemporaneous layer is covariance-based"),
+    ri_clpm = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "psychonetrics auto missing-data rule", "requires at least three waves for stable RI-CLPM interpretation"),
+    panel_gvar = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "psychonetrics auto missing-data rule", "missing wave columns; unstable between-person network with small samples"),
+    panel_var = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "psychonetrics auto missing-data rule", "missing wave columns; contemporaneous layer is covariance-based"),
     panel_sem = quicknet_input_spec("wide panel data.frame", "nodes, waves, optional id", "columns named node + prefix + wave", "selected lavaan missing-data rule", "missing wave columns; fewer than two waves"),
-    graphicalVAR = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
-    mlVAR = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
-    psychonetrics_gvar = quicknet_input_spec("long ESM data.frame", "vars, id, day, beep", "numeric node variables; repeated measures sorted by id/day/beep", "psychonetrics handles selected missing rule", "non-consecutive time indices; too few observations per subject"),
-    confirmatory_ggm = quicknet_input_spec("wide data.frame/matrix", "vars, optional omega", "continuous numeric columns; omega is square template", "listwise by default", "omega dimensions/names do not match vars"),
+    graphicalVAR = quicknet_input_spec("long ESM data.frame", "vars, id; optional day/beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
+    mlVAR = quicknet_input_spec("long ESM data.frame", "vars, id; optional day/beep", "numeric node variables; repeated measures sorted by id/day/beep", "backend handles selected missing rule", "missing id/day/beep; too few observations per subject"),
+    psychonetrics_gvar = quicknet_input_spec("long ESM data.frame", "vars, id; optional day/beep", "numeric node variables; repeated measures sorted by id/day/beep", "psychonetrics handles selected missing rule", "non-consecutive time indices; too few observations per subject"),
+    confirmatory_ggm = quicknet_input_spec("wide data.frame/matrix", "vars, optional omega", "continuous numeric columns; omega is square template", "psychonetrics auto missing-data rule", "omega dimensions/names do not match vars"),
     confirmatory_ising = quicknet_input_spec("wide data.frame/matrix", "vars, optional omega", "binary 0/1 columns; omega is square template", "listwise by default", "values not coded 0/1; omega dimensions/names do not match vars"),
-    confirmatory_cor = quicknet_input_spec("wide data.frame/matrix", "vars, optional rho", "continuous numeric columns; rho is square template", "listwise by default", "rho dimensions/names do not match vars"),
-    confirmatory_covariance = quicknet_input_spec("wide data.frame/matrix", "vars, optional sigma", "continuous numeric columns; sigma is square template", "listwise by default", "sigma dimensions/names do not match vars"),
-    confirmatory_precision = quicknet_input_spec("wide data.frame/matrix", "vars, optional kappa", "continuous numeric columns; kappa is square template", "listwise by default", "kappa dimensions/names do not match vars"),
+    confirmatory_cor = quicknet_input_spec("wide data.frame/matrix", "vars, optional rho", "continuous numeric columns; rho is square template", "psychonetrics auto missing-data rule", "rho dimensions/names do not match vars"),
+    confirmatory_covariance = quicknet_input_spec("wide data.frame/matrix", "vars, optional sigma", "continuous numeric columns; sigma is square template", "psychonetrics auto missing-data rule", "sigma dimensions/names do not match vars"),
+    confirmatory_precision = quicknet_input_spec("wide data.frame/matrix", "vars, optional kappa", "continuous numeric columns; kappa is square template", "psychonetrics auto missing-data rule", "kappa dimensions/names do not match vars"),
     latent_network = quicknet_input_spec("wide data.frame/matrix", "lavaan CFA model syntax", "numeric manifest indicators", "listwise by default", "invalid CFA syntax; factors with too few indicators"),
-    lvm = quicknet_input_spec("wide data.frame/matrix", "model = 'lvm', lambda", "numeric manifest indicators; lambda rows match vars", "listwise by default", "lambda dimensions/names do not match variables"),
-    lnm = quicknet_input_spec("wide data.frame/matrix", "model = 'lnm', lambda", "numeric manifest indicators; latent network estimated in omega_zeta", "listwise by default", "lambda dimensions/names do not match variables"),
-    rnm = quicknet_input_spec("wide data.frame/matrix", "model = 'rnm', lambda", "numeric manifest indicators; residual network estimated in omega_epsilon", "listwise by default", "lambda dimensions/names do not match variables"),
-    lrnm = quicknet_input_spec("wide data.frame/matrix", "model = 'lrnm', lambda", "numeric manifest indicators; latent and residual networks estimated", "listwise by default", "lambda dimensions/names do not match variables"),
+    lvm = quicknet_input_spec("wide data.frame/matrix", "model = 'lvm', lambda", "numeric manifest indicators; lambda rows match vars", "psychonetrics auto missing-data rule", "lambda dimensions/names do not match variables"),
+    lnm = quicknet_input_spec("wide data.frame/matrix", "model = 'lnm', lambda", "numeric manifest indicators; latent network estimated in omega_zeta", "psychonetrics auto missing-data rule", "lambda dimensions/names do not match variables"),
+    rnm = quicknet_input_spec("wide data.frame/matrix", "model = 'rnm', lambda", "numeric manifest indicators; residual network estimated in omega_epsilon", "psychonetrics auto missing-data rule", "lambda dimensions/names do not match variables"),
+    lrnm = quicknet_input_spec("wide data.frame/matrix", "model = 'lrnm', lambda", "numeric manifest indicators; latent and residual networks estimated", "psychonetrics auto missing-data rule", "lambda dimensions/names do not match variables"),
     meta_ggm = quicknet_input_spec("list of correlation/covariance matrices or raw study data", "cors/covs + nobs, or data + studyvar", "square matrices with common variable names", "handled by psychonetrics meta-analytic SEM", "missing nobs; matrices with inconsistent dimensions"),
     meta_cor = quicknet_input_spec("list of correlation/covariance matrices or raw study data", "cors/covs + nobs, or data + studyvar", "square matrices with common variable names", "handled by psychonetrics meta-analytic SEM", "missing nobs; matrices with inconsistent dimensions"),
     meta_gvar = quicknet_input_spec("multi-study intensive longitudinal data or Toeplitz covariances", "data + studyvar + id/day/beep + vars, or covs + nobs + vars", "numeric repeated-measures variables by study", "handled by psychonetrics meta-analytic VAR", "missing study/time identifiers; insufficient studies"),
@@ -292,10 +299,13 @@ quicknet_check_cross_continuous <- function(data, args) {
   errors <- checked$errors
   warnings <- checked$warnings
   if (!is.null(dat)) {
+    if (isTRUE(args$require_complete) && anyNA(dat)) {
+      errors <- c(errors, "Missing values require an explicit supported missing-data rule, such as missing = 'listwise'.")
+    }
     listwise <- quicknet_missing_mode(args$missing %||% "listwise") == "listwise"
     if (listwise) dat <- dat[stats::complete.cases(dat), , drop = FALSE]
     out <- quicknet_check_numeric_columns(dat, colnames(dat), errors, warnings,
-                                         require_complete = listwise)
+                                         require_complete = listwise || isTRUE(args$require_complete))
     errors <- out$errors
     warnings <- out$warnings
     if (nrow(dat) <= ncol(dat) + 2) {
@@ -323,6 +333,7 @@ quicknet_check_ising <- function(data, args) {
   errors <- checked$errors
   warnings <- checked$warnings
   if (!is.null(dat)) {
+    if (anyNA(dat) && quicknet_missing_mode(args$missing) != "listwise") errors <- c(errors, "IsingFit requires complete data; use missing = 'listwise' explicitly.")
     numeric <- vapply(dat, is.numeric, logical(1))
     if (!all(numeric)) errors <- c(errors, paste0("Ising variables must be numeric 0/1. Non-numeric: ", paste(colnames(dat)[!numeric], collapse = ", ")))
     binary <- vapply(dat, function(x) all(stats::na.omit(unique(x)) %in% c(0, 1)), logical(1))
@@ -346,12 +357,12 @@ quicknet_check_mgm <- function(data, args) {
     dat <- dat[stats::complete.cases(dat), , drop = FALSE]
   }
   if (is.null(types)) {
-    out$warnings <- c(out$warnings, "types is NULL; all variables will be treated as Gaussian.")
+    out$errors <- c(out$errors, "types must be specified for mgm.")
   } else if (length(types) != ncol(dat)) {
     out$errors <- c(out$errors, "types must have one entry per variable.")
   }
   if (is.null(levels)) {
-    out$warnings <- c(out$warnings, "levels is NULL; levels will be inferred.")
+    out$errors <- c(out$errors, "levels must be specified for mgm.")
   } else if (length(levels) != ncol(dat)) {
     out$errors <- c(out$errors, "levels must have one entry per variable.")
   }
@@ -427,8 +438,8 @@ quicknet_check_longitudinal <- function(data, args) {
   warnings <- checked$warnings
   vars <- args$vars
   id <- args$id %||% "id"
-  day <- args$day %||% "day"
-  beep <- args$beep %||% "beep"
+  day <- if ("day" %in% names(args)) args$day else "day"
+  beep <- if ("beep" %in% names(args)) args$beep else "beep"
   if (is.null(vars) || length(vars) < 2) errors <- c(errors, "vars must contain at least two node variables.")
   if (!is.null(dat) && !is.null(vars)) {
     required <- c(vars, id, day, beep)
@@ -442,7 +453,7 @@ quicknet_check_longitudinal <- function(data, args) {
       if (anyNA(dat[, index_columns, drop = FALSE])) {
         errors <- c(errors, "Subject and time identifiers must not contain missing values.")
       }
-      if (anyDuplicated(dat[, index_columns, drop = FALSE])) {
+      if (length(index_columns) > 1L && anyDuplicated(dat[, index_columns, drop = FALSE])) {
         errors <- c(errors, "Each id/day/beep combination must identify a unique observation.")
       }
     }
@@ -580,7 +591,7 @@ quicknet_check_dynamic <- function(data, args, time_varying) {
     )
     if (!is.null(dynamic_error)) out$errors <- c(out$errors, dynamic_error)
   }
-  lags <- args$lags %||% 1
+  lags <- args$lags
   valid_lags <- is.numeric(lags) && length(lags) > 0 && all(is.finite(lags)) &&
     all(vapply(lags, quicknet_is_positive_integer, logical(1))) && !anyDuplicated(lags)
   if (!valid_lags) out$errors <- c(out$errors, "lags must contain unique positive integers.")
@@ -589,7 +600,7 @@ quicknet_check_dynamic <- function(data, args, time_varying) {
   }
   if (isTRUE(time_varying)) {
     timepoints <- args$timepoints
-    estpoints <- args$estpoints %||% c(0.25, 0.50, 0.75)
+    estpoints <- args$estpoints
     if (!is.null(timepoints) && (is.null(dat) || length(timepoints) != nrow(dat))) {
       out$errors <- c(out$errors, "timepoints must have one value per row.")
     }
@@ -607,7 +618,7 @@ quicknet_check_dynamic <- function(data, args, time_varying) {
         "estpoints should be strictly increasing finite values between 0 and 1."
       )
     }
-    bandwidth <- args$bandwidth %||% 0.20
+    bandwidth <- args$bandwidth
     if (!is.numeric(bandwidth) || length(bandwidth) != 1 ||
         !is.finite(bandwidth) || bandwidth <= 0) {
       out$errors <- c(out$errors, "bandwidth must be a positive finite number.")

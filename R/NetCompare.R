@@ -66,7 +66,7 @@
 #'   useCommunities = c(1, 2)
 #' )
 #'
-NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=TRUE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = TRUE, centrality = 'all', nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, gamma = NULL, ...){
+NetCompare <- function(data1, data2, it = 100, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=FALSE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = FALSE, centrality = c('strength', 'expectedInfluence'), nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, gamma = NULL, ...){
   if (!is.logical(add.bridge) || length(add.bridge) != 1 || is.na(add.bridge)) {
     stop("Error: add.bridge should be logical.")
   }
@@ -78,8 +78,13 @@ NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALS
     stop("sig.level must be a finite number in (0, 1).", call. = FALSE)
   }
 
+  if (add.bridge) {
+    if (!missing(test.centrality) && !test.centrality) stop("add.bridge requires test.centrality = TRUE.", call. = FALSE)
+    test.centrality <- TRUE
+  }
   centrality_to_test <- if (isTRUE(add.bridge)) {
-    centrality
+    unique(c(if (identical(centrality, "all")) c("closeness", "betweenness", "strength", "expectedInfluence") else centrality,
+      "bridgeStrength", "bridgeCloseness", "bridgeBetweenness", "bridgeExpectedInfluence"))
   } else if (length(centrality) == 1 && identical(tolower(centrality), "all")) {
     c("closeness", "betweenness", "strength", "expectedInfluence")
   } else {

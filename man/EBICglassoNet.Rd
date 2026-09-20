@@ -7,11 +7,13 @@
 EBICglassoNet(data, gamma = NULL, ...)
 }
 \arguments{
-\item{data}{a data frame, each column presents a node, there should be no miss values in the data frame.}
+\item{data}{A data frame with one numeric column per node; missing-data handling follows the selected estimator.}
 
 \item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5.}
 
-\item{...}{Reserved for future extensions.}
+\item{...}{Named estimation arguments passed directly to the bootnet
+EBICglasso estimator, e.g. \code{nlambda = 50}, \code{missing = "listwise"}.
+Source defaults are used for omitted controls.}
 }
 \description{
 Estimate an EBICglasso network and return a quicknet_fit object.

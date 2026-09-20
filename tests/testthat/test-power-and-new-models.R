@@ -63,7 +63,7 @@ test_that("ConfirmatoryNet supports psychonetrics varcov and Ising backends", {
   cor_fit <- suppressWarnings(ConfirmatoryNet(dat, model = "cor"))
   expect_s3_class(cor_fit, "quicknet_fit")
   expect_equal(cor_fit$model, "confirmatory_cor")
-  expect_equal(cor_fit$meta$backend, "psychonetrics::varcov(type = 'cor')")
+  expect_equal(cor_fit$meta$backend, "psychonetrics::varcov")
 
   precision_fit <- suppressWarnings(ConfirmatoryNet(dat, model = "precision"))
   expect_s3_class(precision_fit, "quicknet_fit")
@@ -120,7 +120,7 @@ test_that("LatentNet passes FIML missingness to lavaan without listwise deletion
 
   expect_equal(nrow(fit$data), nrow(dat))
   expect_equal(sum(is.na(fit$data)), sum(is.na(dat)))
-  expect_equal(fit$meta$missing, "fiml")
+  expect_equal(fit$meta$missing, fit$fit$model@Options$missing)
 })
 
 test_that("LatentNet supports psychonetrics latent and residual network models", {
@@ -214,7 +214,7 @@ test_that("MixedVARNet and TimeVaryingNet return quicknet_fit objects", {
   types <- c("g", "g", "c")
   levels <- c(1, 1, 2)
 
-  mvar <- suppressWarnings(MixedVARNet(dat, types = types, levels = levels, signInfo = FALSE))
+  mvar <- suppressWarnings(MixedVARNet(dat, types = types, levels = levels, lags = 1, signInfo = FALSE))
   expect_s3_class(mvar, "quicknet_fit")
   expect_equal(mvar$model, "mixedVAR")
   expect_true(mvar$meta$directed)
@@ -222,6 +222,7 @@ test_that("MixedVARNet and TimeVaryingNet return quicknet_fit objects", {
 
   tvmvar <- suppressWarnings(TimeVaryingNet(
     dat,
+    lags = 1,
     types = types,
     levels = levels,
     estpoints = c(0.30, 0.70),

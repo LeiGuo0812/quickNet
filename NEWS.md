@@ -1,9 +1,30 @@
 # quickNet 0.0.0.9000
 
+## Model parameters
+
+- Model arguments are supplied directly through function parameters and `...`.
+  Backend controls inherit source defaults; invalid or conflicting arguments
+  fail explicitly. Fit metadata records backend versions and effective settings.
+- MGM and mixed VAR use CV by default, with AND regularization for MGM;
+  time-varying VAR uses EBIC. MGM requires variable types and levels; dynamic
+  MGM requires lags, and time-varying models require estimation points and bandwidth.
+- EBICglasso honors correlation and missing-data controls. Ordinal association
+  estimation preserves psych's smoothing and category guard. Correlation models
+  do not silently replace undefined correlations or repair the correlation matrix.
+- mlVAR inherits its default effect structures, graphicalVAR estimates subject
+  networks, and psychonetrics inherits estimator, covariance and missing-data defaults.
+  CLPN forwards glmnet controls and records grouped CV folds and actual fold counts.
+- LatentNet forwards lavaan estimators and uses its identification defaults.
+  Panel SEM accepts native lavaan controls while retaining explicit residual syntax.
+- Powerly uses its native simulation counts and accepts arguments directly.
+  NetCompare, Bridge and netCor use the source defaults for testing and normalization.
+- Stability and comparison preserve fitted model controls; observation-specific
+  controls requiring manual resampling alignment are rejected clearly.
+
 ## EBIC settings
 
 - `gamma = NULL` selects 0.5 for EBICglasso/graphicalVAR and 0.25 for
-  Ising/MGM/mixed VAR/time-varying mixed VAR. Explicit values in [0,1] are
+  Ising and EBIC-selected MGM/mixed VAR/time-varying mixed VAR. Explicit values in [0,1] are
   validated and retained. Non-EBIC estimation and CV record inactive gamma
   as NULL; Monte Carlo result rows use NA.
 - Stability and network comparison preserve fitted estimation settings.

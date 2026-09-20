@@ -9,7 +9,7 @@ Bridge(
   communities = NULL,
   useCommunities = "all",
   include = "basic",
-  normalize = T,
+  normalize = FALSE,
   ...
 )
 }

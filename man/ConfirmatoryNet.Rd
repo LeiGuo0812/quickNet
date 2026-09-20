@@ -8,8 +8,8 @@ ConfirmatoryNet(
   data,
   vars = NULL,
   omega = NULL,
-  estimator = "ML",
-  missing = "listwise",
+  estimator = NULL,
+  missing = NULL,
   model = c("ggm", "ising", "cor", "covariance", "precision"),
   sigma = NULL,
   kappa = NULL,
@@ -31,9 +31,10 @@ ConfirmatoryNet(
 estimated and zero entries are fixed to zero. If \code{NULL}, all off-diagonal
 edges are freely estimated.}
 
-\item{estimator}{Estimator passed to psychonetrics.}
+\item{estimator}{NULL inherits the psychonetrics estimator.}
 
-\item{missing}{Missing-data handling passed to psychonetrics.}
+\item{missing}{NULL inherits \code{"auto"} for covariance models and
+\code{"listwise"} for Ising.}
 
 \item{model}{Confirmatory model. One of \code{"ggm"}, \code{"ising"},
 \code{"cor"}, \code{"covariance"}, or \code{"precision"}.}

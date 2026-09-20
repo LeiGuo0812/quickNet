@@ -8,12 +8,12 @@ LatentNet(
   data,
   model,
   vars = NULL,
-  std.lv = TRUE,
-  missing = "listwise",
-  residual = TRUE,
+  std.lv = NULL,
+  missing = NULL,
+  residual = NULL,
   lambda = NULL,
   latents = NULL,
-  estimator = "ML",
+  estimator = NULL,
   identification = c("loadings", "variance"),
   ...
 )
@@ -27,19 +27,23 @@ LatentNet(
 \item{vars}{Manifest variables used in the CFA. Defaults to variables found
 in \code{data}.}
 
-\item{std.lv}{Should latent variables be standardized in \code{lavaan::cfa()}?}
+\item{std.lv}{lavaan identification control; NULL inherits FALSE.}
 
-\item{missing}{Missing-data handling passed to the backend.}
+\item{missing}{NULL inherits the backend missing-data rule: listwise for
+lavaan and auto for psychonetrics.}
 
-\item{residual}{Should a residual item network be returned for the lavaan
-backend?}
+\item{residual}{For lavaan, NULL returns the supplementary factor-score
+residual correlation network; FALSE omits it. For psychonetrics lvm,
+an optional native residual covariance parameterization. Named network
+aliases fix their parameterization.}
 
 \item{lambda}{Factor loading matrix used by psychonetrics latent-variable
 models.}
 
 \item{latents}{Optional latent variable names used by psychonetrics.}
 
-\item{estimator}{Estimator passed to psychonetrics latent-variable models.}
+\item{estimator}{Estimator passed to the selected lavaan or psychonetrics
+backend; NULL inherits its default, including ordered-data behavior.}
 
 \item{identification}{Identification method passed to
 \code{psychonetrics::lvm()}.}

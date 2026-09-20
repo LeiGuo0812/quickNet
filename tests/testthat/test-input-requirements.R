@@ -81,7 +81,7 @@ test_that("check_input diagnoses new model families", {
   lambda <- matrix(1, 4, 1, dimnames = list(names(dat), "F"))
   expect_false(check_input(dat, model = "lnm", vars = names(dat), quiet = TRUE)$ok)
   expect_true(check_input(dat, model = "lnm", vars = names(dat), lambda = lambda, quiet = TRUE)$ok)
-  expect_true(check_input(dat, model = "mixedVAR", types = rep("g", 4), levels = rep(1, 4), quiet = TRUE)$ok)
+  expect_true(check_input(dat, model = "mixedVAR", types = rep("g", 4), levels = rep(1, 4), lags = 1, quiet = TRUE)$ok)
   expect_false(check_input(dat, model = "mixedVAR", types = rep("g", 3), levels = rep(1, 4), quiet = TRUE)$ok)
 
   cors <- list(stats::cor(dat), stats::cor(dat + matrix(rnorm(80), ncol = 4)))

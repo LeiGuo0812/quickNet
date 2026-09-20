@@ -9,8 +9,8 @@ MixedVARNet(
   vars = NULL,
   types,
   levels,
-  lags = 1,
-  lambdaSel = "EBIC",
+  lags = NULL,
+  lambdaSel = "CV",
   gamma = NULL,
   scale = TRUE,
   signInfo = TRUE,
@@ -26,9 +26,11 @@ MixedVARNet(
 
 \item{levels}{MGM variable levels, one per variable.}
 
-\item{lags}{Positive integer vector of temporal lags.}
+\item{lags}{Required positive integer vector of temporal lags; the backend
+has no default. Use \code{lags = 1} for a first-order VAR.}
 
-\item{lambdaSel}{Lambda selection method passed to \code{mgm::mvar()}.}
+\item{lambdaSel}{Lambda selection method passed to \code{mgm::mvar()};
+its source default is CV.}
 
 \item{gamma}{EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
 NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL

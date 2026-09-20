@@ -21,7 +21,7 @@
 #' data('mtcars')
 #' Bridge <- Bridge(quickNet(mtcars), communities = list(c1 = 1:5, c2 = 6:11))
 #'
-Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 'basic', normalize = T,...){
+Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 'basic', normalize = FALSE,...){
   if (!is.character(include) || length(include) == 0 || anyNA(include)) {
     stop("include must be a non-missing character vector.", call. = FALSE)
   }

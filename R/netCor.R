@@ -23,7 +23,7 @@
 #' net2 <- quickNet(mtcars^3)
 #' netCor(net1, net2)
 #'
-netCor <- function(x1, x2, nperm = 1000, graph = TRUE, alternative = 'two.sided',...){
+netCor <- function(x1, x2, nperm = 999, graph = FALSE, alternative = 'two.sided',...){
 
   matrix1 <- quicknet_network_matrix(x1)
   matrix2 <- quicknet_align_network(matrix1, quicknet_network_matrix(x2))

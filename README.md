@@ -114,6 +114,56 @@ check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
 
 Model-fitting functions call the same validator internally. Clear format errors stop early; risk conditions such as very small samples or imbalanced binary variables are shown as warnings.
 
+## Model parameters and source defaults
+
+Pass parameters directly; no parameter object is required:
+
+```r
+fit <- quickNet(
+  mixed_data, model = "mgm", types = c("g", "g", "c", "c"),
+  levels = c(1, 1, 2, 2), lambdaSel = "EBIC", ruleReg = "OR", gamma = 0.25,
+  pie = FALSE
+)
+fit <- EBICglassoNet(data, nlambda = 50, missing = "pairwise")
+```
+
+Additional named estimation arguments flow through `...`; omitted controls
+inherit the selected backend's defaults. In `quickNet()`, names shared by the
+estimator and plotting (such as `threshold`) control estimation. Use
+`plot(fit, threshold = ...)` for plot settings. Unsupported backend arguments
+are rejected.
+
+- EBICglasso inherits bootnet correlation and missing-data defaults. Explicit
+  `cor_method` reaches the estimator. Correlation networks use Pearson by
+  default; specify missing-data handling explicitly. Ordinal networks retain
+  psych's smoothing and category-count guard.
+- MGM requires `types` and `levels`. Mixed and time-varying VAR require `lags`;
+  time-varying VAR also requires `estpoints` and `bandwidth`, which have no
+  source defaults.
+- mlVAR inherits its `default` estimator and effect structures. graphicalVAR
+  estimates subject networks by default. `day` and `beep` are optional.
+  Psychonetrics does not standardize by default; RI-CLPM uses covariance innovations.
+- CLPN `standardize` controls glmnet's internal scaling; `standardize_data = FALSE`
+  controls optional preprocessing by wave. Grouping CV folds by participant and
+  pooling adjacent waves are explicit panel-method rules.
+- Confirmatory and latent models inherit their backend estimator, missing-data
+  and identification settings. `LatentNet(..., estimator = "MLR")` directly
+  configures lavaan; its `std.lv` default is FALSE.
+- Powerly defaults to sensitivity, 30 sample-size points, 30 replications and
+  10000 bootstrap samples. Supply `nodes`, `density`, `range_lower` and
+  `range_upper`. The Monte Carlo branch has its own documented simulation design.
+- `NetCompare()` defaults to 100 permutations with edge and centrality tests
+  disabled. `Bridge()` defaults to no normalization; `netCor()` uses 999
+  permutations without plotting.
+
+Effective settings, backend versions and method presets are recorded under
+`fit$meta$backend_settings`, `backend_version` and `method_presets`. Stability
+and comparison retain original estimation settings. Observation-specific
+weights or fold assignments that cannot be realigned automatically are rejected
+before resampling. NIRA and SymPerturb keep their explicitly documented method
+presets. See the [parameter audit](docs/backend-parameter-audit.md) for coverage
+and sources.
+
 ## EBIC settings
 
 `gamma = NULL` resolves the EBIC hyperparameter by model. Explicit numeric
@@ -122,17 +172,19 @@ values in [0,1], including zero (BIC), take precedence.
 | Model / function | Effective default gamma |
 |---|---:|
 | `quickNet(model = "EBICglasso")`, `EBICglassoNet()` | 0.5 |
-| `quickNet(model = "ising")` or `quickNet(model = "mgm")` | 0.25 |
+| `quickNet(model = "ising")`; MGM with `lambdaSel = "EBIC"` | 0.25 |
 | `LongitudinalNet(model = "graphicalVAR")` | 0.5 |
 | `MixedVARNet()` / `TimeVaryingNet()`, with `lambdaSel = "EBIC"` | 0.25 |
 | `NetworkPower(method = "monte_carlo", estimator = "EBICglasso")` | 0.5 |
 | Correlation, partial, ordinal, mlVAR, or mixed VAR with `lambdaSel = "CV"` | Not applicable |
 
-Cross-sectional MGM uses EBIC. Mixed and time-varying VAR default to EBIC and
-also accept `lambdaSel = "CV"`; the original `mgm::mgm()` and `mgm::mvar()`
-default to CV. For CV and models without EBIC selection, gamma is ignored and
-`fit$meta$gamma` is `NULL`; reports omit it. Monte Carlo power result rows use
-`NA` for inactive gamma. Powerly settings are configured via `powerly_args`.
+MGM and mixed VAR inherit CV selection from their source estimators; MGM uses
+AND regularization. Time-varying VAR defaults to EBIC. For `lambdaSel = "EBIC"`,
+the MGM family uses gamma = 0.25. With CV or without EBIC selection, gamma is
+inactive and `fit$meta$gamma` is `NULL`; reports omit it. Monte Carlo result rows
+use `NA` for inactive gamma. Pass powerly settings directly, e.g.
+`samples = 30, boots = 10000`. Powerly's internal GGM estimator uses gamma = 0.5,
+recorded separately as `backend_gamma`; the top-level `gamma` does not override it.
 The current ordinal interface estimates associations, without EBIC selection.
 Confirmatory, latent and meta-analysis interfaces do not use this EBIC setting.
 
@@ -254,6 +306,7 @@ fit <- quickNet(
   model = "mgm",
   types = c("g", "g", "c", "c"),
   levels = c(1, 1, 2, 2),
+  lambdaSel = "EBIC",
   gamma = 0.25,
   pie = FALSE
 )
@@ -401,7 +454,7 @@ quicknet_report(power)$text
 ```
 
 If `sample_sizes = NULL`, `NetworkPower()` generates an adaptive candidate
-grid from the number of nodes. The default target metric is `mcc`, which is
+grid from the number of nodes. The Monte Carlo default target metric is `mcc`, which is
 more balanced than sensitivity alone because it penalizes both false negatives
 and false positives. If you explicitly use `target_metric = "sensitivity"`,
 interpret the recommendation as optimistic unless specificity or false-positive
@@ -414,6 +467,8 @@ powerly_plan <- NetworkPower(
   method = "powerly",
   nodes = 8,
   density = 0.30,
+  range_lower = 100,
+  range_upper = 500,
   target_metric = "sensitivity",
   target_value = 0.60,
   target_probability = 0.80
@@ -467,14 +522,17 @@ panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
 mixed_var <- MixedVARNet(
   time_data,
   types = c("g", "g", "c"),
-  levels = c(1, 1, 2)
+  levels = c(1, 1, 2),
+  lags = 1
 )
 
 tv_mvar <- TimeVaryingNet(
   time_data,
   types = c("g", "g", "c"),
   levels = c(1, 1, 2),
-  estpoints = c(0.25, 0.50, 0.75)
+  lags = 1,
+  estpoints = c(0.25, 0.50, 0.75),
+  bandwidth = 0.20
 )
 ```
 
@@ -702,7 +760,7 @@ causal treatment effects or bootstrap network stability.
 net1 <- quickNet(mtcars[, 1:6], pie = FALSE)
 net2 <- quickNet((mtcars[, 1:6])^2, pie = FALSE)
 
-comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 100)
+comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 100, test.edges = TRUE)
 plots <- get_compare_plot(comparison, net1, output = FALSE)
 ```
 

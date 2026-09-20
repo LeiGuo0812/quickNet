@@ -8,16 +8,16 @@ LongitudinalNet(
   data,
   vars,
   id = "id",
-  day = "day",
-  beep = "beep",
+  day = NULL,
+  beep = NULL,
   model = "graphicalVAR",
   gamma = NULL,
-  scale = TRUE,
-  centerWithin = TRUE,
+  scale = NULL,
+  centerWithin = NULL,
   lags = 1,
-  estimator = "lmer",
-  temporal = "fixed",
-  contemporaneous = "fixed",
+  estimator = NULL,
+  temporal = NULL,
+  contemporaneous = NULL,
   nCores = 1,
   ...
 )
@@ -29,9 +29,9 @@ LongitudinalNet(
 
 \item{id}{ID variable.}
 
-\item{day}{Day variable.}
+\item{day}{Optional day variable. NULL leaves it unspecified in the backend.}
 
-\item{beep}{Beep or measurement-occasion variable within day.}
+\item{beep}{Optional measurement-occasion variable within day.}
 
 \item{model}{Longitudinal model. One of \code{"graphicalVAR"},
 \code{"mlVAR"}, or \code{"psychonetrics_gvar"}.}
@@ -39,17 +39,21 @@ LongitudinalNet(
 \item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
 graphicalVAR. Ignored for mlVAR and psychonetrics_gvar.}
 
-\item{scale}{Should variables be scaled?}
+\item{scale}{NULL inherits TRUE in graphicalVAR/mlVAR and no standardization
+in psychonetrics. A logical value explicitly selects scaling.}
 
-\item{centerWithin}{Should variables be person-mean centered?}
+\item{centerWithin}{NULL inherits TRUE in graphicalVAR and FALSE in
+psychonetrics. Not an mlVAR control; use its native scaleWithin if intended.}
 
 \item{lags}{Positive integer vector of lags used by \code{mlVAR}.}
 
-\item{estimator}{Estimator used by \code{mlVAR}.}
+\item{estimator}{NULL inherits the mlVAR or psychonetrics estimator.}
 
-\item{temporal}{Temporal effect structure used by \code{mlVAR}.}
+\item{temporal}{NULL inherits the backend temporal structure. mlVAR resolves
+its default to correlated effects for at most six nodes, otherwise orthogonal.}
 
-\item{contemporaneous}{Contemporaneous effect structure used by \code{mlVAR}.}
+\item{contemporaneous}{mlVAR contemporaneous structure; NULL inherits its
+data-dependent default.}
 
 \item{nCores}{Number of cores used by \code{mlVAR}.}
 

@@ -25,7 +25,7 @@
 #' @examples
 #' data('mtcars')
 #' network_G <- quickNet(mtcars)
-#' NetCompare <- NetCompare(mtcars,mtcars^3,it=100)
+#' NetCompare <- NetCompare(mtcars,mtcars^3,it=100,test.edges=TRUE)
 #' get_compare_plot(NetCompare, network_G, output = FALSE)
 #'
 get_compare_plot <- function(NetCompare, network_G, maximum = 0.47, use.mask = 'none', output = TRUE, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, ...){

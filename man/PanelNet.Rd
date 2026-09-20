@@ -10,14 +10,15 @@ PanelNet(
   waves,
   id = "id",
   prefix = "_t",
-  standardize = TRUE,
+  standardize = NULL,
   alpha = 1,
   lambda_rule = c("lambda.1se", "lambda.min"),
   nfolds = 10,
-  seed = 20260502,
+  seed = NULL,
   model = "clpn",
-  ri_type = c("ggm", "cov", "chol", "prec"),
+  ri_type = c("cov", "chol", "prec", "ggm", "cor"),
   stationary = NULL,
+  standardize_data = FALSE,
   ...
 )
 }
@@ -32,7 +33,9 @@ PanelNet(
 
 \item{prefix}{Separator between node and wave in wide columns.}
 
-\item{standardize}{Should panel variables be standardized before fitting?}
+\item{standardize}{Backend standardization. NULL inherits TRUE in glmnet
+and \code{"none"} in psychonetrics; psychonetrics also accepts \code{"z"},
+\code{"quantile"} and \code{"z_per_wave"}.}
 
 \item{alpha}{Elastic-net mixing parameter passed to \code{glmnet}.}
 
@@ -40,7 +43,8 @@ PanelNet(
 
 \item{nfolds}{Number of cross-validation folds.}
 
-\item{seed}{Random seed used for cross-validation folds.}
+\item{seed}{Optional random seed for cross-validation folds. NULL uses the
+current R random-number state.}
 
 \item{model}{Panel model. One of \code{"clpn"}, \code{"ri_clpm"},
 \code{"panel_gvar"}, or \code{"panel_var"}.}
@@ -50,7 +54,12 @@ PanelNet(
 \item{stationary}{Optional stationarity constraints passed to
 \code{psychonetrics::ri_clpm_stationary()}.}
 
-\item{...}{Additional arguments passed to psychonetrics panel backends.}
+\item{standardize_data}{CLPN preprocessing: standardize each wave before
+pooling transitions? Defaults to FALSE, separate from glmnet standardization.}
+
+\item{...}{Named controls passed directly to cv.glmnet or the selected
+psychonetrics constructor. CLPN fixes Gaussian outcomes, pools adjacent
+waves and groups CV folds by participant; it reports the actual fold count.}
 }
 \value{
 A \code{quicknet_fit} object. The edge matrix uses rows as outcomes/to nodes and columns as predictors/from nodes.

@@ -10,9 +10,10 @@ PanelSEMNet(
   waves,
   id = "id",
   prefix = "_t",
-  standardize = TRUE,
+  standardize = FALSE,
   residual_cov = TRUE,
-  missing = "listwise"
+  missing = "listwise",
+  ...
 )
 }
 \arguments{
@@ -32,6 +33,10 @@ PanelSEMNet(
 for waves after the first wave?}
 
 \item{missing}{Missing-data handling passed to \code{lavaan::sem()}.}
+
+\item{...}{Additional named lavaan controls, e.g. \code{estimator = "MLR"}.
+The generated panel model fixes auto.cov.y = FALSE so residual_cov
+and the explicit covariance syntax determine residual connections.}
 }
 \value{
 A \code{quicknet_fit} object with model \code{"panel_sem"}.

@@ -17,8 +17,8 @@ quickNet(
   border.width = 2,
   border.color = "#555555",
   model = "EBICglasso",
-  cor_method = "pearson",
-  missing = "listwise",
+  cor_method = NULL,
+  missing = NULL,
   gamma = NULL,
   ordinal_method = "polychoric",
   AND = TRUE,
@@ -28,7 +28,7 @@ quickNet(
 )
 }
 \arguments{
-\item{data}{a data frame, each column presents a node, there should be no miss values in the data frame.}
+\item{data}{A data frame with one numeric column per node; missing-data handling follows the selected estimator.}
 
 \item{layout}{This argument controls the layout of the graph. "circle" places all nodes in a single circle, "groups" gives a circular layout in which each group is put in separate circles and "spring" gives a force embedded layout. It also can be a matrix with a row for each node and x and y coordinates in the first and second column respectively. Defaults to "circular" in weighted graphs without a groups list, "groups" in weighted graphs with a groups list, and "spring" in unweighted graphs. Can also be a function from the igraph package.}
 
@@ -50,23 +50,34 @@ quickNet(
 
 \item{model}{network model. One of "EBICglasso", "correlation", "partial", "ising", "ordinal", or "mgm".}
 
-\item{cor_method}{correlation method used by correlation and partial models.}
+\item{cor_method}{Correlation method for EBICglasso, correlation and partial models.
+NULL inherits the backend default; explicit values also reach EBICglasso.}
 
-\item{missing}{missing-data handling. The default "listwise" removes rows with missing values.}
+\item{missing}{Missing-data rule. NULL inherits the selected backend:
+EBICglasso uses pairwise deletion, polychoric correlations handle missing
+observations internally, and Ising/MGM require complete data. Use
+\code{missing = "listwise"} explicitly to remove incomplete rows.}
 
 \item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
-EBICglasso and 0.25 for Ising or MGM. Ignored for correlation, partial,
+EBICglasso and 0.25 for Ising or MGM with EBIC selection. MGM defaults
+to CV, where gamma is inactive. Ignored for correlation, partial,
 and ordinal models, whose metadata records NULL.}
 
 \item{ordinal_method}{association method used by ordinal models.}
 
 \item{AND}{logical. Should the Ising model use the AND rule?}
 
-\item{types}{MGM variable types, one per variable.}
+\item{types}{Required MGM variable types, one per variable.}
 
-\item{levels}{MGM variable levels, one per variable.}
+\item{levels}{Required MGM variable levels, one per variable.}
 
-\item{...}{parameters from \code{\link[qgraph]{qgraph}}}
+\item{...}{Additional named estimation and plotting arguments, supplied
+directly, e.g. \code{lambdaSel = "EBIC", ruleReg = "OR"} for MGM
+or \code{nlambda = 50} for EBICglasso. Names belonging to the selected
+estimator are sent to that estimator; other names are passed to
+\code{qgraph::qgraph()}. An overlapping name such as \code{threshold}
+is an estimation argument; use \code{plot(fit, threshold = ...)} to
+customize the plot afterwards.}
 }
 \value{
 a \code{quicknet_fit} object.

@@ -58,7 +58,7 @@ Get network difference plots from NetCompare and quickNet results
 \examples{
 data('mtcars')
 network_G <- quickNet(mtcars)
-NetCompare <- NetCompare(mtcars,mtcars^3,it=100)
+NetCompare <- NetCompare(mtcars,mtcars^3,it=100,test.edges=TRUE)
 get_compare_plot(NetCompare, network_G, output = FALSE)
 
 }

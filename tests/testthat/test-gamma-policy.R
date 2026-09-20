@@ -24,13 +24,13 @@ test_that("cross-sectional defaults reach the backend and match direct estimatio
   expect_equal(ebic$fit$arguments$tuning, 0.5)
   expect_equal(suppressWarnings(EBICglassoNet(x))$graph, ebic$graph)
   mgm <- gamma_fit(x, "mgm", types = rep("g", 3), levels = rep(1, 3))
-  expect_equal(mgm$meta$gamma, 0.25)
+  expect_null(mgm$meta$gamma)
   expect_equal(mgm$fit$call$lambdaGam, 0.25)
-  expect_equal(mgm$meta$lambdaSel, "EBIC")
+  expect_equal(mgm$meta$lambdaSel, "CV")
 
   for (model in c("ising", "EBICglasso", "mgm")) {
-    fit <- gamma_fit(if (model == "ising") b else x, model, gamma = 0,
-                     types = rep("g", 3), levels = rep(1, 3))
+    fit <- do.call(gamma_fit, c(list(data = if (model == "ising") b else x, model = model, gamma = 0,
+                     types = rep("g", 3), levels = rep(1, 3)), if (model == "mgm") list(lambdaSel = "EBIC")))
     expect_equal(quicknet_fit_gamma(fit), 0)
     refit <- suppressWarnings(quicknet_refit_like(fit$data, fit))
     expect_equal(refit$meta$gamma, 0)
@@ -103,11 +103,11 @@ test_that("dynamic mixed models distinguish EBIC gamma from inactive CV paramete
   for (fun in list(MixedVARNet, TimeVaryingNet)) {
     extra <- if (identical(fun, TimeVaryingNet)) list(estpoints = c(0.3, 0.7), bandwidth = 0.5) else list()
     estimate <- function(...) suppressWarnings(do.call(fun,
-      c(list(data = x, types = rep("g", 3), levels = rep(1, 3)), extra, list(...))))
+      c(list(data = x, types = rep("g", 3), levels = rep(1, 3), lags = 1), extra, list(...))))
     default <- estimate()
-    expect_equal(default$meta$gamma, 0.25)
+    if (identical(fun, MixedVARNet)) expect_null(default$meta$gamma) else expect_equal(default$meta$gamma, 0.25)
     expect_equal(default$fit$call$lambdaGam, 0.25)
-    manual <- estimate(gamma = 0.7)
+    manual <- estimate(lambdaSel = "EBIC", gamma = 0.7)
     expect_equal(manual$meta$gamma, 0.7)
     expect_equal(manual$fit$call$lambdaGam, 0.7)
     cv <- estimate(lambdaSel = "CV", gamma = 0.9, lambdaFolds = 3)

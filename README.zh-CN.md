@@ -113,6 +113,44 @@ check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
 
 主要建模函数内部也会调用同一套校验器。明确的格式错误会提前停止；样本量过小、二分类变量极度不平衡等风险情况会以 warning 提醒。
 
+## 模型参数与源软件默认值
+
+参数直接写在函数调用中，不需要构建参数对象：
+
+```r
+fit <- quickNet(
+  mixed_data, model = "mgm", types = c("g", "g", "c", "c"),
+  levels = c(1, 1, 2, 2), lambdaSel = "EBIC", ruleReg = "OR", gamma = 0.25,
+  pie = FALSE
+)
+fit <- EBICglassoNet(data, nlambda = 50, missing = "pairwise")
+```
+
+额外的建模参数通过 `...` 传给所选后端，未指定的参数继承后端默认值。
+`quickNet()` 中同时属于估计器和绘图的参数（如 `threshold`）优先用于估计；
+绘图设置可在 `plot(fit, threshold = ...)` 中指定。后端不支持的参数会报错。
+
+- EBICglasso 继承 bootnet 的相关估计和缺失处理；显式的 `cor_method` 会传到估计器。
+  相关网络默认使用 Pearson 相关；缺失处理需明确指定。有序网络保留 psych 的平滑与类别数限制。
+- MGM 必须指定 `types` 和 `levels`。Mixed VAR、时变 VAR 必须指定 `lags`；
+  时变 VAR 还必须指定 `estpoints` 和 `bandwidth`，这些参数没有源软件默认值。
+- mlVAR 继承 `default` 估计器与效应结构；graphicalVAR 默认估计个体网络。
+  `day`、`beep` 可省略。psychonetrics 默认不标准化数据，RI-CLPM 默认使用协方差结构。
+- CLPN 的 `standardize` 控制 glmnet 内部标准化；`standardize_data = FALSE`
+  控制可选的逐波预处理。按受试者分组的 CV 和相邻波次合并属于该面板方法的规则。
+- 验证性与潜变量模型继承对应后端的估计器、缺失处理和识别设置。
+  `LatentNet(..., estimator = "MLR")` 可直接配置 lavaan；其 `std.lv` 默认为 FALSE。
+- Powerly 默认使用 sensitivity、30 个样本量点、30 次重复和 10000 次 bootstrap；
+  必须指定 `nodes`、`density`、`range_lower`、`range_upper`。Monte Carlo 分支有单独记录的模拟设计。
+- `NetCompare()` 默认 100 次置换，逐边和中心性检验默认关闭；
+  `Bridge()` 默认不归一化，`netCor()` 默认 999 次置换且不绘图。
+
+实际设置、后端版本和方法预设分别记录在 `fit$meta$backend_settings`、
+`backend_version`、`method_presets` 中。稳定性和网络比较保留原有估计参数；
+无法自动对应到重抽样行的权重或折分参数会明确报错。
+NIRA 和 SymPerturb 使用各自方法要求的预设，详见对应章节。
+完整核查范围和来源见 [参数核查记录](docs/backend-parameter-audit.md)。
+
 ## EBIC 参数设置
 
 `gamma = NULL` 按模型解析 EBIC 超参数。显式指定 [0,1] 内的数值时优先使用
@@ -121,17 +159,19 @@ check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
 | 模型／函数 | 实际默认 gamma |
 |---|---:|
 | `quickNet(model = "EBICglasso")`、`EBICglassoNet()` | 0.5 |
-| `quickNet(model = "ising")` 或 `quickNet(model = "mgm")` | 0.25 |
+| `quickNet(model = "ising")`；采用 `lambdaSel = "EBIC"` 的 MGM | 0.25 |
 | `LongitudinalNet(model = "graphicalVAR")` | 0.5 |
 | `MixedVARNet()`／`TimeVaryingNet()`，且 `lambdaSel = "EBIC"` | 0.25 |
 | `NetworkPower(method = "monte_carlo", estimator = "EBICglasso")` | 0.5 |
 | correlation、partial、ordinal、mlVAR，或 `lambdaSel = "CV"` 的 mixed VAR | 不适用 |
 
-横断面 MGM 使用 EBIC。Mixed VAR 与时变 VAR 默认使用 EBIC，也支持
-`lambdaSel = "CV"`；原生 `mgm::mgm()` 和 `mgm::mvar()` 默认使用 CV。
+MGM 和 Mixed VAR 继承源软件的 CV 默认值；MGM 使用 AND 规则。时变 VAR
+默认使用 EBIC。使用 `lambdaSel = "EBIC"` 时，MGM 家族的默认 gamma 为 0.25。
 采用 CV 或不使用 EBIC 选模时，gamma 不参与估计，`fit$meta$gamma` 为 `NULL`，
 报告不展示该参数；Monte Carlo 功效结果行中的无效 gamma 记为 `NA`。
-Powerly 的设置通过 `powerly_args` 指定。当前 ordinal 接口估计关联网络，
+Powerly 的参数直接写入函数调用，例如 `samples = 30, boots = 10000`。
+其内部 GGM 估计器的 gamma 默认值为 0.5，单独记录为 `backend_gamma`；
+顶层 `gamma` 参数不改变该内部设置。当前 ordinal 接口估计关联网络，
 不进行 EBIC 选模。验证性模型、潜变量模型和元分析接口也不使用此 EBIC 参数。
 
 `Stability(raw_data, model = ...)` 与 `quickNet()` 使用相同的模型默认值。
@@ -250,6 +290,7 @@ fit <- quickNet(
   model = "mgm",
   types = c("g", "g", "c", "c"),
   levels = c(1, 1, 2, 2),
+  lambdaSel = "EBIC",
   gamma = 0.25,
   pie = FALSE
 )
@@ -397,7 +438,7 @@ quicknet_report(power)$text
 ```
 
 如果 `sample_sizes = NULL`，`NetworkPower()` 会根据节点数自动生成候选样本量网格。
-默认目标指标为 `mcc`，它比单独使用 sensitivity 更平衡，因为会同时惩罚假阴性和假阳性。
+Monte Carlo 分支的默认目标指标为 `mcc`，它比单独使用 sensitivity 更平衡，因为会同时惩罚假阴性和假阳性。
 如果显式设置 `target_metric = "sensitivity"`，应将推荐结果理解为较乐观，并同时报告 specificity
 或假阳性控制情况。
 
@@ -408,6 +449,8 @@ powerly_plan <- NetworkPower(
   method = "powerly",
   nodes = 8,
   density = 0.30,
+  range_lower = 100,
+  range_upper = 500,
   target_metric = "sensitivity",
   target_value = 0.60,
   target_probability = 0.80
@@ -461,14 +504,17 @@ panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
 mixed_var <- MixedVARNet(
   time_data,
   types = c("g", "g", "c"),
-  levels = c(1, 1, 2)
+  levels = c(1, 1, 2),
+  lags = 1
 )
 
 tv_mvar <- TimeVaryingNet(
   time_data,
   types = c("g", "g", "c"),
   levels = c(1, 1, 2),
-  estpoints = c(0.25, 0.50, 0.75)
+  lags = 1,
+  estpoints = c(0.25, 0.50, 0.75),
+  bandwidth = 0.20
 )
 ```
 
@@ -694,7 +740,7 @@ NIRA 要求横断面、完整的 0/1 数据和具有理论意义的总分。结�
 net1 <- quickNet(mtcars[, 1:6], pie = FALSE)
 net2 <- quickNet((mtcars[, 1:6])^2, pie = FALSE)
 
-comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 100)
+comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 100, test.edges = TRUE)
 plots <- get_compare_plot(comparison, net1, output = FALSE)
 ```
 

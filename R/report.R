@@ -437,8 +437,8 @@ quicknet_report_estimation <- function(fit) {
   )
 
   report_keys <- c(
-    "n", "p", "missing", "cor_method", "ordinal_method", "gamma", "AND",
-    "alpha", "lambda_rule", "nfolds", "standardize", "scale",
+    "backend_version", "n", "p", "missing", "cor_method", "ordinal_method", "gamma", "AND",
+    "alpha", "lambda_rule", "nfolds", "standardize", "standardize_data", "scale",
     "centerWithin", "lags", "estimator", "temporal", "contemporaneous",
     "nCores", "residual_cov", "lambdaSel", "bandwidth",
     "std.lv", "signInfo", "ri_type", "stationary", "identification",
@@ -455,6 +455,15 @@ quicknet_report_estimation <- function(fit) {
     }
   }
 
+  settings <- fit$meta$backend_settings %||% list()
+  additional <- intersect(names(settings), c("ruleReg", "regularize", "k", "threshold", "binarySign", "lambdaFolds", "lambdaSeq",
+    "alphaSeq", "alphaSel", "alphaFolds", "alphaGam", "nlambda", "nLambda", "lambda.min.ratio", "refit", "corMethod", "sampleSize", "transform",
+    "nonPositiveDefinite", "min_sum", "lowerbound.lambda", "subjectNetworks", "scaleWithin", "AR", "full_detrend", "se", "test", "fixed.x", "auto.cov.y"))
+  for (key in additional) {
+    value <- settings[[key]]
+    if (!is.null(value) && is.atomic(value)) rows[[length(rows) + 1L]] <- data.frame(
+      parameter = key, value = quicknet_report_collapse(value), stringsAsFactors = FALSE)
+  }
   if (!is.null(fit$meta$types)) {
     rows[[length(rows) + 1]] <- data.frame(parameter = "types", value = quicknet_report_collapse(fit$meta$types), stringsAsFactors = FALSE)
   }

@@ -5,11 +5,12 @@
 #' @param ncore number of cores to use in computing results. Set to 1 to not use parallel computing.
 #' @param labels use self-specified node labels, typically the \code{labels} parameter you put in the \code{quickNet} function.
 #' @param model network model used when \code{data} is a data frame.
-#' @param cor_method correlation method used by correlation and partial models.
-#' @param missing missing-data handling.
+#' @param cor_method Correlation method; NULL inherits the selected estimator.
+#' @param missing Missing-data rule; NULL inherits the selected estimator.
 #' @param gamma EBIC hyperparameter in [0,1]. NULL uses model-specific
-#'   defaults for raw data (0.5 for EBICglasso, 0.25 for Ising/MGM). For a
-#'   fitted object its original gamma is retained; conflicting overrides
+#'   defaults for raw data (0.5 for EBICglasso, 0.25 for Ising or EBIC-selected
+#'   MGM). MGM defaults to CV, with inactive gamma. For a fitted object its
+#'   original gamma is retained; conflicting overrides
 #'   are rejected. Gamma is not used by non-EBIC models.
 #' @param ordinal_method association method used by ordinal models.
 #' @param AND logical. Should the Ising model use the AND rule?
@@ -20,6 +21,9 @@
 #' @param communities used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. See \code{networktools::bridge}.
 #' @param useCommunities character vector specifying which communities should be included. Default set to "all".
 #' @param cor When calculating Correlation stability coefficient, (CS-coefficient), the correlation level to test at. Default is 0.7.
+#' @param ... Named model arguments for raw data, e.g. \code{lambdaSel = "EBIC"}.
+#'   Fitted inputs retain their original settings. Observation-specific
+#'   arguments such as weights cannot be automatically realigned during resampling.
 #' @return a list contains the stability test results of the network\itemize{
 #' \item\code{boot_edge_weight_stability:} the bootstrap result of edge weight accuracy.
 #' \item\code{boot_centrality_stability:} the bootstrap result of centrality stability.
@@ -47,8 +51,9 @@
 #' )
 #'
 
-Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = NULL, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, case.drop = c(0.10, 0.25, 0.50), add.bridge = FALSE, communities = NULL, useCommunities = 'all', cor = 0.7){
+Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBICglasso", cor_method = NULL, missing = NULL, gamma = NULL, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, case.drop = c(0.10, 0.25, 0.50), add.bridge = FALSE, communities = NULL, useCommunities = 'all', cor = 0.7, ...){
 
+  backend_args <- list(...)
   if (!quicknet_is_positive_integer(nboot)) {
     stop("nboot must be a positive integer.", call. = FALSE)
   }
@@ -69,6 +74,16 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
     )) {
       stop("gamma cannot override a fitted object's setting; refit the model first.", call. = FALSE)
     }
+    supplied <- as.list(match.call())[-1L]
+    checked <- intersect(names(supplied), c("model", "cor_method", "missing", "ordinal_method", "AND", "types", "levels"))
+    settings <- quicknet_cross_refit_args(data)
+    for (name in checked) {
+      if (!isTRUE(all.equal(get(name), settings[[name]], check.attributes = FALSE))) {
+        stop(name, " cannot override a fitted object's setting; refit the model first.", call. = FALSE)
+      }
+    }
+    if (length(backend_args) && !isTRUE(all.equal(backend_args, settings$backend_args))) stop("Backend arguments cannot override a fitted object during stability analysis.", call. = FALSE)
+    if (!is.null(labels)) stop("labels cannot rename a fitted object during stability analysis.", call. = FALSE)
     network <- data
     network$meta$gamma <- quicknet_refit_gamma(network)
   } else {
@@ -84,10 +99,15 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
       ordinal_method = ordinal_method,
       AND = AND,
       types = types,
-      levels = levels
+      levels = levels,
+      backend_args = backend_args
     )
   }
 
+  quicknet_check_row_args(quicknet_cross_refit_args(network)$backend_args, "Stability")
+  if (network$model != "EBICglasso" && (ncore != 1 || add.bridge || !missing(cor))) {
+    stop("ncore, add.bridge and cor are bootnet controls supported only for EBICglasso fits.", call. = FALSE)
+  }
   results <- list()
   results$fit <- network
   results$edge_bootstrap_stability <- quicknet_bootstrap_edge_stability(network, nboot = nboot)

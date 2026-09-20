@@ -70,8 +70,7 @@ MetaNet <- function(cors = NULL,
     vars = vars,
     randomEffects = randomEffects,
     estimator = estimator,
-    verbose = FALSE,
-    ...
+    verbose = FALSE
   ))
 
   if (model == "meta_gvar") {
@@ -83,9 +82,11 @@ MetaNet <- function(cors = NULL,
         beepvar = beep
       )
     ))
+    args <- quicknet_psychonetrics_args("meta_gvar", args, list(...))
     raw_model <- suppressMessages(do.call(psychonetrics::meta_gvar, args))
   } else {
     args$type <- if (model == "meta_ggm") "ggm" else "cor"
+    args <- quicknet_psychonetrics_args("meta_varcov", args, list(...))
     raw_model <- suppressMessages(do.call(psychonetrics::meta_varcov, args))
   }
 
@@ -141,7 +142,10 @@ MetaNet <- function(cors = NULL,
       n_studies = quicknet_meta_study_count(data, studyvar, cors, covs, nobs),
       nobs = nobs,
       randomEffects = randomEffects,
-      estimator = estimator,
+      estimator = fit@estimator,
+      backend_args = list(...),
+      backend_settings = quicknet_psychonetrics_settings(fit, args),
+      backend_version = as.character(utils::packageVersion("psychonetrics")),
       call = match.call()
     )
   )

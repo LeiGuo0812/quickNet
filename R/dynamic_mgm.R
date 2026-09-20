@@ -4,8 +4,10 @@
 #' @param vars Variables used as nodes. Defaults to all columns.
 #' @param types MGM variable types, one per variable.
 #' @param levels MGM variable levels, one per variable.
-#' @param lags Positive integer vector of temporal lags.
-#' @param lambdaSel Lambda selection method passed to \code{mgm::mvar()}.
+#' @param lags Required positive integer vector of temporal lags; the backend
+#'   has no default. Use \code{lags = 1} for a first-order VAR.
+#' @param lambdaSel Lambda selection method passed to \code{mgm::mvar()};
+#'   its source default is CV.
 #' @param gamma EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
 #'   NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL
 #'   recorded in metadata because gamma does not select the model.
@@ -19,8 +21,8 @@ MixedVARNet <- function(data,
                         vars = NULL,
                         types,
                         levels,
-                        lags = 1,
-                        lambdaSel = "EBIC",
+                        lags = NULL,
+                        lambdaSel = "CV",
                         gamma = NULL,
                         scale = TRUE,
                         signInfo = TRUE,
@@ -28,6 +30,7 @@ MixedVARNet <- function(data,
   lambdaSel <- match.arg(lambdaSel, c("EBIC", "CV"))
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
+  if (is.null(lags)) stop("lags must be specified; the source mixed VAR estimator has no default.", call. = FALSE)
   lags <- quicknet_validate_lags(lags)
   quicknet_validate_input(
     dat,
@@ -40,22 +43,12 @@ MixedVARNet <- function(data,
   quicknet_dynamic_validate(dat, vars, types, levels)
   gamma <- quicknet_resolve_gamma("mixedVAR", gamma, lambdaSel)
   matrix_data <- as.matrix(dat[, vars, drop = FALSE])
-  fit <- NULL
-  invisible(utils::capture.output({
-    fit <- suppressMessages(mgm::mvar(
-      data = matrix_data,
-      type = types,
-      level = levels,
-      lags = lags,
-      lambdaSel = lambdaSel,
-      lambdaGam = gamma %||% quicknet_default_gamma("mixedVAR"),
-      scale = scale,
-      pbar = FALSE,
-      warnings = FALSE,
-      signInfo = signInfo,
-      ...
-    ))
-  }))
+  args <- quicknet_backend_args(list(...), mgm::mvar,
+    reserved = c("data", "type", "level", "lags", "lambdaSel", "lambdaGam", "scale", "signInfo"))
+  args <- quicknet_merge_args(list(lags = lags, lambdaSel = lambdaSel,
+    scale = scale, signInfo = signInfo, pbar = FALSE), args)
+  if (!is.null(gamma)) args$lambdaGam <- gamma
+  fit <- do.call(mgm::mvar, c(list(data = matrix_data, type = types, level = levels), args))
   lag_networks <- quicknet_dynamic_extract_mvar_networks(fit, vars, lags)
   if (length(lag_networks) == 0) {
     stop("Could not extract a temporal edge matrix from the mgm::mvar object.", call. = FALSE)
@@ -90,7 +83,7 @@ MixedVARNet <- function(data,
     edges = edge_table,
     nodes = node_table,
     fit = fit,
-    meta = list(
+    meta = c(list(
       data_type = "time_series",
       directed = TRUE,
       row_is = "to",
@@ -101,11 +94,11 @@ MixedVARNet <- function(data,
       levels = levels,
       lags = lags,
       lambdaSel = fit$call$lambdaSel,
-      gamma = quicknet_resolve_gamma("mixedVAR", fit$call$lambdaGam, fit$call$lambdaSel),
+      gamma = if (isFALSE(fit$call$regularize)) NULL else quicknet_resolve_gamma("mixedVAR", fit$call$lambdaGam, fit$call$lambdaSel),
       scale = scale,
       signInfo = signInfo,
       call = match.call()
-    )
+    ), quicknet_backend_provenance("mgm", "mvar", args, fit$call))
   )
 }
 
@@ -117,10 +110,12 @@ MixedVARNet <- function(data,
 #' @param levels MGM variable levels, one per variable.
 #' @param timepoints Numeric time index scaled to the interval used by
 #' \code{mgm::tvmvar()}. Defaults to an equally spaced 0-1 sequence.
-#' @param estpoints Estimation points for local networks.
-#' @param bandwidth Kernel bandwidth.
-#' @param lags Positive integer vector of temporal lags.
-#' @param lambdaSel Lambda selection method passed to \code{mgm::tvmvar()}.
+#' @param estpoints Required estimation points for local networks; no source default.
+#' @param bandwidth Required kernel bandwidth; no source default.
+#' @param lags Required positive integer vector of temporal lags; the backend
+#'   has no default. Use \code{lags = 1} for a first-order VAR.
+#' @param lambdaSel Lambda selection method passed to \code{mgm::tvmvar()};
+#'   its source default is EBIC.
 #' @param gamma EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
 #'   NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL
 #'   recorded in metadata because gamma does not select the model.
@@ -134,16 +129,20 @@ TimeVaryingNet <- function(data,
                            types,
                            levels,
                            timepoints = NULL,
-                           estpoints = c(0.25, 0.50, 0.75),
-                           bandwidth = 0.20,
-                           lags = 1,
+                           estpoints = NULL,
+                           bandwidth = NULL,
+                           lags = NULL,
                            lambdaSel = "EBIC",
                            gamma = NULL,
                            scale = TRUE,
                            ...) {
+  if (is.null(estpoints) || is.null(bandwidth)) {
+    stop("estpoints and bandwidth must be specified; mgm::tvmvar has no defaults for them.", call. = FALSE)
+  }
   lambdaSel <- match.arg(lambdaSel, c("EBIC", "CV"))
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
+  if (is.null(lags)) stop("lags must be specified; the source mixed VAR estimator has no default.", call. = FALSE)
   lags <- quicknet_validate_lags(lags)
   quicknet_validate_input(
     dat,
@@ -166,24 +165,13 @@ TimeVaryingNet <- function(data,
       any(!is.finite(timepoints)) || is.unsorted(timepoints, strictly = TRUE)) {
     stop("timepoints must be a strictly increasing finite numeric vector with one value per row.", call. = FALSE)
   }
-  fit <- NULL
-  invisible(utils::capture.output({
-    fit <- suppressMessages(mgm::tvmvar(
-      data = matrix_data,
-      type = types,
-      level = levels,
-      timepoints = timepoints,
-      estpoints = estpoints,
-      bandwidth = bandwidth,
-      lags = lags,
-      lambdaSel = lambdaSel,
-      lambdaGam = gamma %||% quicknet_default_gamma("time_varying_mvar"),
-      scale = scale,
-      pbar = FALSE,
-      warnings = FALSE,
-      ...
-    ))
-  }))
+  args <- quicknet_backend_args(list(...), mgm::tvmvar,
+    reserved = c("data", "type", "level", "timepoints", "estpoints", "bandwidth", "lags", "lambdaSel", "lambdaGam", "scale"),
+    extra = setdiff(names(formals(mgm::mvar)), "..."))
+  args <- quicknet_merge_args(list(lags = lags, lambdaSel = lambdaSel, scale = scale, pbar = FALSE), args)
+  if (!is.null(gamma)) args$lambdaGam <- gamma
+  fit <- do.call(mgm::tvmvar, c(list(data = matrix_data, type = types, level = levels,
+    timepoints = timepoints, estpoints = estpoints, bandwidth = bandwidth), args))
   networks <- quicknet_dynamic_extract_tvmvar_networks(fit, vars, estpoints, lags)
   if (length(networks) == 0) {
     stop("Could not extract local networks from the mgm::tvmvar object.", call. = FALSE)
@@ -204,7 +192,7 @@ TimeVaryingNet <- function(data,
     edges = edges,
     nodes = nodes,
     fit = fit,
-    meta = list(
+    meta = c(list(
       data_type = "time_series",
       directed = TRUE,
       row_is = "to",
@@ -218,10 +206,10 @@ TimeVaryingNet <- function(data,
       bandwidth = bandwidth,
       lags = lags,
       lambdaSel = fit$call$lambdaSel,
-      gamma = quicknet_resolve_gamma("time_varying_mvar", fit$call$lambdaGam, fit$call$lambdaSel),
+      gamma = if (isFALSE(fit$call$regularize)) NULL else quicknet_resolve_gamma("time_varying_mvar", fit$call$lambdaGam, fit$call$lambdaSel),
       scale = scale,
       call = match.call()
-    )
+    ), quicknet_backend_provenance("mgm", "tvmvar", args, fit$call))
   )
 }
 

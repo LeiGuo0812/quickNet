@@ -10,8 +10,8 @@ Stability(
   ncore = 1,
   labels = NULL,
   model = "EBICglasso",
-  cor_method = "pearson",
-  missing = "listwise",
+  cor_method = NULL,
+  missing = NULL,
   gamma = NULL,
   ordinal_method = "polychoric",
   AND = TRUE,
@@ -21,7 +21,8 @@ Stability(
   add.bridge = FALSE,
   communities = NULL,
   useCommunities = "all",
-  cor = 0.7
+  cor = 0.7,
+  ...
 )
 }
 \arguments{
@@ -35,13 +36,14 @@ Stability(
 
 \item{model}{network model used when \code{data} is a data frame.}
 
-\item{cor_method}{correlation method used by correlation and partial models.}
+\item{cor_method}{Correlation method; NULL inherits the selected estimator.}
 
-\item{missing}{missing-data handling.}
+\item{missing}{Missing-data rule; NULL inherits the selected estimator.}
 
 \item{gamma}{EBIC hyperparameter in [0,1]. NULL uses model-specific
-defaults for raw data (0.5 for EBICglasso, 0.25 for Ising/MGM). For a
-fitted object its original gamma is retained; conflicting overrides
+defaults for raw data (0.5 for EBICglasso, 0.25 for Ising or EBIC-selected
+MGM). MGM defaults to CV, with inactive gamma. For a fitted object its
+original gamma is retained; conflicting overrides
 are rejected. Gamma is not used by non-EBIC models.}
 
 \item{ordinal_method}{association method used by ordinal models.}
@@ -61,6 +63,10 @@ are rejected. Gamma is not used by non-EBIC models.}
 \item{useCommunities}{character vector specifying which communities should be included. Default set to "all".}
 
 \item{cor}{When calculating Correlation stability coefficient, (CS-coefficient), the correlation level to test at. Default is 0.7.}
+
+\item{...}{Named model arguments for raw data, e.g. \code{lambdaSel = "EBIC"}.
+Fitted inputs retain their original settings. Observation-specific
+arguments such as weights cannot be automatically realigned during resampling.}
 }
 \value{
 a list contains the stability test results of the network\itemize{

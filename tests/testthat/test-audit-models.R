@@ -1,7 +1,7 @@
 test_that("MGM listwise validation uses the same rows as estimation", {
   dat <- data.frame(x = c(1, 2, 3, 4, NA), y = c(5, 3, 2, 4, 1))
   expect_true(check_input(dat, model = "mgm", types = c("g", "g"),
-                         levels = c(1, 1), quiet = TRUE)$ok)
+                         levels = c(1, 1), missing = "listwise", quiet = TRUE)$ok)
   expect_false(check_input(dat, model = "mixedVAR", types = c("g", "g"),
                           levels = c(1, 1), quiet = TRUE)$ok)
   invalid <- data.frame(x = c(1, 1, 1, 2), y = c(1, 2, 3, NA))

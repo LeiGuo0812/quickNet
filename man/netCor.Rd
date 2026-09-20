@@ -4,7 +4,7 @@
 \alias{netCor}
 \title{Calculate the correlation between two networks}
 \usage{
-netCor(x1, x2, nperm = 1000, graph = TRUE, alternative = "two.sided", ...)
+netCor(x1, x2, nperm = 999, graph = FALSE, alternative = "two.sided", ...)
 }
 \arguments{
 \item{x1}{the first network, should be the product of \code{quickNet::quickNet()}, or an adjacency matrix of network data.}
