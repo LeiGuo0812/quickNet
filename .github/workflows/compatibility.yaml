@@ -83,7 +83,7 @@ jobs:
             text <- readLines(path, warn = FALSE)
             if (any(grepl("SKIP[[:space:]]+[1-9][0-9]*", text))) stop("Complete-profile tests were skipped: ", path)
           }
-      - name: Execute English and Chinese documented workflows
+      - name: Execute each English and Chinese example in a clean session
         shell: bash
         run: |
           Rscript --vanilla tools/validate-workflows.R README.md compatibility-results/README

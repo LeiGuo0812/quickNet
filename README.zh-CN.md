@@ -38,20 +38,50 @@ devtools::install_local("quickNet-main.zip")
 主要建模函数返回 `quicknet_fit` 对象。常用字段包括：
 
 ```r
+library(quickNet)
+set.seed(101)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
+fit <- quickNet(continuous_data, model = "EBICglasso", pie = FALSE)
+
 fit$graph             # 默认网络矩阵
-fit$networks          # 一个或多个网络层
+fit$networks          # 网络层
 fit$edges             # 边表
 fit$nodes             # 节点指标表
-summary(fit)          # 网络层面的摘要
-plot(fit)             # 快速绘图
+summary(fit)
+plot(fit)
 ```
 
 使用 `model_registry()` 可以查看包级模型注册表，包括模型家族、后端、
 分析类型、网络层、可报告结果、关键参考文献和已知限制。
 
 ```r
+library(quickNet)
+set.seed(102)
+
+precision <- diag(3)
+precision[cbind(1:2, 2:3)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(120 * 3), 120, 3) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:3)
+head(continuous_data)
+
 model_registry()
 model_registry("ConfirmatoryNet")
+check_input(continuous_data, model = "correlation")
+fit <- quickNet(continuous_data, model = "correlation", pie = FALSE)
+fit$meta$backend_settings
+summary(fit)
 ```
 
 `quicknet_report(fit)` 返回面向学术汇报的结果表。对于基于
@@ -104,11 +134,28 @@ psychonetrics 的模型，报告会在常规样本、网络、边和节点摘要
 每个模型都有明确的输入检查。可以使用 `input_requirements()` 查看某个模型的输入格式，也可以在拟合前用 `check_input()` 诊断数据。
 
 ```r
-input_requirements("ising")
+library(quickNet)
+set.seed(103)
 
+binary_data <- as.data.frame(matrix(rbinom(240 * 3, 1, 0.4), 240, 3))
+names(binary_data) <- paste0("x", 1:3)
+panel_data <- data.frame(id = 1:80)
+for (wave in 1:3) {
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- rnorm(80)
+}
+esm_data <- data.frame(
+  id = rep(1:8, each = 30), day = 1, beep = rep(1:30, times = 8),
+  x1 = rnorm(240), x2 = rnorm(240), x3 = rnorm(240)
+)
+head(binary_data)
+head(panel_data)
+head(esm_data)
+
+input_requirements("ising")
 check_input(binary_data, model = "ising")
 check_input(panel_data, model = "clpn", nodes = c("x1", "x2", "x3"), waves = 1:3)
-check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
+check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"),
+            id = "id", day = "day", beep = "beep")
 ```
 
 主要建模函数内部也会调用同一套校验器。明确的格式错误会提前停止；样本量过小、二分类变量极度不平衡等风险情况会以 warning 提醒。
@@ -118,12 +165,35 @@ check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
 参数直接写在函数调用中，不需要构建参数对象：
 
 ```r
-fit <- quickNet(
+library(quickNet)
+set.seed(1)
+mixed_data <- data.frame(
+  c1 = rnorm(120),
+  c2 = rnorm(120),
+  d1 = sample(1:2, 120, replace = TRUE),
+  d2 = sample(1:2, 120, replace = TRUE)
+)
+
+head(mixed_data)
+
+continuous_data <- data.frame(
+  x1 = mixed_data$c1, x2 = mixed_data$c2,
+  x3 = 0.5 * mixed_data$c1 + rnorm(nrow(mixed_data)),
+  x4 = 0.5 * mixed_data$c2 + rnorm(nrow(mixed_data))
+)
+head(continuous_data)
+
+fit_mgm <- quickNet(
   mixed_data, model = "mgm", types = c("g", "g", "c", "c"),
   levels = c(1, 1, 2, 2), lambdaSel = "EBIC", ruleReg = "OR", gamma = 0.25,
   pie = FALSE
 )
-fit <- EBICglassoNet(data, nlambda = 50, missing = "pairwise")
+fit_ebic <- EBICglassoNet(continuous_data, nlambda = 50, missing = "pairwise")
+
+summary(fit_mgm)
+fit_mgm$meta$backend_settings
+summary(fit_ebic)
+fit_ebic$meta$backend_settings
 ```
 
 额外的建模参数通过 `...` 传给所选后端，未指定的参数继承后端默认值。
@@ -141,7 +211,8 @@ fit <- EBICglassoNet(data, nlambda = 50, missing = "pairwise")
 - 验证性与潜变量模型继承对应后端的估计器、缺失处理和识别设置。
   `LatentNet(..., estimator = "MLR")` 可直接配置 lavaan；其 `std.lv` 默认为 FALSE。
 - Powerly 默认使用 sensitivity、30 个样本量点、30 次重复和 10000 次 bootstrap；
-  必须指定 `nodes`、`density`、`range_lower`、`range_upper`。Monte Carlo 分支有单独记录的模拟设计。
+  提供 `nodes`、`density` 或已知的 `model_matrix`，并指定 `range_lower`、`range_upper`。
+  Monte Carlo 分支有单独记录的模拟设计。
 - `NetCompare()` 默认 100 次置换，逐边和中心性检验默认关闭；
   `Bridge()` 默认不归一化，`netCor()` 默认 999 次置换且不绘图。
 
@@ -191,14 +262,24 @@ NIRA 分别记录 Ising 建网 gamma 和调节分析的 `moderation_lambda = 0.2
 
 ## 最小使用示例
 
-以下代码块从示例 1 开始按顺序运行；后面的示例会复用前面生成的数据和拟合对象。安装好所有示例所需依赖后，即可从干净 R 会话执行。随机模拟使用固定种子。为便于核对完整流程，示例显式使用较小的重复次数和调参网格；这些演示预算不能支持正式的显著性、稳定性或功效结论，也不修改包的默认值。正式研究应独立确定并验证所需预算。执行记录见 [工作流核验](docs/workflow-validation.md)。
+每个分析代码块都是可独立运行的完整示例：加载 quickNet、构造输入数据、执行分析，最后查看结果。安装好所需依赖后，可将任意完整代码块复制到干净 R 会话中运行，无需先执行其他示例或准备外部数据。样本量规划先定义数据生成设计，再由规划函数生成模拟数据。随机模拟使用固定种子和明确的小规模演示预算，正式分析时请设置适合的预算。执行记录见[独立示例核验](docs/workflow-validation.md)。
 
 ### 1. EBICglasso 横断面网络
 
 ```r
 library(quickNet)
+set.seed(101)
 
-fit <- quickNet(mtcars[, 1:6], model = "EBICglasso", pie = FALSE)
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
+fit <- quickNet(continuous_data, model = "EBICglasso", pie = FALSE)
 
 summary(fit)
 fit$edges
@@ -208,19 +289,45 @@ plot(fit)
 也可以使用旧接口名称：
 
 ```r
-fit <- EBICglassoNet(mtcars[, 1:6])
+library(quickNet)
+set.seed(101)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
+fit <- EBICglassoNet(continuous_data)
+
+summary(fit)
+fit$graph
+plot(fit)
 ```
 
 ### 2. 相关网络
 
 ```r
+library(quickNet)
+set.seed(102)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
 fit <- quickNet(
-  mtcars[, 1:6],
-  model = "correlation",
-  cor_method = "pearson",
-  pie = FALSE
+  continuous_data, model = "correlation", cor_method = "pearson", pie = FALSE
 )
 
+summary(fit)
 fit$graph
 fit$nodes
 ```
@@ -228,19 +335,30 @@ fit$nodes
 ### 3. 偏相关网络
 
 ```r
+library(quickNet)
+set.seed(103)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
 fit <- quickNet(
-  mtcars[, 1:6],
-  model = "partial",
-  cor_method = "pearson",
-  pie = FALSE
+  continuous_data, model = "partial", cor_method = "pearson", pie = FALSE
 )
 
 summary(fit)
+fit$graph
 ```
 
 ### 4. Ising 二分类网络
 
 ```r
+library(quickNet)
 set.seed(1)
 ising_graph <- matrix(0, 4, 4)
 ising_graph[cbind(1:3, 2:4)] <- 0.6
@@ -250,8 +368,11 @@ binary_data <- as.data.frame(IsingSampler::IsingSampler(
 ))
 names(binary_data) <- paste0("x", 1:4)
 
+head(binary_data)
+
 fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 
+summary(fit)
 fit$edges
 fit$nodes
 ```
@@ -259,6 +380,7 @@ fit$nodes
 ### 5. 有序分类网络
 
 ```r
+library(quickNet)
 set.seed(1)
 ordinal_data <- data.frame(
   x1 = sample(1:5, 120, replace = TRUE),
@@ -266,6 +388,8 @@ ordinal_data <- data.frame(
   x3 = sample(1:5, 120, replace = TRUE),
   x4 = sample(1:5, 120, replace = TRUE)
 )
+
+head(ordinal_data)
 
 fit <- quickNet(
   ordinal_data,
@@ -275,11 +399,13 @@ fit <- quickNet(
 )
 
 summary(fit)
+fit$graph
 ```
 
 ### 6. 混合图模型 MGM
 
 ```r
+library(quickNet)
 set.seed(1)
 mixed_data <- data.frame(
   c1 = rnorm(120),
@@ -288,17 +414,17 @@ mixed_data <- data.frame(
   d2 = sample(1:2, 120, replace = TRUE)
 )
 
+head(mixed_data)
+
 fit <- quickNet(
-  mixed_data,
-  model = "mgm",
-  types = c("g", "g", "c", "c"),
-  levels = c(1, 1, 2, 2),
-  lambdaSel = "EBIC",
-  gamma = 0.25,
-  pie = FALSE
+  mixed_data, model = "mgm",
+  types = c("g", "g", "c", "c"), levels = c(1, 1, 2, 2),
+  lambdaSel = "EBIC", gamma = 0.25, pie = FALSE
 )
 
+summary(fit)
 fit$nodes
+fit$graph
 ```
 
 ## 纵向网络示例
@@ -308,6 +434,7 @@ fit$nodes
 `PanelNet()` 使用宽格式数据。列名默认格式为 `节点名_t波次`，例如 `x1_t1`、`x1_t2`。
 
 ```r
+library(quickNet)
 set.seed(12)
 n <- 300
 panel_data <- data.frame(id = seq_len(n))
@@ -319,14 +446,14 @@ for (wave in 1:3) {
   for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
 }
 
+head(panel_data)
+
 panel_fit <- PanelNet(
-  panel_data,
-  nodes = c("x1", "x2", "x3"),
-  waves = 1:3,
-  id = "id",
-  nfolds = 5, seed = 12
+  panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3,
+  id = "id", nfolds = 5, seed = 12
 )
 
+summary(panel_fit)
 panel_fit$networks$default       # 包含自回归和横滞后路径
 panel_fit$networks$cross_lagged  # 仅横滞后路径
 panel_fit$edges
@@ -337,6 +464,20 @@ panel_fit$edges
 相同的宽格式面板数据也可以用于随机截距 CLPM 和 panel GVAR。
 
 ```r
+library(quickNet)
+set.seed(12)
+n <- 300
+panel_data <- data.frame(id = seq_len(n))
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
+for (wave in 1:3) {
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
+}
+
+head(panel_data)
+
 ri_fit <- PanelNet(
   panel_data,
   nodes = c("x1", "x2", "x3"),
@@ -351,6 +492,8 @@ panel_gvar <- PanelNet(
   model = "panel_gvar"
 )
 
+summary(ri_fit)
+summary(panel_gvar)
 ri_fit$networks$temporal
 ri_fit$networks$random_intercept
 panel_gvar$networks$within
@@ -362,6 +505,7 @@ panel_gvar$networks$between
 `LongitudinalNet()` 使用长格式数据，需要个体 ID。`day` 和 `beep` 可选，提供时用于确定日期边界和测量顺序。各后端的处理方式见[数据与时间核验](docs/data-time-validation.md)。
 
 ```r
+library(quickNet)
 set.seed(13)
 simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
   person_mean <- rnorm(3, sd = 0.7)
@@ -377,6 +521,8 @@ simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, l
 }))
 esm_data <- simulate_esm()
 
+head(esm_data)
+
 gvar_fit <- LongitudinalNet(
   esm_data,
   vars = c("x1", "x2", "x3"),
@@ -386,6 +532,7 @@ gvar_fit <- LongitudinalNet(
   model = "graphicalVAR", nLambda = 5, subjectNetworks = FALSE
 )
 
+summary(gvar_fit)
 gvar_fit$networks$temporal
 gvar_fit$networks$contemporaneous
 gvar_fit$networks$between
@@ -394,6 +541,24 @@ gvar_fit$networks$between
 ### 10. psychonetrics GVAR 密集纵向网络
 
 ```r
+library(quickNet)
+set.seed(13)
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+esm_data <- simulate_esm()
+
+head(esm_data)
+
 psy_gvar <- LongitudinalNet(
   esm_data,
   vars = c("x1", "x2", "x3"),
@@ -403,6 +568,7 @@ psy_gvar <- LongitudinalNet(
   model = "psychonetrics_gvar"
 )
 
+summary(psy_gvar)
 psy_gvar$networks$temporal
 psy_gvar$networks$contemporaneous
 ```
@@ -410,6 +576,24 @@ psy_gvar$networks$contemporaneous
 ### 11. mlVAR 密集纵向网络
 
 ```r
+library(quickNet)
+set.seed(13)
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+esm_data <- simulate_esm()
+
+head(esm_data)
+
 mlvar_fit <- LongitudinalNet(
   esm_data,
   vars = c("x1", "x2", "x3"),
@@ -422,6 +606,7 @@ mlvar_fit <- LongitudinalNet(
   nCores = 1
 )
 
+summary(mlvar_fit)
 mlvar_fit$edges
 mlvar_fit$nodes
 ```
@@ -429,16 +614,22 @@ mlvar_fit$nodes
 ### 12. 网络统计功效和样本量规划
 
 ```r
+library(quickNet)
+set.seed(14)
+
+# 先指定总体生成机制，NetworkPower 在内部生成网络与模拟数据。
+# 每个样本量仅重复5次用于演示流程，不能据此作正式研究的样本量建议。
 power <- NetworkPower(
-  nodes = 8,
-  density = 0.30,
+  method = "monte_carlo", nodes = 8, density = 0.30,
+  positive = 0.70, edge_strength = c(0.15, 0.45),
   sample_sizes = c(100, 200, 400), replications = 5, seed = 14,
-  target_metric = "mcc",
-  target_value = 0.60,
-  target_probability = 0.80
+  target_metric = "mcc", target_value = 0.60, target_probability = 0.80
 )
 
+power$generating_network
+head(power$results)
 summary(power)
+power$recommendation
 plot(power)
 quicknet_report(power)$text
 ```
@@ -459,18 +650,27 @@ Monte Carlo 达标概率以一次调用中固定的生成网络为条件。
 也可以使用 `powerly` 后端进行 GGM 样本量规划：
 
 ```r
+library(quickNet)
+set.seed(88021)
+
+# 预先指定总体偏相关真值，不使用从预调查数据估计的网络充当已知真值。
+true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
+true_graph[cbind(1:4, 2:5)] <- 0.30
+true_graph <- true_graph + t(true_graph)
+true_graph
+
 powerly_plan <- NetworkPower(
-  method = "powerly",
-  nodes = 8,
-  density = 0.30,
-  range_lower = 100,
-  range_upper = 500,
-  samples = 5, replications = 5, boots = 20, iterations = 1,
-  cores = 1, verbose = FALSE, seed = 15,
-  target_metric = "sensitivity",
-  target_value = 0.60,
-  target_probability = 0.80
+  method = "powerly", model_matrix = true_graph,
+  range_lower = 50, range_upper = 500,
+  samples = 8, replications = 20, boots = 80, iterations = 1, tolerance = 50,
+  cores = 1, verbose = FALSE, seed = 88021,
+  target_metric = "sensitivity", target_value = 0.60, target_probability = 0.80
 )
+
+summary(powerly_plan)
+powerly_plan$true_network
+powerly_plan$recommendation
+quicknet_report(powerly_plan)$text
 ```
 
 Powerly 推荐值按其 bootstrap 中位曲线解释，保留源软件的数据生成设置，默认生成
@@ -485,11 +685,14 @@ Powerly 推荐值按其 bootstrap 中位曲线解释，保留源软件的数据�
 ### 13. 验证性、潜变量和动态网络
 
 ```r
+library(quickNet)
 set.seed(16)
 factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
 continuous_data <- as.data.frame(sapply(1:6, function(j)
   0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
 names(continuous_data) <- paste0("x", 1:6)
+
+head(continuous_data)
 
 omega <- matrix(1, 6, 6)
 diag(omega) <- 0
@@ -499,14 +702,44 @@ confirmatory <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), omega 
 
 confirmatory_cor <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "cor")
 confirmatory_precision <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "precision")
+
+summary(confirmatory)
+confirmatory$graph
+summary(confirmatory_cor)
+confirmatory_cor$graph
+summary(confirmatory_precision)
+confirmatory_precision$graph
 ```
 
 ```r
+library(quickNet)
+set.seed(1)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
+
+head(binary_data)
+
 confirmatory_ising <- ConfirmatoryNet(binary_data, model = "ising")
+
+summary(confirmatory_ising)
 confirmatory_ising$networks$default
 ```
 
 ```r
+library(quickNet)
+set.seed(16)
+factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
+continuous_data <- as.data.frame(sapply(1:6, function(j)
+  0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
+names(continuous_data) <- paste0("x", 1:6)
+
+head(continuous_data)
+
 cfa_model <- "
 Depression =~ d1 + d2 + d3
 Anxiety    =~ a1 + a2 + a3
@@ -514,11 +747,21 @@ Anxiety    =~ a1 + a2 + a3
 
 latent_data <- setNames(continuous_data, c("d1", "d2", "d3", "a1", "a2", "a3"))
 latent <- LatentNet(latent_data, model = cfa_model)
+summary(latent)
 latent$networks$latent
 latent$networks$residual
 ```
 
 ```r
+library(quickNet)
+set.seed(16)
+factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
+continuous_data <- as.data.frame(sapply(1:6, function(j)
+  0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
+names(continuous_data) <- paste0("x", 1:6)
+
+head(continuous_data)
+
 lambda <- matrix(0, 6, 2, dimnames = list(paste0("x", 1:6), c("Depression", "Anxiety")))
 lambda[1:3, "Depression"] <- 1
 lambda[4:6, "Anxiety"] <- 1
@@ -526,17 +769,38 @@ lambda[4:6, "Anxiety"] <- 1
 lnm <- LatentNet(continuous_data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
 lrnm <- LatentNet(continuous_data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
 
+summary(lnm)
+summary(lrnm)
 lnm$networks$latent
 lrnm$networks$residual
 ```
 
 ```r
+library(quickNet)
+set.seed(12)
+n <- 300
+panel_data <- data.frame(id = seq_len(n))
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
+for (wave in 1:3) {
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
+}
+
+head(panel_data)
+
 panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
+
+summary(panel_sem)
+panel_sem$graph
 
 set.seed(17)
 time_data <- data.frame(x1 = as.numeric(arima.sim(list(ar = 0.3), n = 250)),
   x2 = as.numeric(arima.sim(list(ar = -0.2), n = 250)),
   x3 = sample(1:2, 250, replace = TRUE))
+
+head(time_data)
 
 mixed_var <- MixedVARNet(
   time_data,
@@ -553,6 +817,12 @@ tv_mvar <- TimeVaryingNet(
   estpoints = c(0.25, 0.50, 0.75),
   bandwidth = 0.20
 )
+
+summary(mixed_var)
+mixed_var$networks$temporal
+summary(tv_mvar)
+names(tv_mvar$networks)
+tv_mvar$edges
 ```
 
 ### 14. 元分析网络
@@ -560,6 +830,7 @@ tv_mvar <- TimeVaryingNet(
 `MetaNet()` 可基于多个研究的相关/协方差矩阵或多研究原始数据估计 psychonetrics 元分析网络模型。
 
 ```r
+library(quickNet)
 set.seed(18)
 nobs <- c(150, 180, 220, 160, 190, 210)
 population_cor <- matrix(c(1, 0.3, 0.1, 0.3, 1, 0.2, 0.1, 0.2, 1), 3)
@@ -569,6 +840,9 @@ cors <- lapply(nobs, function(n) {
   cor(values)
 })
 
+head(cors[[1]])
+nobs
+
 meta_ggm <- MetaNet(
   cors = cors,
   nobs = nobs,
@@ -576,6 +850,7 @@ meta_ggm <- MetaNet(
   model = "meta_ggm"
 )
 
+summary(meta_ggm)
 meta_ggm$networks$default
 quicknet_report(meta_ggm)$sample
 ```
@@ -583,13 +858,30 @@ quicknet_report(meta_ggm)$sample
 对于多研究密集纵向数据： 此处用源软件参数 `lowertri_randomEffects = "diag"` 将随机效应 Cholesky 非对角元素固定为零，作为这个小型演示的模型设定。
 
 ```r
+library(quickNet)
 set.seed(19)
+
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+
 multi_study_esm <- do.call(rbind, lapply(1:20, function(study) {
   values <- simulate_esm(cross_lag = runif(1, 0.15, 0.55),
                          autoregressive = runif(1, 0.15, 0.45))
   values$study <- study
   values
 }))
+head(multi_study_esm)
+
 meta_gvar <- MetaNet(
   data = multi_study_esm,
   studyvar = "study",
@@ -600,6 +892,7 @@ meta_gvar <- MetaNet(
   model = "meta_gvar", lowertri_randomEffects = "diag"
 )
 
+summary(meta_gvar)
 meta_gvar$networks$temporal
 meta_gvar$networks$contemporaneous
 ```
@@ -609,16 +902,21 @@ meta_gvar$networks$contemporaneous
 ### 中心性和桥接中心性
 
 ```r
-fit <- quickNet(mtcars[, 1:6], pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
 
+fit <- quickNet(data, model = "EBICglasso", pie = FALSE)
 centrality <- Centrality(fit)
 centrality$node_table
+print(centrality$centralityPlot)
 
-bridge <- Bridge(
-  fit,
-  communities = list(group1 = 1:3, group2 = 4:6)
-)
+bridge <- Bridge(fit, communities = list(group1 = 1:3, group2 = 4:6))
 bridge$bridge_data
+print(bridge$bridgePlot)
 ```
 
 ### 稳定性分析
@@ -626,10 +924,16 @@ bridge$bridge_data
 横断面网络：
 
 ```r
-fit <- quickNet(mtcars[, 1:6], model = "correlation", pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
+
+fit <- quickNet(data, model = "correlation", pie = FALSE)
 set.seed(20)
 stability <- Stability(fit, nboot = 5)
-
 stability$edge_bootstrap_stability
 stability$case_drop_centrality_stability
 ```
@@ -637,7 +941,23 @@ stability$case_drop_centrality_stability
 纵向网络：
 
 ```r
+library(quickNet)
+set.seed(12)
+n <- 300
+panel_data <- data.frame(id = seq_len(n))
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
+for (wave in 1:3) {
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
+}
+
+panel_fit <- PanelNet(panel_data, nodes = c("x1", "x2", "x3"),
+                      waves = 1:3, id = "id", nfolds = 5, seed = 12)
 longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 5, seed = 20)
+longitudinal_stability$default
+attr(longitudinal_stability, "resampling")
 ```
 
 ### 学术汇报参数
@@ -645,7 +965,14 @@ longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 5, seed = 20)
 可以使用 `quicknet_report()` 从任意 `quicknet_fit` 对象中提取适合论文或学术汇报的样本信息、估计设置、网络摘要、边摘要、节点指标和模型特异参数。
 
 ```r
-fit <- quickNet(mtcars[, 1:6], model = "EBICglasso", pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
+
+fit <- quickNet(data, model = "EBICglasso", pie = FALSE)
 report <- quicknet_report(fit)
 
 report$sample          # 样本量和节点数
@@ -662,12 +989,18 @@ report$text            # 简短文字摘要
 可以使用 `Perturbation()` 进行模型内的 in silico 虚拟扰动分析。这类结果适合用于假设生成和候选靶点筛选，但不应解释为因果干预效应。
 
 ```r
-fit <- quickNet(mtcars[, 1:6], model = "partial", pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
 
+fit <- quickNet(data, model = "partial", pie = FALSE)
 dosage <- Perturbation(
   fit,
   method = "dosage",
-  targets = c("mpg", "cyl"),
+  targets = c("x1", "x2"),
   dose = c(0.25, 0.50, 1.00),
   config = list(bounds = NULL)
 )
@@ -675,30 +1008,44 @@ dosage <- Perturbation(
 dosage$metrics
 dosage$rankings
 quicknet_report(dosage)$text
-
 plot(dosage)
-get_perturbation_plot(dosage, type = "rank")
-get_perturbation_plot(dosage, type = "dose_response")
-get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1)
+print(get_perturbation_plot(dosage, type = "rank"))
+print(get_perturbation_plot(dosage, type = "dose_response"))
+print(get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1))
 ```
 
-连续干预按 SymPerturb 0.1.0 修订规范实现。算法从 `fit$data` 估计原始均值和加岭正则的协方差。拓扑边阈值与状态协方差分别处理。量表边界默认为 `[0,4]`；本例 `mtcars` 不使用该量表边界，因此设置 `bounds = NULL`。
+连续干预按 SymPerturb 0.1.0 修订规范实现。算法从 `fit$data` 估计原始均值和加岭正则的协方差。拓扑边阈值与状态协方差分别处理。量表边界默认为 `[0,4]`；这些示例生成无界连续数据，因此设置 `bounds = NULL`。
 
 输入须保留至少 3 名参与者、3 个数值型症状变量，且不含缺失值或无穷值。`symperturb` 和 `sequence` 都需要覆盖全部症状、至少包含两个模块的命名向量 `modules`，以使用相同的评分和候选表。原拟合对象中的字符型／因子型 `groups` 向量也可提供模块映射。
 
 ```r
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
+
+fit <- quickNet(data, model = "partial", pie = FALSE)
+modules <- c(x1 = "group1", x2 = "group1", x3 = "group1",
+             x4 = "group2", x5 = "group2", x6 = "group2")
 cfg <- list(bounds = NULL)
-Perturbation(fit, "knockout", targets = "mpg", config = cfg)
-Perturbation(fit, "knockdown", targets = "mpg", dose = 0.50, config = cfg)
-blocked <- Perturbation(fit, "edge_block", targets = "mpg", config = cfg)
-Perturbation(fit, "node_block", targets = "mpg", config = cfg)
-Perturbation(fit, "combination", targets = c("mpg", "cyl", "disp"), config = cfg)
-modules <- c(mpg = "performance", cyl = "engine", disp = "engine",
-             hp = "engine", drat = "performance", wt = "performance")
-sequence <- Perturbation(fit, "sequence", targets = c("mpg", "cyl", "disp"),
+
+knockout <- Perturbation(fit, "knockout", targets = "x1", config = cfg)
+knockout$metrics
+knockdown <- Perturbation(fit, "knockdown", targets = "x1", dose = 0.50, config = cfg)
+knockdown$metrics
+blocked <- Perturbation(fit, "edge_block", targets = "x1", config = cfg)
+blocked$metrics
+node_block <- Perturbation(fit, "node_block", targets = "x1", config = cfg)
+node_block$metrics
+combination <- Perturbation(fit, "combination", targets = c("x1", "x2", "x3"), config = cfg)
+combination$pair_scores
+sequence <- Perturbation(fit, "sequence", targets = c("x1", "x2", "x3"),
                          steps = 2, modules = modules, config = cfg)
-get_perturbation_plot(blocked, "edge_block")
-get_perturbation_plot(sequence, "sequence")
+sequence$sequence
+print(get_perturbation_plot(blocked, "edge_block"))
+print(get_perturbation_plot(sequence, "sequence"))
 
 result <- Perturbation(fit, "symperturb", modules = modules, seed = 20,
   config = list(bounds = NULL, sequence_length = 2,
@@ -726,6 +1073,15 @@ R 实现不依赖 Python 运行环境。数值回归数据由本地 Python 参�
 对于 Ising 模型，`ising_threshold` 提供轻量的单链阈值敏感性分析：
 
 ```r
+library(quickNet)
+set.seed(1)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
 ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 
 ising_result <- Perturbation(
@@ -735,8 +1091,10 @@ ising_result <- Perturbation(
   threshold_shift = -0.5
 )
 
-get_perturbation_plot(ising_result, type = "rank")
-get_perturbation_plot(ising_result, type = "node_change", target = "x1")
+ising_result$metrics
+ising_result$rankings
+print(get_perturbation_plot(ising_result, type = "rank"))
+print(get_perturbation_plot(ising_result, type = "node_change", target = "x1"))
 ```
 
 若要运行 Wang 等（2026）描述的正式单网络 NIRA 工作流，请使用
@@ -745,6 +1103,17 @@ moderation prerequisite、原始条件与逐节点阈值干预模拟、多重校
 检验，以及重复模拟的排名稳定性分析：
 
 ```r
+library(quickNet)
+set.seed(1)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
+ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
+
 nira_result <- NIRA(
   ising_fit,
   perturbation_type = "alleviating",
@@ -788,12 +1157,26 @@ NIRA 要求横断面、完整的 0/1 数据和有意义的总分，结果为给�
 ### 网络比较
 
 ```r
-net1 <- quickNet(mtcars[, 1:6], pie = FALSE)
-net2 <- quickNet((mtcars[, 1:6])^2, pie = FALSE)
-
+library(quickNet)
 set.seed(21)
-comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 9, test.edges = TRUE)
+n <- 300
+shared1 <- rnorm(n)
+shared2 <- rnorm(n)
+group1 <- as.data.frame(replicate(6, 0.4 * shared1 + rnorm(n)))
+group2 <- as.data.frame(replicate(6, 0.7 * shared2 + rnorm(n)))
+names(group1) <- names(group2) <- paste0("x", 1:6)
+net1 <- quickNet(group1, model = "EBICglasso", pie = FALSE)
+net2 <- quickNet(group2, model = "EBICglasso", pie = FALSE)
+
+comparison <- NetCompare(net1, net2, paired = FALSE, it = 9, test.edges = TRUE)
+data.frame(
+  statistic = c("Network structure", "Global strength"),
+  observed = c(comparison$nwinv.real, comparison$glstrinv.real),
+  p_value = c(comparison$nwinv.pval, comparison$glstrinv.pval)
+)
+comparison$einv.pvals
 plots <- get_compare_plot(comparison, net1, output = FALSE)
+plot(plots$diff_plot)
 ```
 
 `paired = TRUE` 沿用 `NetworkComparisonTest::NCT`；两组第 i 行必须为同一受试者。
@@ -807,6 +1190,7 @@ plots <- get_compare_plot(comparison, net1, output = FALSE)
 按作者实现要求直接指定截断半径 `radius`：
 
 ```r
+library(quickNet)
 set.seed(1)
 series <- cbind(as.numeric(arima.sim(list(ar = 0.5), n = 160)),
                 as.numeric(arima.sim(list(ar = 0.5), n = 160)))
@@ -823,15 +1207,24 @@ TTS 使用全部位移，不接收 `nperm`。`method = "shuffle", nperm = 999` �
 ### 导出图和表
 
 ```r
-fit <- quickNet(mtcars[, 1:6], pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
 
-export_dir <- file.path(tempdir(), "quicknet-example")
-dir.create(export_dir, showWarnings = FALSE)
+fit <- quickNet(data, model = "EBICglasso", pie = FALSE)
+export_dir <- tempfile("quicknet-example-")
+dir.create(export_dir)
 get_network_plot(fit, path = export_dir, prefix = "example")
 utils::write.csv(get_edges_df(fit), file.path(export_dir, "edges.csv"), row.names = FALSE)
 writeLines(quicknet_report(fit)$text, file.path(export_dir, "report.txt"))
+
 globalCoeff(fit)
-list.files(export_dir)
+list.files(export_dir, full.names = TRUE)
+head(utils::read.csv(file.path(export_dir, "edges.csv")))
+cat(readLines(file.path(export_dir, "report.txt")), sep = "\n")
 ```
 
 ## 参考文献

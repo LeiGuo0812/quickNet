@@ -38,12 +38,26 @@ Additional optional modules use `powerly`, `psychonetrics`, `lavaan`, and `MASS`
 Main model-fitting functions return a `quicknet_fit` object. Common fields are:
 
 ```r
+library(quickNet)
+set.seed(101)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
+fit <- quickNet(continuous_data, model = "EBICglasso", pie = FALSE)
+
 fit$graph             # Default network matrix
-fit$networks          # One or more network layers
+fit$networks          # Network layers
 fit$edges             # Edge table
 fit$nodes             # Node-level table
-summary(fit)          # Network-level summary
-plot(fit)             # Quick network plot
+summary(fit)
+plot(fit)
 ```
 
 Use `model_registry()` to inspect the package-level model map, including the
@@ -51,8 +65,24 @@ model family, backend, analysis type, network layers, reportable quantities,
 key references, and known limitations.
 
 ```r
+library(quickNet)
+set.seed(102)
+
+precision <- diag(3)
+precision[cbind(1:2, 2:3)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(120 * 3), 120, 3) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:3)
+head(continuous_data)
+
 model_registry()
 model_registry("ConfirmatoryNet")
+check_input(continuous_data, model = "correlation")
+fit <- quickNet(continuous_data, model = "correlation", pie = FALSE)
+fit$meta$backend_settings
+summary(fit)
 ```
 
 `quicknet_report(fit)` returns academic reporting tables. For
@@ -105,11 +135,28 @@ For academic use, cite the methods that match the models and analyses you report
 Each model has explicit input checks. Use `input_requirements()` to inspect expected input format, or `check_input()` to diagnose a dataset before fitting.
 
 ```r
-input_requirements("ising")
+library(quickNet)
+set.seed(103)
 
+binary_data <- as.data.frame(matrix(rbinom(240 * 3, 1, 0.4), 240, 3))
+names(binary_data) <- paste0("x", 1:3)
+panel_data <- data.frame(id = 1:80)
+for (wave in 1:3) {
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- rnorm(80)
+}
+esm_data <- data.frame(
+  id = rep(1:8, each = 30), day = 1, beep = rep(1:30, times = 8),
+  x1 = rnorm(240), x2 = rnorm(240), x3 = rnorm(240)
+)
+head(binary_data)
+head(panel_data)
+head(esm_data)
+
+input_requirements("ising")
 check_input(binary_data, model = "ising")
 check_input(panel_data, model = "clpn", nodes = c("x1", "x2", "x3"), waves = 1:3)
-check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
+check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"),
+            id = "id", day = "day", beep = "beep")
 ```
 
 Model-fitting functions call the same validator internally. Clear format errors stop early; risk conditions such as very small samples or imbalanced binary variables are shown as warnings.
@@ -119,12 +166,35 @@ Model-fitting functions call the same validator internally. Clear format errors 
 Pass parameters directly; no parameter object is required:
 
 ```r
-fit <- quickNet(
+library(quickNet)
+set.seed(1)
+mixed_data <- data.frame(
+  c1 = rnorm(120),
+  c2 = rnorm(120),
+  d1 = sample(1:2, 120, replace = TRUE),
+  d2 = sample(1:2, 120, replace = TRUE)
+)
+
+head(mixed_data)
+
+continuous_data <- data.frame(
+  x1 = mixed_data$c1, x2 = mixed_data$c2,
+  x3 = 0.5 * mixed_data$c1 + rnorm(nrow(mixed_data)),
+  x4 = 0.5 * mixed_data$c2 + rnorm(nrow(mixed_data))
+)
+head(continuous_data)
+
+fit_mgm <- quickNet(
   mixed_data, model = "mgm", types = c("g", "g", "c", "c"),
   levels = c(1, 1, 2, 2), lambdaSel = "EBIC", ruleReg = "OR", gamma = 0.25,
   pie = FALSE
 )
-fit <- EBICglassoNet(data, nlambda = 50, missing = "pairwise")
+fit_ebic <- EBICglassoNet(continuous_data, nlambda = 50, missing = "pairwise")
+
+summary(fit_mgm)
+fit_mgm$meta$backend_settings
+summary(fit_ebic)
+fit_ebic$meta$backend_settings
 ```
 
 Additional named estimation arguments flow through `...`; omitted controls
@@ -150,8 +220,9 @@ are rejected.
   and identification settings. `LatentNet(..., estimator = "MLR")` directly
   configures lavaan; its `std.lv` default is FALSE.
 - Powerly defaults to sensitivity, 30 sample-size points, 30 replications and
-  10000 bootstrap samples. Supply `nodes`, `density`, `range_lower` and
-  `range_upper`. The Monte Carlo branch has its own documented simulation design.
+  10000 bootstrap samples. Supply `nodes` and `density`, or a known `model_matrix`,
+  together with `range_lower` and `range_upper`. The Monte Carlo branch has its
+  own documented simulation design.
 - `NetCompare()` defaults to 100 permutations with edge and centrality tests
   disabled. `Bridge()` defaults to no normalization; `netCor()` uses 999
   permutations without plotting.
@@ -207,14 +278,24 @@ which is the EBIC `lambdaGam` used for moderation. SymPerturb's
 
 ## Minimal Examples
 
-Run the code blocks in order from Example 1; later examples reuse the generated data and fitted objects. Start in a clean R session with all example dependencies installed. Simulations use fixed seeds. Small repetition counts and tuning grids are explicit workflow demonstration budgets; they do not support formal significance, stability or power conclusions and do not change package defaults. Choose and validate analysis budgets separately for research. See the [executed workflow record](docs/workflow-validation.md).
+Each analysis code block is a complete, independent example: load quickNet, construct the input data, run the analysis, and inspect the results. With the required packages installed, copy any complete block into a clean R session; no earlier example or external dataset is needed. Sample-size planning starts by defining its data-generating design and then generates simulated data inside the planning function. Simulations use fixed seeds and explicit small demonstration budgets; choose suitable budgets for formal analyses. See the [independent-example execution record](docs/workflow-validation.md).
 
 ### 1. EBICglasso Cross-Sectional Network
 
 ```r
 library(quickNet)
+set.seed(101)
 
-fit <- quickNet(mtcars[, 1:6], model = "EBICglasso", pie = FALSE)
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
+fit <- quickNet(continuous_data, model = "EBICglasso", pie = FALSE)
 
 summary(fit)
 fit$edges
@@ -224,19 +305,45 @@ plot(fit)
 Legacy convenience interface:
 
 ```r
-fit <- EBICglassoNet(mtcars[, 1:6])
+library(quickNet)
+set.seed(101)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
+fit <- EBICglassoNet(continuous_data)
+
+summary(fit)
+fit$graph
+plot(fit)
 ```
 
 ### 2. Correlation Network
 
 ```r
+library(quickNet)
+set.seed(102)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
 fit <- quickNet(
-  mtcars[, 1:6],
-  model = "correlation",
-  cor_method = "pearson",
-  pie = FALSE
+  continuous_data, model = "correlation", cor_method = "pearson", pie = FALSE
 )
 
+summary(fit)
 fit$graph
 fit$nodes
 ```
@@ -244,19 +351,30 @@ fit$nodes
 ### 3. Partial Correlation Network
 
 ```r
+library(quickNet)
+set.seed(103)
+
+precision <- diag(6)
+precision[cbind(1:5, 2:6)] <- -0.25
+precision <- precision + t(precision) - diag(diag(precision))
+continuous_data <- as.data.frame(
+  matrix(rnorm(300 * 6), 300, 6) %*% chol(solve(precision))
+)
+names(continuous_data) <- paste0("x", 1:6)
+head(continuous_data)
+
 fit <- quickNet(
-  mtcars[, 1:6],
-  model = "partial",
-  cor_method = "pearson",
-  pie = FALSE
+  continuous_data, model = "partial", cor_method = "pearson", pie = FALSE
 )
 
 summary(fit)
+fit$graph
 ```
 
 ### 4. Ising Network for Binary Data
 
 ```r
+library(quickNet)
 set.seed(1)
 ising_graph <- matrix(0, 4, 4)
 ising_graph[cbind(1:3, 2:4)] <- 0.6
@@ -266,8 +384,11 @@ binary_data <- as.data.frame(IsingSampler::IsingSampler(
 ))
 names(binary_data) <- paste0("x", 1:4)
 
+head(binary_data)
+
 fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 
+summary(fit)
 fit$edges
 fit$nodes
 ```
@@ -275,6 +396,7 @@ fit$nodes
 ### 5. Ordinal Network
 
 ```r
+library(quickNet)
 set.seed(1)
 ordinal_data <- data.frame(
   x1 = sample(1:5, 120, replace = TRUE),
@@ -282,6 +404,8 @@ ordinal_data <- data.frame(
   x3 = sample(1:5, 120, replace = TRUE),
   x4 = sample(1:5, 120, replace = TRUE)
 )
+
+head(ordinal_data)
 
 fit <- quickNet(
   ordinal_data,
@@ -291,11 +415,13 @@ fit <- quickNet(
 )
 
 summary(fit)
+fit$graph
 ```
 
 ### 6. Mixed Graphical Model
 
 ```r
+library(quickNet)
 set.seed(1)
 mixed_data <- data.frame(
   c1 = rnorm(120),
@@ -304,17 +430,17 @@ mixed_data <- data.frame(
   d2 = sample(1:2, 120, replace = TRUE)
 )
 
+head(mixed_data)
+
 fit <- quickNet(
-  mixed_data,
-  model = "mgm",
-  types = c("g", "g", "c", "c"),
-  levels = c(1, 1, 2, 2),
-  lambdaSel = "EBIC",
-  gamma = 0.25,
-  pie = FALSE
+  mixed_data, model = "mgm",
+  types = c("g", "g", "c", "c"), levels = c(1, 1, 2, 2),
+  lambdaSel = "EBIC", gamma = 0.25, pie = FALSE
 )
 
+summary(fit)
 fit$nodes
+fit$graph
 ```
 
 ## Longitudinal Network Examples
@@ -324,6 +450,7 @@ fit$nodes
 `PanelNet()` expects wide-format panel data. By default, column names should follow the pattern `node_twave`, for example `x1_t1` and `x1_t2`.
 
 ```r
+library(quickNet)
 set.seed(12)
 n <- 300
 panel_data <- data.frame(id = seq_len(n))
@@ -335,14 +462,14 @@ for (wave in 1:3) {
   for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
 }
 
+head(panel_data)
+
 panel_fit <- PanelNet(
-  panel_data,
-  nodes = c("x1", "x2", "x3"),
-  waves = 1:3,
-  id = "id",
-  nfolds = 5, seed = 12
+  panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3,
+  id = "id", nfolds = 5, seed = 12
 )
 
+summary(panel_fit)
 panel_fit$networks$default       # Autoregressive and cross-lagged paths
 panel_fit$networks$cross_lagged  # Cross-lagged paths only
 panel_fit$edges
@@ -353,6 +480,20 @@ panel_fit$edges
 The same wide panel format can be used for random-intercept CLPM and panel GVAR models.
 
 ```r
+library(quickNet)
+set.seed(12)
+n <- 300
+panel_data <- data.frame(id = seq_len(n))
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
+for (wave in 1:3) {
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
+}
+
+head(panel_data)
+
 ri_fit <- PanelNet(
   panel_data,
   nodes = c("x1", "x2", "x3"),
@@ -367,6 +508,8 @@ panel_gvar <- PanelNet(
   model = "panel_gvar"
 )
 
+summary(ri_fit)
+summary(panel_gvar)
 ri_fit$networks$temporal
 ri_fit$networks$random_intercept
 panel_gvar$networks$within
@@ -378,6 +521,7 @@ panel_gvar$networks$between
 `LongitudinalNet()` expects long-format data with a subject ID. The `day` and `beep` variables are optional; when supplied, they define day boundaries and measurement order. See the [data and time validation record](docs/data-time-validation.md) for backend-specific handling.
 
 ```r
+library(quickNet)
 set.seed(13)
 simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
   person_mean <- rnorm(3, sd = 0.7)
@@ -393,6 +537,8 @@ simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, l
 }))
 esm_data <- simulate_esm()
 
+head(esm_data)
+
 gvar_fit <- LongitudinalNet(
   esm_data,
   vars = c("x1", "x2", "x3"),
@@ -402,6 +548,7 @@ gvar_fit <- LongitudinalNet(
   model = "graphicalVAR", nLambda = 5, subjectNetworks = FALSE
 )
 
+summary(gvar_fit)
 gvar_fit$networks$temporal
 gvar_fit$networks$contemporaneous
 gvar_fit$networks$between
@@ -410,6 +557,24 @@ gvar_fit$networks$between
 ### 10. psychonetrics GVAR Intensive Longitudinal Network
 
 ```r
+library(quickNet)
+set.seed(13)
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+esm_data <- simulate_esm()
+
+head(esm_data)
+
 psy_gvar <- LongitudinalNet(
   esm_data,
   vars = c("x1", "x2", "x3"),
@@ -419,6 +584,7 @@ psy_gvar <- LongitudinalNet(
   model = "psychonetrics_gvar"
 )
 
+summary(psy_gvar)
 psy_gvar$networks$temporal
 psy_gvar$networks$contemporaneous
 ```
@@ -426,6 +592,24 @@ psy_gvar$networks$contemporaneous
 ### 11. mlVAR Intensive Longitudinal Network
 
 ```r
+library(quickNet)
+set.seed(13)
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+esm_data <- simulate_esm()
+
+head(esm_data)
+
 mlvar_fit <- LongitudinalNet(
   esm_data,
   vars = c("x1", "x2", "x3"),
@@ -438,6 +622,7 @@ mlvar_fit <- LongitudinalNet(
   nCores = 1
 )
 
+summary(mlvar_fit)
 mlvar_fit$edges
 mlvar_fit$nodes
 ```
@@ -445,16 +630,22 @@ mlvar_fit$nodes
 ### 12. Network Power and Sample Size Planning
 
 ```r
+library(quickNet)
+set.seed(14)
+
+# Assumed generating design; NetworkPower generates the network and data internally.
+# Five replications per sample size demonstrate the workflow, not a research recommendation.
 power <- NetworkPower(
-  nodes = 8,
-  density = 0.30,
+  method = "monte_carlo", nodes = 8, density = 0.30,
+  positive = 0.70, edge_strength = c(0.15, 0.45),
   sample_sizes = c(100, 200, 400), replications = 5, seed = 14,
-  target_metric = "mcc",
-  target_value = 0.60,
-  target_probability = 0.80
+  target_metric = "mcc", target_value = 0.60, target_probability = 0.80
 )
 
+power$generating_network
+head(power$results)
 summary(power)
+power$recommendation
 plot(power)
 quicknet_report(power)$text
 ```
@@ -480,18 +671,27 @@ interval interpretation are documented in the [power validation record](docs/net
 For `powerly`-based GGM planning:
 
 ```r
+library(quickNet)
+set.seed(88021)
+
+# Prespecified population partial correlations, not a network estimated from pilot data.
+true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
+true_graph[cbind(1:4, 2:5)] <- 0.30
+true_graph <- true_graph + t(true_graph)
+true_graph
+
 powerly_plan <- NetworkPower(
-  method = "powerly",
-  nodes = 8,
-  density = 0.30,
-  range_lower = 100,
-  range_upper = 500,
-  samples = 5, replications = 5, boots = 20, iterations = 1,
-  cores = 1, verbose = FALSE, seed = 15,
-  target_metric = "sensitivity",
-  target_value = 0.60,
-  target_probability = 0.80
+  method = "powerly", model_matrix = true_graph,
+  range_lower = 50, range_upper = 500,
+  samples = 8, replications = 20, boots = 80, iterations = 1, tolerance = 50,
+  cores = 1, verbose = FALSE, seed = 88021,
+  target_metric = "sensitivity", target_value = 0.60, target_probability = 0.80
 )
+
+summary(powerly_plan)
+powerly_plan$true_network
+powerly_plan$recommendation
+quicknet_report(powerly_plan)$text
 ```
 
 Powerly recommendations use its bootstrap-median curve and retain the native
@@ -510,11 +710,14 @@ requires enough evidence to preserve the original estimation method.
 ### 13. Confirmatory, Latent, and Dynamic Networks
 
 ```r
+library(quickNet)
 set.seed(16)
 factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
 continuous_data <- as.data.frame(sapply(1:6, function(j)
   0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
 names(continuous_data) <- paste0("x", 1:6)
+
+head(continuous_data)
 
 omega <- matrix(1, 6, 6)
 diag(omega) <- 0
@@ -524,14 +727,44 @@ confirmatory <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), omega 
 
 confirmatory_cor <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "cor")
 confirmatory_precision <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "precision")
+
+summary(confirmatory)
+confirmatory$graph
+summary(confirmatory_cor)
+confirmatory_cor$graph
+summary(confirmatory_precision)
+confirmatory_precision$graph
 ```
 
 ```r
+library(quickNet)
+set.seed(1)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
+
+head(binary_data)
+
 confirmatory_ising <- ConfirmatoryNet(binary_data, model = "ising")
+
+summary(confirmatory_ising)
 confirmatory_ising$networks$default
 ```
 
 ```r
+library(quickNet)
+set.seed(16)
+factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
+continuous_data <- as.data.frame(sapply(1:6, function(j)
+  0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
+names(continuous_data) <- paste0("x", 1:6)
+
+head(continuous_data)
+
 cfa_model <- "
 Depression =~ d1 + d2 + d3
 Anxiety    =~ a1 + a2 + a3
@@ -539,11 +772,21 @@ Anxiety    =~ a1 + a2 + a3
 
 latent_data <- setNames(continuous_data, c("d1", "d2", "d3", "a1", "a2", "a3"))
 latent <- LatentNet(latent_data, model = cfa_model)
+summary(latent)
 latent$networks$latent
 latent$networks$residual
 ```
 
 ```r
+library(quickNet)
+set.seed(16)
+factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
+continuous_data <- as.data.frame(sapply(1:6, function(j)
+  0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
+names(continuous_data) <- paste0("x", 1:6)
+
+head(continuous_data)
+
 lambda <- matrix(0, 6, 2, dimnames = list(paste0("x", 1:6), c("Depression", "Anxiety")))
 lambda[1:3, "Depression"] <- 1
 lambda[4:6, "Anxiety"] <- 1
@@ -551,17 +794,38 @@ lambda[4:6, "Anxiety"] <- 1
 lnm <- LatentNet(continuous_data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
 lrnm <- LatentNet(continuous_data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
 
+summary(lnm)
+summary(lrnm)
 lnm$networks$latent
 lrnm$networks$residual
 ```
 
 ```r
+library(quickNet)
+set.seed(12)
+n <- 300
+panel_data <- data.frame(id = seq_len(n))
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
+for (wave in 1:3) {
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
+}
+
+head(panel_data)
+
 panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
+
+summary(panel_sem)
+panel_sem$graph
 
 set.seed(17)
 time_data <- data.frame(x1 = as.numeric(arima.sim(list(ar = 0.3), n = 250)),
   x2 = as.numeric(arima.sim(list(ar = -0.2), n = 250)),
   x3 = sample(1:2, 250, replace = TRUE))
+
+head(time_data)
 
 mixed_var <- MixedVARNet(
   time_data,
@@ -578,6 +842,12 @@ tv_mvar <- TimeVaryingNet(
   estpoints = c(0.25, 0.50, 0.75),
   bandwidth = 0.20
 )
+
+summary(mixed_var)
+mixed_var$networks$temporal
+summary(tv_mvar)
+names(tv_mvar$networks)
+tv_mvar$edges
 ```
 
 ### 14. Meta-Analytic Networks
@@ -585,6 +855,7 @@ tv_mvar <- TimeVaryingNet(
 `MetaNet()` estimates psychonetrics meta-analytic network models from multiple study correlation/covariance matrices or multi-study raw data.
 
 ```r
+library(quickNet)
 set.seed(18)
 nobs <- c(150, 180, 220, 160, 190, 210)
 population_cor <- matrix(c(1, 0.3, 0.1, 0.3, 1, 0.2, 0.1, 0.2, 1), 3)
@@ -594,6 +865,9 @@ cors <- lapply(nobs, function(n) {
   cor(values)
 })
 
+head(cors[[1]])
+nobs
+
 meta_ggm <- MetaNet(
   cors = cors,
   nobs = nobs,
@@ -601,6 +875,7 @@ meta_ggm <- MetaNet(
   model = "meta_ggm"
 )
 
+summary(meta_ggm)
 meta_ggm$networks$default
 quicknet_report(meta_ggm)$sample
 ```
@@ -608,13 +883,30 @@ quicknet_report(meta_ggm)$sample
 For multi-study intensive longitudinal data: This small example fixes off-diagonal random-effect Cholesky terms to zero using the native `lowertri_randomEffects = "diag"` control.
 
 ```r
+library(quickNet)
 set.seed(19)
+
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+
 multi_study_esm <- do.call(rbind, lapply(1:20, function(study) {
   values <- simulate_esm(cross_lag = runif(1, 0.15, 0.55),
                          autoregressive = runif(1, 0.15, 0.45))
   values$study <- study
   values
 }))
+head(multi_study_esm)
+
 meta_gvar <- MetaNet(
   data = multi_study_esm,
   studyvar = "study",
@@ -625,6 +917,7 @@ meta_gvar <- MetaNet(
   model = "meta_gvar", lowertri_randomEffects = "diag"
 )
 
+summary(meta_gvar)
 meta_gvar$networks$temporal
 meta_gvar$networks$contemporaneous
 ```
@@ -634,16 +927,21 @@ meta_gvar$networks$contemporaneous
 ### Centrality and Bridge Centrality
 
 ```r
-fit <- quickNet(mtcars[, 1:6], pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
 
+fit <- quickNet(data, model = "EBICglasso", pie = FALSE)
 centrality <- Centrality(fit)
 centrality$node_table
+print(centrality$centralityPlot)
 
-bridge <- Bridge(
-  fit,
-  communities = list(group1 = 1:3, group2 = 4:6)
-)
+bridge <- Bridge(fit, communities = list(group1 = 1:3, group2 = 4:6))
 bridge$bridge_data
+print(bridge$bridgePlot)
 ```
 
 ### Stability Analysis
@@ -651,10 +949,16 @@ bridge$bridge_data
 Cross-sectional network:
 
 ```r
-fit <- quickNet(mtcars[, 1:6], model = "correlation", pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
+
+fit <- quickNet(data, model = "correlation", pie = FALSE)
 set.seed(20)
 stability <- Stability(fit, nboot = 5)
-
 stability$edge_bootstrap_stability
 stability$case_drop_centrality_stability
 ```
@@ -662,7 +966,23 @@ stability$case_drop_centrality_stability
 Longitudinal network:
 
 ```r
+library(quickNet)
+set.seed(12)
+n <- 300
+panel_data <- data.frame(id = seq_len(n))
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
+for (wave in 1:3) {
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
+}
+
+panel_fit <- PanelNet(panel_data, nodes = c("x1", "x2", "x3"),
+                      waves = 1:3, id = "id", nfolds = 5, seed = 12)
 longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 5, seed = 20)
+longitudinal_stability$default
+attr(longitudinal_stability, "resampling")
 ```
 
 ### Academic Reporting Parameters
@@ -670,7 +990,14 @@ longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 5, seed = 20)
 Use `quicknet_report()` to extract report-ready sample information, estimation settings, network summaries, edge summaries, node-level indices, and model-specific parameters from any `quicknet_fit` object.
 
 ```r
-fit <- quickNet(mtcars[, 1:6], model = "EBICglasso", pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
+
+fit <- quickNet(data, model = "EBICglasso", pie = FALSE)
 report <- quicknet_report(fit)
 
 report$sample          # Sample size and node count
@@ -687,12 +1014,18 @@ report$text            # Short plain-language summary
 Use `Perturbation()` for model-implied in silico perturbation analyses. These results are useful for hypothesis generation and candidate target screening, but they should not be interpreted as causal intervention effects.
 
 ```r
-fit <- quickNet(mtcars[, 1:6], model = "partial", pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
 
+fit <- quickNet(data, model = "partial", pie = FALSE)
 dosage <- Perturbation(
   fit,
   method = "dosage",
-  targets = c("mpg", "cyl"),
+  targets = c("x1", "x2"),
   dose = c(0.25, 0.50, 1.00),
   config = list(bounds = NULL)
 )
@@ -700,30 +1033,44 @@ dosage <- Perturbation(
 dosage$metrics
 dosage$rankings
 quicknet_report(dosage)$text
-
 plot(dosage)
-get_perturbation_plot(dosage, type = "rank")
-get_perturbation_plot(dosage, type = "dose_response")
-get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1)
+print(get_perturbation_plot(dosage, type = "rank"))
+print(get_perturbation_plot(dosage, type = "dose_response"))
+print(get_perturbation_plot(dosage, type = "node_change", perturbation_id = 1))
 ```
 
-Continuous methods implement the revised SymPerturb 0.1.0 algorithms. They estimate Gaussian means and ridge-regularized covariance from `fit$data`. Topology thresholding is separate from the state covariance. Default bounds are `[0,4]`; use `bounds = NULL` for unbounded outcomes such as this `mtcars` illustration.
+Continuous methods implement the revised SymPerturb 0.1.0 algorithms. They estimate Gaussian means and ridge-regularized covariance from `fit$data`. Topology thresholding is separate from the state covariance. Default bounds are `[0,4]`; these examples use `bounds = NULL` for their simulated unbounded continuous outcomes.
 
 The input must retain at least three participants and three finite numeric symptom columns. Both `symperturb` and `sequence` require a named `modules` mapping covering every symptom and containing at least two modules. Complete analysis and sequence optimization use the same scored candidate table. An existing character/factor `groups` vector in the fit can supply the module mapping.
 
 ```r
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
+
+fit <- quickNet(data, model = "partial", pie = FALSE)
+modules <- c(x1 = "group1", x2 = "group1", x3 = "group1",
+             x4 = "group2", x5 = "group2", x6 = "group2")
 cfg <- list(bounds = NULL)
-Perturbation(fit, "knockout", targets = "mpg", config = cfg)
-Perturbation(fit, "knockdown", targets = "mpg", dose = 0.50, config = cfg)
-blocked <- Perturbation(fit, "edge_block", targets = "mpg", config = cfg)
-Perturbation(fit, "node_block", targets = "mpg", config = cfg)
-Perturbation(fit, "combination", targets = c("mpg", "cyl", "disp"), config = cfg)
-modules <- c(mpg = "performance", cyl = "engine", disp = "engine",
-             hp = "engine", drat = "performance", wt = "performance")
-sequence <- Perturbation(fit, "sequence", targets = c("mpg", "cyl", "disp"),
+
+knockout <- Perturbation(fit, "knockout", targets = "x1", config = cfg)
+knockout$metrics
+knockdown <- Perturbation(fit, "knockdown", targets = "x1", dose = 0.50, config = cfg)
+knockdown$metrics
+blocked <- Perturbation(fit, "edge_block", targets = "x1", config = cfg)
+blocked$metrics
+node_block <- Perturbation(fit, "node_block", targets = "x1", config = cfg)
+node_block$metrics
+combination <- Perturbation(fit, "combination", targets = c("x1", "x2", "x3"), config = cfg)
+combination$pair_scores
+sequence <- Perturbation(fit, "sequence", targets = c("x1", "x2", "x3"),
                          steps = 2, modules = modules, config = cfg)
-get_perturbation_plot(blocked, "edge_block")
-get_perturbation_plot(sequence, "sequence")
+sequence$sequence
+print(get_perturbation_plot(blocked, "edge_block"))
+print(get_perturbation_plot(sequence, "sequence"))
 
 result <- Perturbation(fit, "symperturb", modules = modules, seed = 20,
   config = list(bounds = NULL, sequence_length = 2,
@@ -750,6 +1097,15 @@ For Ising models, `ising_threshold` provides a lightweight single-chain
 threshold sensitivity analysis:
 
 ```r
+library(quickNet)
+set.seed(1)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
 ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 
 ising_result <- Perturbation(
@@ -759,8 +1115,10 @@ ising_result <- Perturbation(
   threshold_shift = -0.5
 )
 
-get_perturbation_plot(ising_result, type = "rank")
-get_perturbation_plot(ising_result, type = "node_change", target = "x1")
+ising_result$metrics
+ising_result$rankings
+print(get_perturbation_plot(ising_result, type = "rank"))
+print(get_perturbation_plot(ising_result, type = "node_change", target = "x1"))
 ```
 
 For the formal, single-network NIRA workflow described by Wang et al. (2026),
@@ -770,6 +1128,17 @@ simulations, multiplicity-adjusted permutation tests, and repeated-simulation
 rank stability:
 
 ```r
+library(quickNet)
+set.seed(1)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
+ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
+
 nira_result <- NIRA(
   ising_fit,
   perturbation_type = "alleviating",
@@ -815,12 +1184,26 @@ and source references are linked in the [intervention audit](docs/intervention-r
 ### Network Comparison
 
 ```r
-net1 <- quickNet(mtcars[, 1:6], pie = FALSE)
-net2 <- quickNet((mtcars[, 1:6])^2, pie = FALSE)
-
+library(quickNet)
 set.seed(21)
-comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 9, test.edges = TRUE)
+n <- 300
+shared1 <- rnorm(n)
+shared2 <- rnorm(n)
+group1 <- as.data.frame(replicate(6, 0.4 * shared1 + rnorm(n)))
+group2 <- as.data.frame(replicate(6, 0.7 * shared2 + rnorm(n)))
+names(group1) <- names(group2) <- paste0("x", 1:6)
+net1 <- quickNet(group1, model = "EBICglasso", pie = FALSE)
+net2 <- quickNet(group2, model = "EBICglasso", pie = FALSE)
+
+comparison <- NetCompare(net1, net2, paired = FALSE, it = 9, test.edges = TRUE)
+data.frame(
+  statistic = c("Network structure", "Global strength"),
+  observed = c(comparison$nwinv.real, comparison$glstrinv.real),
+  p_value = c(comparison$nwinv.pval, comparison$glstrinv.pval)
+)
+comparison$einv.pvals
 plots <- get_compare_plot(comparison, net1, output = FALSE)
+plot(plots$diff_plot)
 ```
 
 `paired = TRUE` follows `NetworkComparisonTest::NCT`; row i must identify the
@@ -835,6 +1218,7 @@ time-shift (TTS) test of Yuan and Shou (2024). Its author implementation require
 an explicit truncation radius:
 
 ```r
+library(quickNet)
 set.seed(1)
 series <- cbind(as.numeric(arima.sim(list(ar = 0.5), n = 160)),
                 as.numeric(arima.sim(list(ar = 0.5), n = 160)))
@@ -853,15 +1237,24 @@ linked in the [MTD record](docs/mtd-inference-validation.md).
 ### Export Plots and Tables
 
 ```r
-fit <- quickNet(mtcars[, 1:6], pie = FALSE)
+library(quickNet)
+set.seed(20)
+n <- 300
+shared <- rnorm(n)
+data <- as.data.frame(replicate(6, 2 + 0.6 * shared + rnorm(n)))
+names(data) <- paste0("x", 1:6)
 
-export_dir <- file.path(tempdir(), "quicknet-example")
-dir.create(export_dir, showWarnings = FALSE)
+fit <- quickNet(data, model = "EBICglasso", pie = FALSE)
+export_dir <- tempfile("quicknet-example-")
+dir.create(export_dir)
 get_network_plot(fit, path = export_dir, prefix = "example")
 utils::write.csv(get_edges_df(fit), file.path(export_dir, "edges.csv"), row.names = FALSE)
 writeLines(quicknet_report(fit)$text, file.path(export_dir, "report.txt"))
+
 globalCoeff(fit)
-list.files(export_dir)
+list.files(export_dir, full.names = TRUE)
+head(utils::read.csv(file.path(export_dir, "edges.csv")))
+cat(readLines(file.path(export_dir, "report.txt")), sep = "\n")
 ```
 
 ## References

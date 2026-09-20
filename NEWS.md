@@ -1,5 +1,14 @@
 # quickNet 0.0.0.9000
 
+## Independent documentation examples
+
+- Every analysis code block in both READMEs constructs its own input data or
+  simulation design and displays its results. Examples can run individually
+  from a fresh R session, including input checks and downstream analyses.
+- Workflow validation executes each documented block in a separate R process
+  and compares the English and Chinese code. Installation commands are excluded
+  from analysis execution.
+
 ## Result consistency and validation
 
 - Centrality and bridge statistics use the fitted network matrix. Directed
