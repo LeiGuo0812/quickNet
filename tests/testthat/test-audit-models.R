@@ -26,7 +26,9 @@ test_that("input checks reject ambiguous names and invalid temporal inputs", {
   dat$day <- 1
   dat$beep <- c(1, 1, 2, 3, 4, 5)
   expect_false(check_input(dat, model = "graphicalVAR", vars = c("x", "y"),
-                          quiet = TRUE)$ok)
+                          day = "day", beep = "beep", quiet = TRUE)$ok)
+  expect_true(check_input(dat, model = "graphicalVAR", vars = c("x", "y"),
+                         quiet = TRUE)$ok)
 })
 
 test_that("network templates preserve specified constraints or fail explicitly", {

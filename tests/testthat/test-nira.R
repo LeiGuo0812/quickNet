@@ -257,7 +257,7 @@ test_that("engine iterations are validated, recorded, and control simulation", {
   expect_identical(result$settings$engine_iterations, 7L)
   expect_identical(result$provenance$engine_iterations, 7L)
   expect_true(any(grepl(
-    "convergence diagnostic",
+    "Finite-iteration sampling",
     result$warnings,
     fixed = TRUE
   )))

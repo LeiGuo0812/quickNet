@@ -207,6 +207,8 @@ which is the EBIC `lambdaGam` used for moderation. SymPerturb's
 
 ## Minimal Examples
 
+Run the code blocks in order from Example 1; later examples reuse the generated data and fitted objects. Start in a clean R session with all example dependencies installed. Simulations use fixed seeds. Small repetition counts and tuning grids are explicit workflow demonstration budgets; they do not support formal significance, stability or power conclusions and do not change package defaults. Choose and validate analysis budgets separately for research. See the [executed workflow record](docs/workflow-validation.md).
+
 ### 1. EBICglasso Cross-Sectional Network
 
 ```r
@@ -256,12 +258,13 @@ summary(fit)
 
 ```r
 set.seed(1)
-binary_data <- data.frame(
-  x1 = rbinom(120, 1, 0.50),
-  x2 = rbinom(120, 1, 0.45),
-  x3 = rbinom(120, 1, 0.55),
-  x4 = rbinom(120, 1, 0.50)
-)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
 
 fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 
@@ -321,14 +324,15 @@ fit$nodes
 `PanelNet()` expects wide-format panel data. By default, column names should follow the pattern `node_twave`, for example `x1_t1` and `x1_t2`.
 
 ```r
-set.seed(1)
-n <- 80
+set.seed(12)
+n <- 300
 panel_data <- data.frame(id = seq_len(n))
-
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
 for (wave in 1:3) {
-  panel_data[[paste0("x1_t", wave)]] <- rnorm(n)
-  panel_data[[paste0("x2_t", wave)]] <- rnorm(n)
-  panel_data[[paste0("x3_t", wave)]] <- rnorm(n)
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
 }
 
 panel_fit <- PanelNet(
@@ -336,7 +340,7 @@ panel_fit <- PanelNet(
   nodes = c("x1", "x2", "x3"),
   waves = 1:3,
   id = "id",
-  nfolds = 5
+  nfolds = 5, seed = 12
 )
 
 panel_fit$networks$default       # Autoregressive and cross-lagged paths
@@ -371,21 +375,23 @@ panel_gvar$networks$between
 
 ### 9. graphicalVAR Intensive Longitudinal Network
 
-`LongitudinalNet()` expects long-format data with a subject ID, a day/date variable, and a within-day measurement occasion variable.
+`LongitudinalNet()` expects long-format data with a subject ID. The `day` and `beep` variables are optional; when supplied, they define day boundaries and measurement order. See the [data and time validation record](docs/data-time-validation.md) for backend-specific handling.
 
 ```r
-set.seed(1)
-ids <- rep(1:8, each = 12)
-time <- rep(1:12, times = 8)
-
-esm_data <- data.frame(
-  id = ids,
-  day = ceiling(time / 4),
-  beep = ((time - 1) %% 4) + 1,
-  x1 = rnorm(length(ids)),
-  x2 = rnorm(length(ids)),
-  x3 = rnorm(length(ids))
-)
+set.seed(13)
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+esm_data <- simulate_esm()
 
 gvar_fit <- LongitudinalNet(
   esm_data,
@@ -393,7 +399,7 @@ gvar_fit <- LongitudinalNet(
   id = "id",
   day = "day",
   beep = "beep",
-  model = "graphicalVAR"
+  model = "graphicalVAR", nLambda = 5, subjectNetworks = FALSE
 )
 
 gvar_fit$networks$temporal
@@ -442,7 +448,7 @@ mlvar_fit$nodes
 power <- NetworkPower(
   nodes = 8,
   density = 0.30,
-  replications = 100,
+  sample_sizes = c(100, 200, 400), replications = 5, seed = 14,
   target_metric = "mcc",
   target_value = 0.60,
   target_probability = 0.80
@@ -454,11 +460,22 @@ quicknet_report(power)$text
 ```
 
 If `sample_sizes = NULL`, `NetworkPower()` generates an adaptive candidate
-grid from the number of nodes. The Monte Carlo default target metric is `mcc`, which is
-more balanced than sensitivity alone because it penalizes both false negatives
-and false positives. If you explicitly use `target_metric = "sensitivity"`,
-interpret the recommendation as optimistic unless specificity or false-positive
-control is also reported.
+grid from the number of nodes. The Monte Carlo default target metric is `mcc`,
+which accounts for both false negatives and false positives.
+
+Monte Carlo probabilities describe recovery of one fixed generating network.
+`true_network` is the population marginal-correlation matrix for
+`estimator = "correlation"` and the partial-correlation graph for the other
+estimators; `generating_network` retains the generating partial graph.
+Settings record the actual density, edge strengths and any scaling needed for
+a positive-definite precision matrix. Summaries include Monte Carlo standard
+errors and pointwise exact-binomial 95% intervals. Failed fits and undefined
+target metrics count as non-achievements and are reported separately.
+
+The recommended N is the smallest evaluated candidate whose point estimate
+meets the target; `recommended_n` is `NA` if none qualifies. Boundary flags and
+`lower_bound_supports_target` accompany the result. Independent validation and
+interval interpretation are documented in the [power validation record](docs/network-power-validation.md).
 
 For `powerly`-based GGM planning:
 
@@ -469,23 +486,44 @@ powerly_plan <- NetworkPower(
   density = 0.30,
   range_lower = 100,
   range_upper = 500,
+  samples = 5, replications = 5, boots = 20, iterations = 1,
+  cores = 1, verbose = FALSE, seed = 15,
   target_metric = "sensitivity",
   target_value = 0.60,
   target_probability = 0.80
 )
 ```
 
+Powerly recommendations use its bootstrap-median curve and retain the native
+generation settings, including five ordinal levels by default. Pass a known
+partial-correlation graph directly as `model_matrix = ...`; `nodes` and `density`
+are then unnecessary. Use `powerly::validate(powerly_plan$fit)` for the source
+package's independent validation. See the [power validation record](docs/network-power-validation.md)
+for tested designs and their limits.
+
+Saved-fit and platform checks are documented in the
+[legacy-object audit](docs/legacy-object-validation.md) and
+[platform compatibility record](docs/platform-compatibility-validation.md).
+Reports recover historical settings from saved backend evidence; refitting
+requires enough evidence to preserve the original estimation method.
+
 ### 13. Confirmatory, Latent, and Dynamic Networks
 
 ```r
+set.seed(16)
+factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
+continuous_data <- as.data.frame(sapply(1:6, function(j)
+  0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
+names(continuous_data) <- paste0("x", 1:6)
+
 omega <- matrix(1, 6, 6)
 diag(omega) <- 0
 colnames(omega) <- rownames(omega) <- paste0("x", 1:6)
 
-confirmatory <- ConfirmatoryNet(data, vars = paste0("x", 1:6), omega = omega)
+confirmatory <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), omega = omega)
 
-confirmatory_cor <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "cor")
-confirmatory_precision <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "precision")
+confirmatory_cor <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "cor")
+confirmatory_precision <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "precision")
 ```
 
 ```r
@@ -499,7 +537,8 @@ Depression =~ d1 + d2 + d3
 Anxiety    =~ a1 + a2 + a3
 "
 
-latent <- LatentNet(data, model = cfa_model)
+latent_data <- setNames(continuous_data, c("d1", "d2", "d3", "a1", "a2", "a3"))
+latent <- LatentNet(latent_data, model = cfa_model)
 latent$networks$latent
 latent$networks$residual
 ```
@@ -509,8 +548,8 @@ lambda <- matrix(0, 6, 2, dimnames = list(paste0("x", 1:6), c("Depression", "Anx
 lambda[1:3, "Depression"] <- 1
 lambda[4:6, "Anxiety"] <- 1
 
-lnm <- LatentNet(data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
-lrnm <- LatentNet(data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
+lnm <- LatentNet(continuous_data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
+lrnm <- LatentNet(continuous_data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
 
 lnm$networks$latent
 lrnm$networks$residual
@@ -518,6 +557,11 @@ lrnm$networks$residual
 
 ```r
 panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
+
+set.seed(17)
+time_data <- data.frame(x1 = as.numeric(arima.sim(list(ar = 0.3), n = 250)),
+  x2 = as.numeric(arima.sim(list(ar = -0.2), n = 250)),
+  x3 = sample(1:2, 250, replace = TRUE))
 
 mixed_var <- MixedVARNet(
   time_data,
@@ -541,8 +585,14 @@ tv_mvar <- TimeVaryingNet(
 `MetaNet()` estimates psychonetrics meta-analytic network models from multiple study correlation/covariance matrices or multi-study raw data.
 
 ```r
-cors <- list(study1_cor, study2_cor, study3_cor)
-nobs <- c(150, 180, 220)
+set.seed(18)
+nobs <- c(150, 180, 220, 160, 190, 210)
+population_cor <- matrix(c(1, 0.3, 0.1, 0.3, 1, 0.2, 0.1, 0.2, 1), 3)
+cors <- lapply(nobs, function(n) {
+  values <- matrix(rnorm(n * 3), n, 3) %*% chol(population_cor)
+  colnames(values) <- c("x1", "x2", "x3")
+  cor(values)
+})
 
 meta_ggm <- MetaNet(
   cors = cors,
@@ -555,17 +605,24 @@ meta_ggm$networks$default
 quicknet_report(meta_ggm)$sample
 ```
 
-For multi-study intensive longitudinal data:
+For multi-study intensive longitudinal data: This small example fixes off-diagonal random-effect Cholesky terms to zero using the native `lowertri_randomEffects = "diag"` control.
 
 ```r
+set.seed(19)
+multi_study_esm <- do.call(rbind, lapply(1:20, function(study) {
+  values <- simulate_esm(cross_lag = runif(1, 0.15, 0.55),
+                         autoregressive = runif(1, 0.15, 0.45))
+  values$study <- study
+  values
+}))
 meta_gvar <- MetaNet(
   data = multi_study_esm,
   studyvar = "study",
-  vars = c("x1", "x2", "x3"),
+  vars = c("x1", "x2"),
   id = "id",
   day = "day",
   beep = "beep",
-  model = "meta_gvar"
+  model = "meta_gvar", lowertri_randomEffects = "diag"
 )
 
 meta_gvar$networks$temporal
@@ -595,7 +652,8 @@ Cross-sectional network:
 
 ```r
 fit <- quickNet(mtcars[, 1:6], model = "correlation", pie = FALSE)
-stability <- Stability(fit, nboot = 100)
+set.seed(20)
+stability <- Stability(fit, nboot = 5)
 
 stability$edge_bootstrap_stability
 stability$case_drop_centrality_stability
@@ -604,7 +662,7 @@ stability$case_drop_centrality_stability
 Longitudinal network:
 
 ```r
-longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 100)
+longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 5, seed = 20)
 ```
 
 ### Academic Reporting Parameters
@@ -667,9 +725,9 @@ sequence <- Perturbation(fit, "sequence", targets = c("mpg", "cyl", "disp"),
 get_perturbation_plot(blocked, "edge_block")
 get_perturbation_plot(sequence, "sequence")
 
-result <- Perturbation(fit, "symperturb", modules = modules,
+result <- Perturbation(fit, "symperturb", modules = modules, seed = 20,
   config = list(bounds = NULL, sequence_length = 2,
-                bootstrap_replicates = 100, bootstrap_top_k = 2))
+                bootstrap_replicates = 5, bootstrap_top_k = 2))
 result$target_scores    # Seven raw utilities, normalized utilities, VPPS and rank
 result$pair_scores     # Signed increment beyond the better single target
 result$scenario_ranks  # 13 sensitivity scenarios; robustness stays outside VPPS
@@ -684,7 +742,7 @@ Combinations use unit-dose `incremental_pair_value`: joint benefit minus the bet
 
 The R implementation uses no Python runtime. Numerical regression fixtures are generated with the local Python reference. Bootstrap uses R's RNG; to compare exact bootstrap numbers across languages, supply identical one-based `bootstrap_indices`, rather than assuming equal integer seeds generate equal samples.
 
-Validation: seven reference configurations and the supplied 12-node Python example agree within numerical tolerance. The example's seven result tables have a maximum absolute difference of `6.7e-13`, including 25 shared bootstrap resamples. The implementation passed all 1,552 package test assertions and `R CMD check --no-manual` with no errors, warnings, or notes. See the [algorithm, interface, and validation record](docs/symperturb-validation.md) for scope and reproduction commands.
+Validation: seven reference configurations and the supplied 12-node Python example agree within numerical tolerance. The example's seven result tables have a maximum absolute difference of `6.7e-13`, including 25 shared bootstrap resamples. At the earlier SymPerturb audit revision, the full package suite passed 1,552 assertions and `R CMD check --no-manual` reported no errors, warnings, or notes. Those counts describe that historical audit, rather than the current package-test total. See the [algorithm, interface, and validation record](docs/symperturb-validation.md) for scope and reproduction commands.
 
 Reference: Zhu, Z., Yu, J., Hu, T., Yang, Z., & Wang, J. (2026). *SymPerturb converts symptom-network structure into testable intervention priorities*. arXiv:2607.28673v1; revised method specification and SymPerturb 0.1.0.
 
@@ -697,12 +755,12 @@ ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 ising_result <- Perturbation(
   ising_fit,
   method = "ising_threshold",
-  targets = c("b1", "b2"),
+  targets = c("x1", "x2"),
   threshold_shift = -0.5
 )
 
 get_perturbation_plot(ising_result, type = "rank")
-get_perturbation_plot(ising_result, type = "node_change", target = "b1")
+get_perturbation_plot(ising_result, type = "node_change", target = "x1")
 ```
 
 For the formal, single-network NIRA workflow described by Wang et al. (2026),
@@ -716,12 +774,12 @@ nira_result <- NIRA(
   ising_fit,
   perturbation_type = "alleviating",
   amount_of_SDs_perturbation = 2,
-  n_samples = 5000,
-  moderation_nboot = 1000,
-  n_permutations = 5000,
-  stability_reps = 1000,
-  parallel = TRUE,
-  ncores = 6,
+  n_samples = 100,
+  moderation_nboot = 5,
+  n_permutations = 99,
+  stability_reps = 5,
+  parallel = FALSE,
+  ncores = 1,
   seed = 2025,
   engine = "literature",
   engine_iterations = 100
@@ -751,8 +809,8 @@ holding every edge fixed is then unsupported. Set
 `proceed_on_moderation = TRUE` to continue with an explicit warning.
 
 NIRA expects complete cross-sectional 0/1 data and a meaningful total score.
-Its results are model-implied simulations from fixed estimated parameters, not
-causal treatment effects or bootstrap network stability.
+Results describe simulations conditional on the fitted network. Method assumptions
+and source references are linked in the [intervention audit](docs/intervention-reliability-validation.md).
 
 ### Network Comparison
 
@@ -760,18 +818,50 @@ causal treatment effects or bootstrap network stability.
 net1 <- quickNet(mtcars[, 1:6], pie = FALSE)
 net2 <- quickNet((mtcars[, 1:6])^2, pie = FALSE)
 
-comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 100, test.edges = TRUE)
+set.seed(21)
+comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 9, test.edges = TRUE)
 plots <- get_compare_plot(comparison, net1, output = FALSE)
 ```
+
+`paired = TRUE` follows `NetworkComparisonTest::NCT`; row i must identify the
+same participant in both inputs. Method assumptions and permutation provenance
+are recorded in `comparison$info$permutation`; see [source and validation](docs/paired-nct-validation.md).
+
+### MTD Time-Series Coupling Test
+
+`MTD.No.Smooth.Test()` uses the derivative normalization in the Shine authors'
+MATLAB implementation, without smoothing. Inference defaults to the truncated
+time-shift (TTS) test of Yuan and Shou (2024). Its author implementation requires
+an explicit truncation radius:
+
+```r
+set.seed(1)
+series <- cbind(as.numeric(arima.sim(list(ar = 0.5), n = 160)),
+                as.numeric(arima.sim(list(ar = 0.5), n = 160)))
+mtd <- MTD.No.Smooth.Test(series, radius = 39)
+mtd$p.value
+mtd$test_coupling_mean
+```
+
+Supply complete, equally spaced observations in temporal order and choose `radius`
+in advance. `coupling_mean` describes the full series; `test_coupling_mean` describes
+the retained window. TTS uses all allowed shifts and does not take `nperm`.
+`method = "shuffle", nperm = 999` selects observation permutation.
+The source methods' stationarity/exchangeability assumptions and validation are
+linked in the [MTD record](docs/mtd-inference-validation.md).
 
 ### Export Plots and Tables
 
 ```r
 fit <- quickNet(mtcars[, 1:6], pie = FALSE)
 
-get_network_plot(fit, path = tempdir(), prefix = "example")
-get_edges_df(fit)
+export_dir <- file.path(tempdir(), "quicknet-example")
+dir.create(export_dir, showWarnings = FALSE)
+get_network_plot(fit, path = export_dir, prefix = "example")
+utils::write.csv(get_edges_df(fit), file.path(export_dir, "edges.csv"), row.names = FALSE)
+writeLines(quicknet_report(fit)$text, file.path(export_dir, "report.txt"))
 globalCoeff(fit)
+list.files(export_dir)
 ```
 
 ## References
@@ -799,6 +889,9 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Single-network NIRA workflow, moderation prerequisite, permutation testing, and simulation stability: Wang, F., Wu, Y., Wu, Y., & Zhu, T. (2026). Simulation intervention for cross-sectional network models: Based on the R packages NodeIdentifyR and NIRApost. *Advances in Methods and Practices in Psychological Science*. https://doi.org/10.1177/25152459261452944
 - Literature-compatible Ising simulation engine: Epskamp, S. (2026). *IsingSampler: Sampling Methods and Distribution Functions for the Ising Model* (R package version 0.5.0). https://doi.org/10.32614/CRAN.package.IsingSampler
 - Interpreting centrality cautiously: Bringmann, L. F., Elmer, T., Epskamp, S., Krause, R. W., Schoch, D., Wichers, M., Wigman, J. T. W., & Snippe, E. (2019). What do centrality measures measure in psychological networks? *Journal of Abnormal Psychology, 128*(8), 892-903. https://doi.org/10.1037/abn0000446
+
+- MTD coupling: Shine, J. M., Koyejo, O., Bell, P. T., Gorgolewski, K. J., Gilat, M., & Poldrack, R. A. (2015). Estimation of dynamic functional connectivity using Multiplication of Temporal Derivatives. *NeuroImage, 122*, 399–407. https://doi.org/10.1016/j.neuroimage.2015.07.064
+- Time-series independence inference: Yuan, A. E., & Shou, W. (2024). A rigorous and versatile statistical test for correlations between stationary time series. *PLOS Biology, 22*(8), e3002758. https://doi.org/10.1371/journal.pbio.3002758
 
 ## Changelog
 

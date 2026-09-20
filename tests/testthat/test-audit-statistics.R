@@ -5,7 +5,7 @@ test_that("MTD matches the temporal-derivative normalization in Shine Eq. 2", {
   normalized <- sweep(derivative, 2, apply(derivative, 2, sd), "/")
   expected <- normalized[, 1] * normalized[, 2]
   set.seed(713)
-  result <- MTD.No.Smooth.Test(x, nperm = 19)
+  result <- MTD.No.Smooth.Test(x, nperm = 19, method = "shuffle")
   expect_equal(result$coupling[, 1, 2], unname(expected))
   expect_equal(result$coupling_mean, mean(expected))
   set.seed(713)
@@ -14,7 +14,7 @@ test_that("MTD matches the temporal-derivative normalization in Shine Eq. 2", {
     mean(normalized[, 1] * d / sd(d))
   })
   expect_equal(result$p.value, (1 + sum(abs(null_values) >= abs(mean(expected)))) / 20)
-  expect_error(MTD.No.Smooth.Test(cbind(1:20, (1:20)^2), nperm = 1), "temporal derivatives")
+  expect_error(MTD.No.Smooth.Test(cbind(1:20, (1:20)^2), radius = 4), "temporal derivatives")
 })
 
 test_that("MCC does not overflow with thousands of edges", {
@@ -138,7 +138,8 @@ test_that("Stability requests an actual centrality difference plot", {
     calls[[length(calls) + 1]] <<- list(...)
     NULL
   }, .package = "base")
-  fit <- structure(list(model = "EBICglasso", fit = list(), meta = list(gamma = 0.5)), class = "quicknet_fit")
+  fit <- structure(list(model = "EBICglasso", fit = list(),
+    meta = list(gamma = 0.5, backend_args = list(corMethod = "cor"))), class = "quicknet_fit")
   invisible(Stability(fit, nboot = 1))
   strength_calls <- Filter(function(x) length(x) >= 2 && identical(x[[2]], "strength"), calls)
   expect_length(strength_calls, 1)

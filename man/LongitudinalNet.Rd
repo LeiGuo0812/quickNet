@@ -43,7 +43,8 @@ graphicalVAR. Ignored for mlVAR and psychonetrics_gvar.}
 in psychonetrics. A logical value explicitly selects scaling.}
 
 \item{centerWithin}{NULL inherits TRUE in graphicalVAR and FALSE in
-psychonetrics. Not an mlVAR control; use its native scaleWithin if intended.}
+psychonetrics. Older psychonetrics versions without this control support
+only FALSE or NULL. Not an mlVAR control; use its native scaleWithin if intended.}
 
 \item{lags}{Positive integer vector of lags used by \code{mlVAR}.}
 

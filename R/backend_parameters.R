@@ -111,3 +111,62 @@ quicknet_lavaan_estimator <- function(fit) {
   estimator <- fit@Options$estimator.orig %||% fit@Options$estimator
   if (identical(estimator, "default")) fit@Options$estimator else estimator
 }
+
+# A bootnet object stores its original estimator function as well as supplied
+# arguments. Its saved formals are evidence of that fit's defaults, even when
+# the installed bootnet version has changed since serialization.
+quicknet_saved_ebic_args <- function(fit) {
+  raw <- if (is.list(fit$fit)) fit$fit else list()
+  saved <- fit$meta$backend_args %||% list()
+  if (is.function(raw$estimator)) {
+    formal <- formals(raw$estimator)
+    choices <- c("corMethod", "missing", "sampleSize", "nonPositiveDefinite", "transform")
+    recovered <- list()
+    for (name in intersect(names(formal), quicknet_cross_backend_names("EBICglasso"))) {
+      if (identical(formal[[name]], quote(expr = ))) next
+      value <- tryCatch(eval(formal[[name]], environment(raw$estimator)), error = function(e) NULL)
+      if (name %in% choices && length(value)) value <- value[[1L]]
+      recovered[name] <- list(value)
+    }
+    saved <- quicknet_merge_args(recovered, saved)
+  }
+  if (is.list(raw$arguments)) {
+    recorded <- raw$arguments[intersect(names(raw$arguments), quicknet_cross_backend_names("EBICglasso"))]
+    saved <- quicknet_merge_args(saved, recorded)
+  }
+  saved
+}
+
+# Reports reconcile actual backend evidence without mutating the user's RDS.
+# Absence of evidence is reported as unknown rather than today's defaults.
+quicknet_fit_effective_meta <- function(fit) {
+  meta <- fit$meta %||% list()
+  raw <- if (is.list(fit$fit)) fit$fit else list()
+  unknown <- "unknown (not recorded)"
+  if (fit$model == "EBICglasso") {
+    saved <- quicknet_saved_ebic_args(fit)
+    method <- saved$corMethod
+    meta$cor_method <- if (is.null(method)) unknown else if (identical(method[[1L]], "cor")) {
+      saved$corArgs$method %||% "pearson"
+    } else method[[1L]]
+    if (identical(meta$missing, "none") && is.null(meta$backend_args)) meta$missing <- saved$missing %||% unknown
+    meta$backend_settings <- quicknet_merge_args(meta$backend_settings %||% list(), saved)
+  }
+  if (fit$model == "ising") {
+    meta$cor_method <- NULL
+    meta$AND <- raw$AND %||% meta$AND %||% unknown
+  }
+  if (fit$model == "mgm") {
+    saved <- if (is.list(raw$call)) raw$call else list()
+    meta$cor_method <- NULL
+    meta$lambdaSel <- saved$lambdaSel %||% meta$lambdaSel %||% unknown
+    meta$backend_settings <- quicknet_merge_args(meta$backend_settings %||% list(), saved)
+  }
+  if (fit$model == "clpn" && is.null(meta$standardize_data)) {
+    meta$standardize_data <- meta$standardize %||% unknown
+    calls <- lapply(raw$glmnet$fits, function(x) x$call$standardize)
+    flags <- vapply(calls, function(x) is.logical(x) && length(x) == 1L && !is.na(x), logical(1))
+    meta$standardize <- if (length(calls) && all(flags) && length(unique(unlist(calls))) == 1L) calls[[1L]] else unknown
+  }
+  meta
+}

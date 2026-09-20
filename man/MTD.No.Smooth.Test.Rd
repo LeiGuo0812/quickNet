@@ -4,31 +4,81 @@
 \alias{MTD.No.Smooth.Test}
 \title{Calculate coupling with the Multiplication of Temporal Derivatives method}
 \usage{
-MTD.No.Smooth.Test(data, nperm = 5000)
+MTD.No.Smooth.Test(
+  data,
+  nperm = 5000,
+  method = c("tts", "shuffle"),
+  radius = NULL
+)
 }
 \arguments{
-\item{data}{A matrix or a data frame. The rows should be observations or time points. The number of columns should be two.}
+\item{data}{Two numeric columns of equally spaced observations from one pair
+of time series, in temporal order. Missing values are not allowed.}
 
-\item{nperm}{The number of permutations to test the significant of coupling.}
+\item{nperm}{Number of random permutations for \code{method = "shuffle"}.
+TTS uses every allowed shift; omit \code{nperm} when using TTS.}
+
+\item{method}{Significance test. \code{"tts"} uses the truncated time-shift
+procedure of Yuan and Shou (2024). \code{"shuffle"} permutes the second
+column's raw observations and requires their exchangeability under the null.}
+
+\item{radius}{Required truncation radius for TTS, chosen before examining
+test results. A nonnegative integer with \code{2 * radius < nrow(data) - 1}.
+The authors' reference implementation has no default radius.}
 }
 \value{
-A list. \itemize{
-\item \code{coupling}: The coupling of the two columns in each observation.
-\item \code{coupling_mean}: The mean coupling value of all the observations,
-representing the overall coupling between the two columns.
-\item \code{p.value}: The permutation-test p value of the coupling.
-}
+A list containing \code{coupling} (time by 2 by 2 array),
+  \code{coupling_mean}, \code{p.value}, \code{method},
+  \code{test_coupling_mean}, \code{statistic} (its absolute value),
+  \code{null_coupling} (signed resampled means), \code{extreme_count},
+  \code{minimum_p}, \code{derivative_indices} (the tested first differences),
+  and \code{assumption}. TTS also returns \code{radius}, \code{shifts}
+  and \code{tts_bound} (the unclipped bound); shuffle returns \code{nperm}.
 }
 \description{
 Calculate coupling with the Multiplication of Temporal Derivatives method
 }
 \details{
-This function apply the method of Multiplication of Temporal Derivatives introduced by Shine, et al (2015). But note that this function doesn't apply time series smooth.
+Coupling follows Shine et al. (2015), without temporal smoothing.
+  First differences are divided by their full-series sample standard
+  deviations, as in the authors' MATLAB implementation.
+
+  TTS tests independence of the first-difference processes. The first
+  differences of the second column must be strictly stationary under the
+  null; stationarity is an assumption, not established by this function.
+  With \code{m = nrow(data) - 1} and radius \code{r}, the first derivative
+  series is restricted to indices \code{(r + 1):(m - r)}. The second is
+  shifted by every integer from \code{-r} to \code{r}, without wrapping.
+  The statistic is the absolute mean product. The common full-series
+  standardization cancels in the ordering of shifted statistics.
+
+  If \code{B} statistics (including zero shift and ties) are at least as
+  large as the zero-shift statistic, TTS returns
+  \code{p.value = min(1, B / (r + 1))}. No additional plus-one correction
+  is applied. The smallest possible p value is \code{1 / (r + 1)};
+  short series or small radii therefore limit significance resolution.
+  This test concerns the retained central window. \code{coupling_mean}
+  remains the descriptive mean over all first differences;
+  \code{test_coupling_mean} is the signed mean actually tested.
+
+  The explicit \code{"shuffle"} option retains a two-sided random
+  permutation test with the plus-one correction. Arbitrary time shuffling
+  is not valid for general autocorrelated series. Neither test establishes
+  a causal direction or rules out dependence when it is not significant.
 }
 \examples{
-MTD.No.Smooth.Test(mtcars[,1:2])
-
+set.seed(1)
+series <- cbind(as.numeric(arima.sim(list(ar = 0.5), n = 160)),
+                as.numeric(arima.sim(list(ar = 0.5), n = 160)))
+MTD.No.Smooth.Test(series, radius = 39)$p.value
 }
 \references{
-Shine, J. M., Koyejo, O., Bell, P. T., Gorgolewski, K. J., Gilat, M., & Poldrack, R. A. (2015). Estimation of dynamic functional connectivity using Multiplication of Temporal Derivatives. NeuroImage, 122, 399-407. https://doi.org/10.1016/j.neuroimage.2015.07.064
+Shine, J. M., Koyejo, O., Bell, P. T., Gorgolewski, K. J.,
+  Gilat, M., & Poldrack, R. A. (2015). Estimation of dynamic functional
+  connectivity using Multiplication of Temporal Derivatives.
+  NeuroImage, 122, 399-407. doi:10.1016/j.neuroimage.2015.07.064.
+
+  Yuan, A. E., & Shou, W. (2024). A rigorous and versatile statistical test
+  for correlations between stationary time series.
+  PLoS Biology, 22(8), e3002758. doi:10.1371/journal.pbio.3002758.
 }

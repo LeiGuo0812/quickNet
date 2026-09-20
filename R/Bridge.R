@@ -28,9 +28,8 @@ Bridge <- function(net_G, communities = NULL, useCommunities = "all", include = 
 
   results <- list()
 
-  bridge_input <- if (inherits(net_G, "quicknet_fit") && !is.null(net_G$plots$network)) {
-    net_G$plots$network
-  } else if (quicknet_is_directed(net_G)) {
+  # Preserve the fitted graph independently of cached display thresholds.
+  bridge_input <- if (quicknet_is_directed(net_G)) {
     qgraph::qgraph(
       quicknet_to_qgraph_matrix(quicknet_network_matrix(net_G), directed = TRUE),
       directed = TRUE,

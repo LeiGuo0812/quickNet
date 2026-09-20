@@ -138,6 +138,15 @@ PanelNet <- function(data,
       backend_version = as.character(utils::packageVersion("glmnet")),
       backend_settings = fit$settings,
       method_presets = list(family = "gaussian", folds = "grouped by participant", design = "pooled adjacent waves"),
+      analysis_sample = list(input_rows = nrow(panel_data),
+        input_subjects = length(unique(panel_data[[id]])),
+        complete_rows = length(design$retained_rows),
+        analyzed_subjects = length(unique(design$meta$id)),
+        temporal_rows = nrow(design$predictors),
+        temporal_subjects = length(unique(design$meta$id)),
+        temporal_rows_by_node = data.frame(node = nodes, observations = nrow(design$predictors)),
+        dropped_rows = design$dropped_rows,
+        counts_source = "complete-case CLPN design and participant-grouped folds"),
       seed = seed,
       call = match.call()
     )
@@ -158,7 +167,8 @@ PanelNet <- function(data,
 #' @param scale NULL inherits TRUE in graphicalVAR/mlVAR and no standardization
 #'   in psychonetrics. A logical value explicitly selects scaling.
 #' @param centerWithin NULL inherits TRUE in graphicalVAR and FALSE in
-#'   psychonetrics. Not an mlVAR control; use its native scaleWithin if intended.
+#'   psychonetrics. Older psychonetrics versions without this control support
+#'   only FALSE or NULL. Not an mlVAR control; use its native scaleWithin if intended.
 #' @param lags Positive integer vector of lags used by \code{mlVAR}.
 #' @param estimator NULL inherits the mlVAR or psychonetrics estimator.
 #' @param temporal NULL inherits the backend temporal structure. mlVAR resolves
@@ -199,7 +209,7 @@ LongitudinalNet <- function(data,
   if (model != "mlVAR" && !identical(as.integer(lags), 1L)) stop("This backend supports only lag 1 in LongitudinalNet.", call. = FALSE)
   if (model == "mlVAR" && !is.null(centerWithin)) stop("centerWithin is not an mlVAR argument; use scaleWithin if intended.", call. = FALSE)
   scale <- scale %||% (model != "psychonetrics_gvar")
-  centerWithin <- centerWithin %||% (model == "graphicalVAR")
+  if (model == "graphicalVAR") centerWithin <- centerWithin %||% TRUE
   if (model == "mlVAR") estimator <- estimator %||% "default"
   temporal_setting <- temporal %||% "default"
   contemporaneous_setting <- contemporaneous %||% "default"
@@ -217,7 +227,8 @@ LongitudinalNet <- function(data,
     stop("Missing required columns: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
   index <- c(id, day, beep)
-  dat <- data[do.call(order, as.data.frame(data[, index, drop = FALSE])), , drop = FALSE]
+  input_order <- do.call(order, as.data.frame(data[, index, drop = FALSE]))
+  dat <- data[input_order, , drop = FALSE]
 
   if (model == "psychonetrics_gvar") {
     if (!requireNamespace("psychonetrics", quietly = TRUE)) {
@@ -233,6 +244,7 @@ LongitudinalNet <- function(data,
       centerWithin = centerWithin,
       estimator = estimator,
       temporal = temporal,
+      input_order = input_order,
       call = match.call(),
       ...
     ))
@@ -292,6 +304,9 @@ LongitudinalNet <- function(data,
       quicknet_node_table(reported_networks[[network_name]], network = network_name)
     }
   }))
+  lag_info <- quicknet_longitudinal_lag_index(dat, vars, id, day, beep,
+    if (model == "mlVAR") fit$input$compareToLags %||% lags else 1L, input_order)
+  analysis_sample <- quicknet_longitudinal_sample(dat, vars, id, lag_info, fit, model)
 
   quicknet_fit(
     model = model,
@@ -317,6 +332,9 @@ LongitudinalNet <- function(data,
       temporal = if (model == "mlVAR") temporal_setting else NULL,
       contemporaneous = if (model == "mlVAR") contemporaneous_setting else NULL,
       nCores = if (model == "mlVAR") nCores else NULL,
+      analysis_sample = analysis_sample,
+      lag_index = lag_info,
+      input_order = input_order,
       call = match.call()
     ), provenance)
   )
@@ -329,6 +347,14 @@ LongitudinalNet <- function(data,
 #' @param seed Random seed.
 #' @param nfolds Number of CV folds used when refitting CLPN.
 #'
+#' @details Resamples independent participants with replacement, keeping all
+#'   their rows and time ordering together and giving each sampled copy a new ID.
+#'   At least two participants are required. Intervals are 95% percentile
+#'   intervals for off-diagonal edges, conditional on successful fits across all
+#'   requested layers. Failed fits are not replaced; their causes and counts are
+#'   recorded in the \code{resampling} attribute of the result and each table.
+#'   A small number of participants or a regularized estimator may give poor
+#'   interval coverage; these intervals do not constitute edge significance tests.
 #' @return A named list of bootstrap stability tables.
 #' @export
 LongitudinalStability <- function(fit, nboot = 100, seed = 20260502, nfolds = NULL) {
@@ -354,6 +380,8 @@ LongitudinalStability <- function(fit, nboot = 100, seed = 20260502, nfolds = NU
       call. = FALSE
     )
   }
+  failure_reason <- quicknet_fit_failure_reason(fit)
+  if (!is.null(failure_reason)) stop("The original fit is not valid: ", failure_reason, call. = FALSE)
   quicknet_check_row_args(fit$meta$backend_args, "Longitudinal stability")
   if (fit$model != "clpn" && !is.null(nfolds)) stop("nfolds applies only to CLPN.", call. = FALSE)
   set.seed(seed)
@@ -364,6 +392,83 @@ LongitudinalStability <- function(fit, nboot = 100, seed = 20260502, nfolds = NU
     return(quicknet_psychonetrics_panel_bootstrap_stability(fit, nboot = nboot, seed = seed))
   }
   quicknet_longitudinal_bootstrap_stability(fit, nboot = nboot, seed = seed)
+}
+
+quicknet_longitudinal_lag_index <- function(data, vars, id, day = NULL, beep = NULL,
+                                            lags = 1L, input_order = seq_len(nrow(data))) {
+  rows <- seq_len(nrow(data))
+  day_values <- if (is.null(day)) rep(1L, nrow(data)) else data[[day]]
+  # Integer codes avoid ambiguous concatenated identifiers such as a.b/c vs a/b.c.
+  group <- interaction(match(data[[id]], unique(data[[id]])),
+                       match(day_values, unique(day_values)), drop = TRUE)
+  occasions <- if (is.null(beep)) stats::ave(rows, group, FUN = seq_along) else data[[beep]]
+  blocks <- split(rows, group)
+  complete <- stats::complete.cases(data[, vars, drop = FALSE])
+  out <- lapply(lags, function(lag) {
+    predecessor <- rep(NA_integer_, nrow(data))
+    for (block in blocks) {
+      matched <- match(occasions[block] - lag, occasions[block])
+      predecessor[block] <- block[matched]
+    }
+    valid <- !is.na(predecessor)
+    complete_pair <- complete & valid
+    complete_pair[valid] <- complete_pair[valid] & complete[predecessor[valid]]
+    data.frame(row = rows, input_row = input_order, subject = data[[id]],
+      day = day_values, occasion = occasions, lag = lag, predecessor = predecessor,
+      input_predecessor = input_order[predecessor], valid = valid,
+      complete = complete_pair, stringsAsFactors = FALSE)
+  })
+  do.call(rbind, out)
+}
+
+quicknet_longitudinal_sample <- function(data, vars, id, lag_index, fit, model) {
+  valid_rows <- tapply(lag_index$valid, lag_index$row, all)
+  complete_rows <- tapply(lag_index$complete, lag_index$row, all)
+  sample <- list(input_rows = nrow(data), input_subjects = length(unique(data[[id]])),
+    complete_rows = sum(stats::complete.cases(data[, vars, drop = FALSE])),
+    candidate_lag_rows = sum(valid_rows), complete_lag_rows = sum(complete_rows),
+    complete_lag_subjects = length(unique(data[[id]][as.integer(names(complete_rows)[complete_rows])])) )
+  if (model == "graphicalVAR") {
+    sample$temporal_rows <- fit$fixedResults$N
+    sample$temporal_subjects <- sample$complete_lag_subjects
+    sample$counts_source <- "graphicalVAR fixedResults$N; complete lag pairs"
+  } else if (model == "mlVAR") {
+    node_models <- if (is.list(fit$output) && !is.null(fit$output$temporal)) {
+      fit$output$temporal
+    } else if (is.list(fit$output)) fit$output else list()
+    counts <- vapply(node_models, function(x) tryCatch({
+      if (is.list(x) && !inherits(x, c("lm", "merMod"))) {
+        return(sum(vapply(x, stats::nobs, numeric(1))))
+      }
+      as.numeric(stats::nobs(x))
+    }, error = function(e) NA_real_), numeric(1))
+    if (length(counts) != length(vars)) counts <- stats::setNames(rep(NA_real_, length(vars)), vars)
+    sample$temporal_rows_by_node <- data.frame(node = names(counts) %||% vars,
+      observations = unname(counts), stringsAsFactors = FALSE)
+    sample$temporal_rows <- if (length(unique(counts)) == 1L) unname(counts[[1L]]) else NA_real_
+    subject_counts <- vapply(node_models, function(x) {
+      tryCatch({
+        if (is.list(x) && !inherits(x, c("lm", "merMod"))) {
+          return(as.integer(sum(vapply(x, function(model) stats::nobs(model) > 0, logical(1)))))
+        }
+        frame <- stats::model.frame(x)
+        if (!id %in% names(frame)) return(NA_integer_)
+        length(unique(frame[[id]]))
+      }, error = function(e) NA_integer_)
+    }, integer(1))
+    if (length(subject_counts) != length(vars)) subject_counts <- stats::setNames(rep(NA_integer_, length(vars)), vars)
+    sample$temporal_subjects_by_node <- data.frame(node = names(subject_counts) %||% vars,
+      subjects = unname(subject_counts), stringsAsFactors = FALSE)
+    sample$temporal_subjects <- if (length(unique(subject_counts)) == 1L) unname(subject_counts[[1L]]) else NA_integer_
+    sample$counts_source <- "stats::nobs and model.frame on mlVAR temporal models when available; unavailable counts remain NA"
+  } else {
+    sample$backend_nobs <- fit@sample@groups[, c("label", "nobs"), drop = FALSE]
+    sample$temporal_rows <- sum(fit@sample@groups$nobs)
+    # FIML can retain initial observations with unavailable lagged predictors.
+    sample$temporal_subjects <- NA_integer_
+    sample$counts_source <- "psychonetrics sample@groups$nobs; complete lag counts reported separately"
+  }
+  sample
 }
 
 quicknet_clpn_design <- function(panel_data,
@@ -385,7 +490,8 @@ quicknet_clpn_design <- function(panel_data,
   }
 
   dat <- panel_data[, c(id, required_columns), drop = FALSE]
-  dat <- dat[stats::complete.cases(dat), , drop = FALSE]
+  retained_rows <- which(stats::complete.cases(dat))
+  dat <- dat[retained_rows, , drop = FALSE]
   if (standardize) {
     dat[required_columns] <- lapply(dat[required_columns], function(x) as.numeric(scale(x)))
   }
@@ -407,6 +513,7 @@ quicknet_clpn_design <- function(panel_data,
     outcome_blocks[[length(outcome_blocks) + 1]] <- outcomes
     meta_blocks[[length(meta_blocks) + 1]] <- data.frame(
       id = dat[[id]],
+      input_row = retained_rows,
       from_wave = from_wave,
       to_wave = to_wave,
       row_id = rownames(predictors),
@@ -418,6 +525,8 @@ quicknet_clpn_design <- function(panel_data,
     predictors = do.call(rbind, predictor_blocks),
     outcomes = do.call(rbind, outcome_blocks),
     meta = do.call(rbind, meta_blocks),
+    retained_rows = retained_rows,
+    dropped_rows = setdiff(seq_len(nrow(panel_data)), retained_rows),
     nodes = nodes,
     waves = waves
   )
@@ -520,7 +629,7 @@ quicknet_psychonetrics_panel_fit <- function(data,
     c(list(data = dat$data, vars = vars_matrix, verbose = FALSE,
       standardize = if (is.character(standardize)) standardize else if (isTRUE(standardize)) "z_per_wave" else "none"),
       if (model == "ri_clpm") list(type = ri_type)), list(...))
-  raw_model <- do.call(get(fun, asNamespace("psychonetrics")), args)
+  raw_model <- quicknet_capture_backend_warnings(do.call(get(fun, asNamespace("psychonetrics")), args))
   if (model == "ri_clpm" && !is.null(stationary)) {
     raw_model <- psychonetrics::ri_clpm_stationary(raw_model, stationary = stationary)
   }
@@ -576,9 +685,27 @@ quicknet_psychonetrics_panel_fit <- function(data,
       backend_version = as.character(utils::packageVersion("psychonetrics")),
       backend_settings = quicknet_psychonetrics_settings(fit, args),
       estimator = fit@estimator,
+      analysis_sample = list(input_rows = nrow(data), input_subjects = length(unique(data[[id]])),
+        complete_rows = sum(stats::complete.cases(dat$data[, dat$required_columns, drop = FALSE])),
+        analyzed_subjects = sum(fit@sample@groups$nobs),
+        backend_nobs = fit@sample@groups[, c("label", "nobs"), drop = FALSE],
+        counts_source = "psychonetrics sample@groups$nobs; one wide row per participant"),
       call = call
     )
   )
+}
+
+quicknet_psychonetrics_center_args <- function(value, fun = psychonetrics::var1) {
+  if (!is.null(value) && (!is.logical(value) || length(value) != 1L || is.na(value))) {
+    stop("centerWithin must be NULL or a single logical value.", call. = FALSE)
+  }
+  if (!"centerWithin" %in% names(formals(fun))) {
+    if (isTRUE(value)) {
+      stop("The installed psychonetrics version does not support centerWithin = TRUE; update psychonetrics or use FALSE/NULL.", call. = FALSE)
+    }
+    return(list())
+  }
+  list(centerWithin = value %||% quicknet_backend_default(fun, "centerWithin"))
 }
 
 quicknet_psychonetrics_gvar_fit <- function(data,
@@ -590,16 +717,19 @@ quicknet_psychonetrics_gvar_fit <- function(data,
                                             centerWithin,
                                             estimator,
                                             temporal,
+                                            input_order = seq_len(nrow(data)),
                                             call,
                                             ...) {
   dots <- list(...)
   standardize <- dots$standardize %||% if (isTRUE(scale)) "z" else "none"
   dots$standardize <- NULL
+  center_args <- quicknet_psychonetrics_center_args(centerWithin)
+  centerWithin <- center_args$centerWithin %||% FALSE
   args <- quicknet_psychonetrics_args("gvar", c(list(data = data, vars = vars, idvar = id,
-    standardize = standardize, centerWithin = centerWithin, verbose = FALSE),
+    standardize = standardize, verbose = FALSE), center_args,
     if (!is.null(day)) list(dayvar = day), if (!is.null(beep)) list(beepvar = beep),
     if (!is.null(estimator)) list(estimator = estimator), if (!is.null(temporal)) list(temporal = temporal)), dots)
-  raw_model <- do.call(psychonetrics::gvar, args)
+  raw_model <- quicknet_capture_backend_warnings(do.call(psychonetrics::gvar, args))
   fit <- quicknet_psychonetrics_run(raw_model)
   temporal <- quicknet_psychonetrics_matrix(fit, "beta", vars)
   contemporaneous <- quicknet_psychonetrics_first_matrix(fit, c("omega_zeta", "sigma_zeta", "kappa_zeta"), vars)
@@ -609,6 +739,7 @@ quicknet_psychonetrics_gvar_fit <- function(data,
     quicknet_directed_node_table(temporal, network = "temporal"),
     quicknet_node_table(contemporaneous, network = "contemporaneous")
   )
+  lag_info <- quicknet_longitudinal_lag_index(data, vars, id, day, beep, 1L, input_order)
 
   quicknet_fit(
     model = "psychonetrics_gvar",
@@ -635,6 +766,9 @@ quicknet_psychonetrics_gvar_fit <- function(data,
       backend_settings = quicknet_psychonetrics_settings(fit, args),
       estimator = fit@estimator,
       backend_args = list(...),
+      analysis_sample = quicknet_longitudinal_sample(data, vars, id, lag_info, fit, "psychonetrics_gvar"),
+      lag_index = lag_info,
+      input_order = input_order,
       call = call
     )
   )
@@ -659,9 +793,12 @@ quicknet_panel_vars_matrix <- function(nodes, waves, prefix) {
 }
 
 quicknet_psychonetrics_run <- function(model) {
+  construction_warnings <- attr(model, "quicknet_backend_warnings")
   invisible(utils::capture.output({
-    out <- suppressMessages(psychonetrics::runmodel(model))
+    out <- quicknet_capture_backend_warnings(suppressMessages(psychonetrics::runmodel(model)))
   }))
+  recorded <- unique(c(construction_warnings, attr(out, "quicknet_backend_warnings")))
+  if (length(recorded)) attr(out, "quicknet_backend_warnings") <- recorded
   out
 }
 
@@ -675,13 +812,22 @@ quicknet_psychonetrics_fit_indices <- function(fit) {
 }
 
 quicknet_psychonetrics_matrix <- function(fit, matrix_name, vars) {
-  mat <- tryCatch(psychonetrics::getmatrix(fit, matrix_name), error = function(e) NULL)
-  if (is.null(mat)) {
-    mat <- base::matrix(NA_real_, length(vars), length(vars))
+  mat <- tryCatch(psychonetrics::getmatrix(fit, matrix_name), error = function(e) {
+    stop("Could not extract psychonetrics matrix '", matrix_name, "': ", conditionMessage(e), call. = FALSE)
+  })
+  if (is.list(mat) || is.null(mat)) {
+    stop("psychonetrics matrix '", matrix_name,
+      "' must be one numeric matrix; multiple-group matrix lists are not supported by this network layer.", call. = FALSE)
   }
   mat <- as.matrix(mat)
-  if (!all(dim(mat) == c(length(vars), length(vars)))) {
-    mat <- mat[seq_len(length(vars)), seq_len(length(vars)), drop = FALSE]
+  if (!is.numeric(mat) || !identical(dim(mat), rep(as.integer(length(vars)), 2L)) ||
+      any(!is.finite(mat))) {
+    stop("psychonetrics matrix '", matrix_name, "' has unexpected dimensions or non-finite values; expected ",
+      length(vars), " by ", length(vars), ".", call. = FALSE)
+  }
+  if (!is.null(rownames(mat)) && !is.null(colnames(mat)) &&
+      setequal(rownames(mat), vars) && setequal(colnames(mat), vars)) {
+    mat <- mat[vars, vars, drop = FALSE]
   }
   colnames(mat) <- rownames(mat) <- vars
   mat
@@ -701,7 +847,8 @@ quicknet_psychonetrics_first_matrix <- function(fit, candidates, vars) {
       return(mat)
     }
   }
-  base::matrix(NA_real_, length(vars), length(vars), dimnames = list(vars, vars))
+  stop("No supported psychonetrics network matrix was available among: ",
+    paste(candidates, collapse = ", "), ".", call. = FALSE)
 }
 
 quicknet_ri_clpm_networks <- function(fit, nodes, waves, prefix) {
@@ -839,195 +986,86 @@ quicknet_mlvar_standardize_net <- function(result, type, vars) {
   mat
 }
 
-quicknet_panel_bootstrap_stability <- function(fit, nboot, seed, nfolds) {
-  ids <- unique(fit$data[[fit$meta$id]])
-  nodes <- fit$meta$nodes
-  edge_array <- array(
-    NA_real_,
-    dim = c(length(nodes), length(nodes), nboot),
-    dimnames = list(nodes, nodes, paste0("boot_", seq_len(nboot)))
-  )
-  failed <- logical(nboot)
+quicknet_cluster_bootstrap_stability <- function(fit, nboot, seed, refit, originals, directed) {
+  id_column <- fit$meta$id
+  ids <- unique(fit$data[[id_column]])
+  if (anyNA(ids) || length(ids) < 2L) {
+    stop("Participant bootstrap requires at least two independent participants with non-missing IDs.", call. = FALSE)
+  }
+  layer_names <- names(originals)
+  if (!length(layer_names)) stop("No network layers are available for bootstrap.", call. = FALSE)
+  boot_arrays <- lapply(originals, function(original) array(NA_real_, c(dim(original), nboot)))
+  reasons <- rep(NA_character_, nboot)
   set.seed(seed)
   for (boot_index in seq_len(nboot)) {
-    sampled_ids <- sample(ids, length(ids), replace = TRUE)
+    sampled_ids <- ids[sample.int(length(ids), length(ids), replace = TRUE)]
     sampled_data <- do.call(rbind, lapply(seq_along(sampled_ids), function(new_id) {
-      rows <- fit$data[fit$data[[fit$meta$id]] == sampled_ids[new_id], , drop = FALSE]
-      rows[[fit$meta$id]] <- new_id
+      rows <- fit$data[fit$data[[id_column]] == sampled_ids[[new_id]], , drop = FALSE]
+      rows[[id_column]] <- new_id
       rows
     }))
-    boot_fit <- tryCatch(
-      quicknet_refit_with_backend_args(PanelNet, fit,
-        sampled_data,
-        nodes = fit$meta$nodes,
-        waves = fit$meta$waves,
-        id = fit$meta$id,
-        prefix = fit$meta$prefix,
-        standardize = fit$meta$standardize,
-        standardize_data = fit$meta$standardize_data %||% FALSE,
-        alpha = fit$meta$alpha,
-        lambda_rule = fit$meta$lambda_rule,
-        nfolds = nfolds,
-        seed = seed + boot_index
-      ),
-      error = function(e) NULL
-    )
-    if (is.null(boot_fit)) {
-      failed[boot_index] <- TRUE
-      next
-    }
-    edge_array[, , boot_index] <- boot_fit$graph
+    boot_layers <- tryCatch({
+      boot_fit <- refit(sampled_data, boot_index)
+      failure_reason <- quicknet_fit_failure_reason(boot_fit)
+      if (!is.null(failure_reason)) stop(failure_reason, call. = FALSE)
+      missing_layers <- setdiff(layer_names, names(boot_fit$networks))
+      if (length(missing_layers)) stop("Missing network layers: ", paste(missing_layers, collapse = ", "), call. = FALSE)
+      stats::setNames(lapply(layer_names, function(layer) {
+        quicknet_resampling_graph(boot_fit$networks[[layer]], originals[[layer]], layer)
+      }), layer_names)
+    }, error = function(e) { reasons[[boot_index]] <<- conditionMessage(e); NULL })
+    if (is.null(boot_layers)) next
+    for (layer in layer_names) boot_arrays[[layer]][, , boot_index] <- boot_layers[[layer]]
   }
-  quicknet_check_failed_iterations(failed, "panel bootstrap replications")
+  diagnostics <- quicknet_resampling_diagnostics(reasons, "percentile_cluster_bootstrap", "participant",
+                                                 "participant bootstrap replications")
+  diagnostics$participants <- length(ids)
+  diagnostics$joint_layer_success <- TRUE
+  diagnostics$diagonal_included <- FALSE
+  out <- stats::setNames(lapply(layer_names, function(layer) {
+    quicknet_matrix_bootstrap_summary(originals[[layer]], boot_arrays[[layer]],
+      directed = directed[[layer]], failed_bootstraps = diagnostics$failed, diagnostics = diagnostics)
+  }), layer_names)
+  attr(out, "resampling") <- diagnostics
+  out
+}
 
-  list(
-    default = quicknet_matrix_bootstrap_summary(
-      original_matrix = fit$graph,
-      edge_array = edge_array,
-      directed = TRUE,
-      failed_bootstraps = sum(failed)
-    )
-  )
+quicknet_panel_bootstrap_stability <- function(fit, nboot, seed, nfolds) {
+  refit <- function(sampled_data, boot_index) {
+    ans <- quicknet_refit_with_backend_args(PanelNet, fit, sampled_data,
+      nodes = fit$meta$nodes, waves = fit$meta$waves, id = fit$meta$id, prefix = fit$meta$prefix,
+      standardize = fit$meta$standardize, standardize_data = fit$meta$standardize_data %||% FALSE,
+      alpha = fit$meta$alpha, lambda_rule = fit$meta$lambda_rule, nfolds = nfolds, seed = seed + boot_index)
+    ans$networks$default <- ans$graph
+    ans
+  }
+  quicknet_cluster_bootstrap_stability(fit, nboot, seed, refit,
+    list(default = fit$graph), c(default = TRUE))
 }
 
 quicknet_psychonetrics_panel_bootstrap_stability <- function(fit, nboot, seed) {
-  ids <- unique(fit$data[[fit$meta$id]])
-  nodes <- fit$meta$nodes
-  layer_names <- setdiff(names(fit$networks), "default")
-  template <- array(
-    NA_real_,
-    dim = c(length(nodes), length(nodes), nboot),
-    dimnames = list(nodes, nodes, paste0("boot_", seq_len(nboot)))
-  )
-  boot_arrays <- stats::setNames(lapply(layer_names, function(layer_name) template), layer_names)
-  failed <- logical(nboot)
-  set.seed(seed)
-
-  for (boot_index in seq_len(nboot)) {
-    sampled_ids <- sample(ids, length(ids), replace = TRUE)
-    sampled_data <- do.call(rbind, lapply(seq_along(sampled_ids), function(new_id) {
-      rows <- fit$data[fit$data[[fit$meta$id]] == sampled_ids[[new_id]], , drop = FALSE]
-      rows[[fit$meta$id]] <- new_id
-      rows
-    }))
-    boot_fit <- tryCatch(
-      quicknet_refit_with_backend_args(PanelNet, fit,
-        sampled_data,
-        nodes = fit$meta$nodes,
-        waves = fit$meta$waves,
-        id = fit$meta$id,
-        prefix = fit$meta$prefix,
-        standardize = fit$meta$standardize,
-        model = fit$model,
-        stationary = fit$meta$stationary
-      ),
-      error = function(e) NULL
-    )
-    if (is.null(boot_fit) || !all(layer_names %in% names(boot_fit$networks))) {
-      failed[[boot_index]] <- TRUE
-      next
-    }
-    boot_layers <- boot_fit$networks[layer_names]
-    valid_dimensions <- vapply(
-      boot_layers,
-      function(layer) all(dim(layer) == c(length(nodes), length(nodes))),
-      logical(1)
-    )
-    if (!all(valid_dimensions)) {
-      failed[[boot_index]] <- TRUE
-      next
-    }
-    for (layer_name in layer_names) {
-      boot_arrays[[layer_name]][, , boot_index] <- boot_layers[[layer_name]]
-    }
-  }
-  quicknet_check_failed_iterations(failed, "psychonetrics panel bootstrap replications")
-
-  stats::setNames(lapply(layer_names, function(layer_name) {
-    quicknet_matrix_bootstrap_summary(
-      fit$networks[[layer_name]],
-      boot_arrays[[layer_name]],
-      directed = quicknet_network_summary_is_directed(fit$model, fit$meta, layer_name),
-      failed_bootstraps = sum(failed)
-    )
-  }), layer_names)
+  layers <- setdiff(names(fit$networks), "default")
+  refit <- function(sampled_data, boot_index) quicknet_refit_with_backend_args(PanelNet, fit,
+    sampled_data, nodes = fit$meta$nodes, waves = fit$meta$waves, id = fit$meta$id,
+    prefix = fit$meta$prefix, standardize = fit$meta$standardize, model = fit$model,
+    stationary = fit$meta$stationary)
+  directed <- stats::setNames(vapply(layers, function(layer) {
+    quicknet_network_summary_is_directed(fit$model, fit$meta, layer)
+  }, logical(1)), layers)
+  quicknet_cluster_bootstrap_stability(fit, nboot, seed, refit, fit$networks[layers], directed)
 }
 
 quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
-  ids <- unique(fit$data[[fit$meta$id]])
-  vars <- fit$meta$vars
-  template <- array(
-    NA_real_,
-    dim = c(length(vars), length(vars), nboot),
-    dimnames = list(vars, vars, paste0("boot_", seq_len(nboot)))
-  )
-  layer_names <- setdiff(names(fit$networks), "default")
-  boot_arrays <- stats::setNames(
-    lapply(layer_names, function(layer_name) template),
-    layer_names
-  )
-  failed <- logical(nboot)
-  set.seed(seed)
-
-  for (boot_index in seq_len(nboot)) {
-    sampled_ids <- sample(ids, length(ids), replace = TRUE)
-    sampled_data <- do.call(rbind, lapply(seq_along(sampled_ids), function(new_id) {
-      rows <- fit$data[fit$data[[fit$meta$id]] == sampled_ids[new_id], , drop = FALSE]
-      rows[[fit$meta$id]] <- new_id
-      rows
-    }))
-    boot_fit <- tryCatch(
-      quicknet_refit_with_backend_args(LongitudinalNet, fit,
-        sampled_data,
-        vars = fit$meta$vars,
-        id = fit$meta$id,
-        day = fit$meta$day,
-        beep = fit$meta$beep,
-        model = fit$model,
-        gamma = quicknet_refit_gamma(fit),
-        scale = fit$meta$scale,
-        centerWithin = fit$meta$centerWithin,
-        lags = fit$meta$lags %||% 1,
-        estimator = if (fit$model != "graphicalVAR") fit$meta$estimator else NULL,
-        temporal = fit$meta$temporal,
-        contemporaneous = fit$meta$contemporaneous,
-        nCores = fit$meta$nCores %||% 1
-      ),
-      error = function(e) NULL
-    )
-    if (is.null(boot_fit)) {
-      failed[boot_index] <- TRUE
-      next
-    }
-    has_layers <- all(layer_names %in% names(boot_fit$networks))
-    if (!has_layers) {
-      failed[boot_index] <- TRUE
-      next
-    }
-    boot_layers <- boot_fit$networks[layer_names]
-    valid_dimensions <- vapply(
-      boot_layers,
-      function(layer) all(dim(layer) == c(length(vars), length(vars))),
-      logical(1)
-    )
-    if (!all(valid_dimensions)) {
-      failed[boot_index] <- TRUE
-      next
-    }
-    for (layer_name in layer_names) {
-      boot_arrays[[layer_name]][, , boot_index] <- boot_layers[[layer_name]]
-    }
-  }
-  quicknet_check_failed_iterations(failed, "longitudinal bootstrap replications")
-
-  stats::setNames(lapply(layer_names, function(layer_name) {
-    quicknet_matrix_bootstrap_summary(
-      fit$networks[[layer_name]],
-      boot_arrays[[layer_name]],
-      directed = quicknet_longitudinal_network_is_directed(layer_name),
-      failed_bootstraps = sum(failed)
-    )
-  }), layer_names)
+  layers <- setdiff(names(fit$networks), "default")
+  refit <- function(sampled_data, boot_index) quicknet_refit_with_backend_args(LongitudinalNet, fit,
+    sampled_data, vars = fit$meta$vars, id = fit$meta$id, day = fit$meta$day, beep = fit$meta$beep,
+    model = fit$model, gamma = quicknet_refit_gamma(fit), scale = fit$meta$scale,
+    centerWithin = fit$meta$centerWithin, lags = fit$meta$lags %||% 1,
+    estimator = if (fit$model != "graphicalVAR") fit$meta$estimator else NULL,
+    temporal = fit$meta$temporal, contemporaneous = fit$meta$contemporaneous,
+    nCores = fit$meta$nCores %||% 1)
+  directed <- stats::setNames(vapply(layers, quicknet_longitudinal_network_is_directed, logical(1)), layers)
+  quicknet_cluster_bootstrap_stability(fit, nboot, seed, refit, fit$networks[layers], directed)
 }
 
 quicknet_bind_rows_fill <- function(...) {
@@ -1046,8 +1084,16 @@ quicknet_bind_rows_fill <- function(...) {
 quicknet_refit_with_backend_args <- function(fun, fit, ...) {
   args <- list(...)
   if (fit$model == "clpn" && is.null(fit$meta$standardize_data)) {
-    args$standardize_data <- fit$meta$standardize %||% TRUE
-    args$standardize <- FALSE
+    recorded <- quicknet_fit_effective_meta(fit)
+    for (name in c("standardize_data", "standardize")) {
+      value <- recorded[[name]]
+      if (!is.logical(value) || length(value) != 1L || is.na(value)) {
+        label <- if (name == "standardize_data") "data standardization" else "glmnet standardization"
+        stop("The fitted object's original CLPN ", label,
+             " setting is unknown; refit the original data first.", call. = FALSE)
+      }
+      args[[name]] <- value
+    }
   }
   if (fit$model == "graphicalVAR" && is.null(fit$meta$backend_settings) &&
       is.null(fit$meta$backend_args$subjectNetworks)) args$subjectNetworks <- FALSE

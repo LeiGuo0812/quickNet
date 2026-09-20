@@ -33,6 +33,9 @@ This function computes Mantel's permutation test for similarity of two matrices.
 }
 \details{
 The function calculates a Z-statistic for the Mantel test, equal to the sum of the pairwise product of the lower triangles of the permuted matrices, for each permutation of rows and columns. It compares the permuted distribution with the Z-statistic observed for the actual data.
+Node labels must be exchangeable for this permutation test. It tests alignment
+of network nodes; it does not resample participants or test equality of two
+population networks. Only undirected symmetric networks are supported.
 }
 \examples{
 data('mtcars')

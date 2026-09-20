@@ -161,10 +161,12 @@ quicknet_perturb_continuous <- function(fit, method, targets, dose, remaining_st
     ", topology edge threshold = ", cfg$edge_threshold, ", state map = ", cfg$state_map, "). ",
     "The intervention network is re-estimated from fit$data independently of the original fit's graph. ",
     "State benefits are baseline-SD standardized and evaluated on non-target outcomes. ",
-    if (method == "symperturb") "VPPS uses seven utilities within the candidate set; robustness is reported separately. " else "",
+    if (method == "symperturb") paste0("VPPS uses seven utilities within the candidate set; robustness is reported separately. ",
+      "Tied VPPS values share the minimum rank, so top-k may include more than k targets. ",
+      if (cfg$bootstrap_replicates > 0L) "Bootstrap intervals and selection probabilities resample participants and repeat the full prioritization pipeline. " else "") else "",
     if (method == "combination") "Pair value is joint benefit minus the better single-target benefit on the same non-target set. " else "",
     if (method %in% c("edge_block", "node_block")) "Communication block is relative finite-step adjacency propagation loss. " else "",
-    if (method == "sequence") "Sequence objectives use discounted marginal benefits and costs with beam search. " else "",
+    if (cfg$sequence_length > 0L) "Sequence objectives use discounted marginal benefits and costs with beam search. " else "",
     "Results are model-implied in silico simulations, not causal intervention effects.\n",
     "Reference: Zhu, Z., Yu, J., Hu, T., Yang, Z., & Wang, J. (2026). SymPerturb converts symptom-network structure into testable intervention priorities. arXiv:2607.28673v1. Revised method specification and SymPerturb 0.1.0.")
   obj

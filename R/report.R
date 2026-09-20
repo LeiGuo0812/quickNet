@@ -13,7 +13,11 @@
 #'   an explicit model-implied/non-causal interpretation boundary. For
 #'   \code{quicknet_fit} inputs it contains model registry metadata, sample,
 #'   estimation, fit-index, parameter, modification-index, constraint, network,
-#'   edge, node, and model-specific tables. For
+#'   edge, node, and model-specific tables. The analysis_sample entry distinguishes
+#'   retained input rows, complete cases, actual temporal rows and available
+#'   backend sample counts; diagnostics and backend_warnings retain known fit
+#'   failures or source warnings. Missing convergence evidence is marked unknown.
+#'   For
 #'   \code{quicknet_perturbation} inputs it contains perturbation settings,
 #'   metrics, rankings, and a short text summary. For \code{quicknet_power}
 #'   inputs it contains design settings, simulation summaries, and sample-size
@@ -43,7 +47,10 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     model = fit$model,
     model_info = quicknet_model_info(fit$model),
     sample = quicknet_report_sample(fit),
+    analysis_sample = quicknet_analysis_sample(fit$data, fit$fit, fit$meta, fit$model),
     estimation = quicknet_report_estimation(fit),
+    diagnostics = quicknet_fit_diagnostics(fit),
+    backend_warnings = quicknet_fit_backend_warnings(fit$fit),
     fit_indices = quicknet_report_fit_indices(fit),
     parameters = quicknet_report_parameters(fit),
     modification_indices = quicknet_report_modification_indices(fit),
@@ -55,6 +62,12 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     text = quicknet_report_text(fit, digits = digits, threshold = threshold)
   )
   explanation <- quicknet_ising_comparison_notes(fit$model, quicknet_fit_gamma(fit))
+  issue <- quicknet_fit_failure_reason(fit)
+  if (!is.null(issue)) report$text <- paste(report$text, "Fit status: unsuccessful.", issue)
+  if (any(report$diagnostics$status == "partial")) report$text <- paste(report$text,
+    "glmnet returned a partial regularization path; available larger-lambda solutions were retained.")
+  if (length(report$backend_warnings)) report$text <- paste(report$text,
+    "Backend warnings were recorded; inspect backend_warnings before interpreting the fit.")
   if (length(explanation) > 0L) {
     report$text <- paste(report$text, paste(explanation, collapse = " "))
     report$references <- quicknet_nira_reference()
@@ -164,8 +177,10 @@ quicknet_report_nira_text <- function(fit, effects, digits) {
   } else {
     status <- as.character(status[[1L]])
   }
-  interpretation <-
-    "NIRA results are model-implied simulations, not causal treatment effects."
+  interpretation <- paste(
+    "NIRA results are model-implied simulations, not causal treatment effects.",
+    "Intervals and permutation tests condition on the fixed fitted network; see the NIRA documentation and cited method."
+  )
 
   if (identical(status, "blocked_by_moderation")) {
     return(paste0(
@@ -324,6 +339,24 @@ print.quicknet_report <- function(x, ...) {
 }
 
 quicknet_report_sample <- function(fit) {
+  sample <- quicknet_report_input_sample(fit)
+  analyzed <- quicknet_analysis_sample(fit$data, fit$fit, fit$meta, fit$model)
+  for (field in c("input_rows", "input_subjects", "complete_rows", "analyzed_observations",
+                  "analyzed_subjects", "temporal_rows", "temporal_subjects", "candidate_lag_rows",
+                  "complete_lag_rows", "complete_lag_subjects", "positive_weight_rows", "weight_sum")) {
+    value <- analyzed[[field]]
+    if (!is.null(value) && length(value) == 1L) sample[[field]] <- value
+  }
+  if (!is.null(analyzed$analyzed_observations) && "observations" %in% names(sample)) {
+    sample$observations <- analyzed$analyzed_observations
+  }
+  if (!is.null(analyzed$analyzed_subjects) && "subjects" %in% names(sample)) {
+    sample$subjects <- analyzed$analyzed_subjects
+  }
+  sample
+}
+
+quicknet_report_input_sample <- function(fit) {
   data_type <- fit$meta$data_type %||% NA_character_
   if (identical(data_type, "cross_sectional")) {
     return(data.frame(
@@ -394,6 +427,7 @@ quicknet_report_sample <- function(fit) {
 }
 
 quicknet_report_estimation <- function(fit) {
+  fit$meta <- quicknet_fit_effective_meta(fit)
   model_info <- quicknet_model_info(fit$model)
   registry_backend <- if (nrow(model_info) > 0) model_info$backend[[1]] else NULL
   backend <- fit$meta[["backend", exact = TRUE]] %||% registry_backend %||% switch(
@@ -637,6 +671,12 @@ quicknet_report_text <- function(fit, digits = 3, threshold = 1e-10) {
     paste0("subjects = ", sample$subjects[[1]], ", nodes = ", default_network$nodes[[1]])
   } else {
     paste0("nodes = ", default_network$nodes[[1]])
+  }
+  if ("temporal_rows" %in% names(sample)) {
+    sample_text <- paste0(sample_text, ", temporal observations = ", sample$temporal_rows[[1]])
+  }
+  if ("input_rows" %in% names(sample) && is.finite(sample$input_rows[[1]])) {
+    sample_text <- paste0(sample_text, ", input rows = ", sample$input_rows[[1]])
   }
 
   paste0(

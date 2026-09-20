@@ -86,8 +86,10 @@ not a claim that an unresolved expression is an effective fitted value.
 - `Bridge()` inherits normalize FALSE. `netCor()` inherits 999 permutations,
   graph FALSE and a two-sided alternative from `ape::mantel.test`.
 - Centrality uses the source calculation defaults; plot scaling and additional
-  standardized display columns are output conventions. MTD and the Monte Carlo
-  planner are quickNet algorithms with their own documented design parameters.
+  standardized display columns are output conventions. MTD uses the Shine
+  authors' sample-SD normalization and the Yuan--Shou TTS inference procedure
+  with an explicit radius; see [inference validation](mtd-inference-validation.md).
+  The Monte Carlo planner has its own documented design parameters.
 - quiet/progress controls affect presentation. They do not redefine statistical
   estimators. Source warnings are available; MGM does not suppress them by default.
 

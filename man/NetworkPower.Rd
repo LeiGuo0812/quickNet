@@ -32,7 +32,8 @@ simulation for Gaussian graphical models. \code{"powerly"} delegates GGM
 planning to \code{powerly::powerly()}.}
 
 \item{nodes}{Number of network nodes. Required for powerly; defaults to 8
-for quickNet's Monte Carlo design.}
+for quickNet's Monte Carlo design. With powerly's model_matrix in ...,
+nodes and density are inferred and no generator arguments are required.}
 
 \item{density}{Expected proportion of nonzero edges in the assumed true
 network. Required for powerly; Monte Carlo defaults to 0.30.}
@@ -52,7 +53,8 @@ powerly and uses 100 for the quickNet Monte Carlo design.}
 are \code{"sensitivity"}, \code{"specificity"}, \code{"mcc"},
 \code{"edge_weight_correlation"}, and \code{"rmse"}.}
 
-\item{target_value}{Target metric value.}
+\item{target_value}{Target metric value: [0,1] for sensitivity/specificity,
+[-1,1] for MCC/edge-weight correlation, and nonnegative for RMSE.}
 
 \item{target_probability}{Required proportion of replications that should
 achieve the target value.}
@@ -64,9 +66,11 @@ uses its own gamma default (0.5), recorded separately as backend_gamma;
 the top-level gamma does not configure it. Inactive gamma is stored as NULL in settings
 and NA in Monte Carlo result rows.}
 
-\item{estimator}{Network estimator used in the Monte Carlo loop.}
+\item{estimator}{Network estimator used in the Monte Carlo loop. Correlation
+is evaluated against the true marginal correlation matrix; partial and
+EBICglasso are evaluated against the generating partial correlations.}
 
-\item{seed}{Optional random seed. NULL preserves the current RNG state.}
+\item{seed}{Optional random seed. NULL draws from the current RNG stream.}
 
 \item{powerly_args}{Legacy optional list. Named arguments through ... are
 preferred and override entries in this list; no parameter object is needed.}
@@ -79,9 +83,25 @@ SampleSize forwards its arguments to NetworkPower.}
 }
 \value{
 A \code{quicknet_power} object. Results depend on the assumed true
-network and simulation design; they should be reported as design-based
+network and simulation design; true_network is the target of recovery and
+generating_network contains the generating partial-correlation matrix.
+Results should be reported as design-based
 planning evidence, not as a universal sample size rule.
 }
 \description{
 Network power and sample size planning
+}
+\details{
+Each call conditions on one fixed true network. Monte Carlo summaries
+  include failed fits, undefined target metrics, Monte Carlo standard errors
+  and pointwise exact-binomial 95% intervals. Failed or undefined target values
+  count as not achieved. The candidate N uses the point estimate; its interval
+  is not adjusted for selecting among candidate sample sizes. Validate a chosen
+  candidate with independent simulations. The actual generating edge strengths
+  and any positive-definiteness scaling are recorded.
+
+  Powerly's bootstrap-median curve determines its median N; the source curve
+  and sample-size interval are retained. Its source GGM generator uses five
+  ordinal levels by default and replaces undefined recovery measures with zero.
+  Use powerly::validate() on the returned fit component for native validation.
 }

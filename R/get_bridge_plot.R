@@ -9,7 +9,8 @@
 #' @param bridge output from \code{quickNet::Bridge}
 #' @param prefix the prefix of output plot files.
 #' @param path the path of output files, can be either a relative or absolute path.
-#' @param device any format supported by \code{ggplot2::ggsave}.
+#' @param device any format supported by \code{ggplot2::ggsave}, or
+#'   'cairo_pdf' for multilingual PDF labels using installed fonts.
 #' @param width the width of plot, in inch.
 #' @param height the height of plot, in inch.
 #' @param get.table logical. whether get the csv file of bridge coefficient. Default is TRUE.
@@ -32,11 +33,15 @@ get_bridge_plot <- function(bridge, prefix = '', path = '.', device = 'pdf', wid
     prefix <- paste0(prefix,'_')
   }
 
+  extension <- if (identical(device, "cairo_pdf")) "pdf" else device
+  graphics_device <- if (identical(device, "cairo_pdf")) grDevices::cairo_pdf else device
+
   ggsave(filename = path_join(c(path,
                                 paste0(prefix,
                                        'bridge_plot',
                                        '.',
-                                       device))),
+                                       extension))),
+         device = graphics_device,
          plot = bridge$bridgePlot,
          width = width,
          height = height, ...)

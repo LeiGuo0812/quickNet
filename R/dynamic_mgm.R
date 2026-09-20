@@ -49,6 +49,7 @@ MixedVARNet <- function(data,
     scale = scale, signInfo = signInfo, pbar = FALSE), args)
   if (!is.null(gamma)) args$lambdaGam <- gamma
   fit <- do.call(mgm::mvar, c(list(data = matrix_data, type = types, level = levels), args))
+  sample_info <- quicknet_dynamic_sample(fit, nrow(matrix_data), lags)
   lag_networks <- quicknet_dynamic_extract_mvar_networks(fit, vars, lags)
   if (length(lag_networks) == 0) {
     stop("Could not extract a temporal edge matrix from the mgm::mvar object.", call. = FALSE)
@@ -97,6 +98,8 @@ MixedVARNet <- function(data,
       gamma = if (isFALSE(fit$call$regularize)) NULL else quicknet_resolve_gamma("mixedVAR", fit$call$lambdaGam, fit$call$lambdaSel),
       scale = scale,
       signInfo = signInfo,
+      analysis_sample = sample_info$sample,
+      lag_index = sample_info$index,
       call = match.call()
     ), quicknet_backend_provenance("mgm", "mvar", args, fit$call))
   )
@@ -172,6 +175,12 @@ TimeVaryingNet <- function(data,
   if (!is.null(gamma)) args$lambdaGam <- gamma
   fit <- do.call(mgm::tvmvar, c(list(data = matrix_data, type = types, level = levels,
     timepoints = timepoints, estpoints = estpoints, bandwidth = bandwidth), args))
+  sample_info <- lapply(fit$tvmodels, quicknet_dynamic_sample, n = nrow(matrix_data), lags = lags)
+  local_samples <- if (length(sample_info)) do.call(rbind, lapply(seq_along(sample_info), function(i) {
+    x <- sample_info[[i]]$sample
+    data.frame(estpoint = estpoints[[i]], temporal_rows = x$temporal_rows,
+      positive_weight_rows = x$positive_weight_rows, weight_sum = x$weight_sum)
+  })) else data.frame()
   networks <- quicknet_dynamic_extract_tvmvar_networks(fit, vars, estpoints, lags)
   if (length(networks) == 0) {
     stop("Could not extract local networks from the mgm::tvmvar object.", call. = FALSE)
@@ -208,9 +217,31 @@ TimeVaryingNet <- function(data,
       lambdaSel = fit$call$lambdaSel,
       gamma = if (isFALSE(fit$call$regularize)) NULL else quicknet_resolve_gamma("time_varying_mvar", fit$call$lambdaGam, fit$call$lambdaSel),
       scale = scale,
+      analysis_sample = list(input_rows = nrow(matrix_data), complete_rows = nrow(matrix_data),
+        temporal_rows = if (nrow(local_samples)) local_samples$temporal_rows[[1L]] else NA_integer_,
+        local_samples = local_samples,
+        counts_source = "mgm local models: data_lagged$included and weights_design"),
+      lag_index = if (length(sample_info)) sample_info[[1L]]$index else NULL,
       call = match.call()
     ), quicknet_backend_provenance("mgm", "tvmvar", args, fit$call))
   )
+}
+
+quicknet_dynamic_sample <- function(fit, n, lags) {
+  included <- fit$call$data_lagged$included
+  weights <- fit$call$weights_design
+  known <- is.logical(included) && length(included) == n && !anyNA(included)
+  index <- if (known) do.call(rbind, lapply(lags, function(lag) {
+    rows <- seq_len(n)
+    previous <- rows - lag
+    previous[previous < 1L] <- NA_integer_
+    data.frame(row = rows, lag = lag, predecessor = previous, included = included)
+  })) else NULL
+  list(sample = list(input_rows = n, complete_rows = n,
+    temporal_rows = if (known) sum(included) else NA_integer_,
+    positive_weight_rows = if (!is.null(weights)) sum(weights > 0) else NA_integer_,
+    weight_sum = if (!is.null(weights)) sum(weights) else NA_real_,
+    counts_source = "mgm::mvar call$data_lagged$included and weights_design"), index = index)
 }
 
 quicknet_dynamic_validate <- function(dat, vars, types, levels) {

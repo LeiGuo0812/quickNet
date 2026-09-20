@@ -114,11 +114,11 @@ test_that("MGM signs and every requested lag are retained", {
 test_that("negative MTD coupling uses an absolute two-sided permutation tail", {
   set.seed(123)
   trajectory <- cumsum(rep(c(1, 2, 4, 3), 5))
-  result <- MTD.No.Smooth.Test(cbind(trajectory, -trajectory), nperm = 199)
+  result <- MTD.No.Smooth.Test(cbind(trajectory, -trajectory), nperm = 199, method = "shuffle")
 
   expect_lt(result$coupling_mean, 0)
   expect_lt(result$p.value, 0.05)
-  expect_error(MTD.No.Smooth.Test(cbind(1:20, 1), nperm = 10), "nonzero")
+  expect_error(MTD.No.Smooth.Test(cbind(1:20, 1), radius = 4), "nonzero")
 })
 
 test_that("power probabilities count failed replications in the denominator", {

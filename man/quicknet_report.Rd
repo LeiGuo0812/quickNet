@@ -23,7 +23,11 @@ A \code{quicknet_report} object. For \code{quicknet_nira} inputs it
   an explicit model-implied/non-causal interpretation boundary. For
   \code{quicknet_fit} inputs it contains model registry metadata, sample,
   estimation, fit-index, parameter, modification-index, constraint, network,
-  edge, node, and model-specific tables. For
+  edge, node, and model-specific tables. The analysis_sample entry distinguishes
+  retained input rows, complete cases, actual temporal rows and available
+  backend sample counts; diagnostics and backend_warnings retain known fit
+  failures or source warnings. Missing convergence evidence is marked unknown.
+  For
   \code{quicknet_perturbation} inputs it contains perturbation settings,
   metrics, rankings, and a short text summary. For \code{quicknet_power}
   inputs it contains design settings, simulation summaries, and sample-size

@@ -6,7 +6,12 @@
 #' @param data2 The other of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be a cross-sectional exploratory quicknet_fit object, or the result of estimateNetwork from the bootnet package.
 #' @param it The number of iterations (permutations).
 #' @param binary.data Logical. Can be TRUE or FALSE to indicate whether the data is binary or not. If binary.data is FALSE, the data is regarded gaussian.
-#' @param paired Logical. Can be TRUE of FALSE to indicate whether the samples are dependent or not. If paired is TRUE, relabeling is performed within each pair of observations. If paired is FALSE, relabeling is not restricted to pairs of observations. Note that, currently, dependent data is assumed to entail one group measured twice.
+#' @param paired Logical. TRUE swaps the complete observation vectors within
+#'   pairs; row i in both datasets must identify the same participant. Distinct
+#'   pairs must be independent and the joint distribution must be invariant to
+#'   within-pair label swaps under the null. Equality of the networks alone does
+#'   not ensure this condition, for example when wave-specific means or scales
+#'   differ. FALSE permutes labels between independent groups.
 #' @param weighted Logical. Can be TRUE of FALSE to indicate whether the networks to be compared should be weighted of not. If not, the estimated networks are dichotomized. Defaults to TRUE.
 #' @param AND Logical. Can be TRUE of FALSE to indicate whether the AND-rule or the OR-rule should be used to define the edges in the network. Defaults to TRUE. Only necessary for binary data.
 #' @param abs_edge Logical. Should global strength consider the absolute value of edge weights, or the raw value (i.e., global expected influence)?
@@ -29,6 +34,24 @@
 #'   estimatorArgs instead. The effective EBIC gamma is recorded in
 #'   \code{info$call$gamma}; NULL indicates an inactive or unknown value.
 #' @param ... other parameters from \code{NetworkComparisonTest::NCT}
+#' @details The paired procedure follows NetworkComparisonTest's within-pair
+#'   swaps and keeps each participant at its original row position. Fixed
+#'   participant-specific estimator controls therefore remain attached to that
+#'   participant. This is a comparison of two aligned measurements, not a
+#'   general test for serially dependent observations. For binary data, the
+#'   permutation distribution is restricted to splits containing at least two
+#'   observations of each category in every variable and dataset; binary
+#'   inputs must themselves satisfy this restriction. General validity for
+#'   dependent data without exchangeability has not been established.
+#'   Estimator failures abort the permutation test. Undefined centrality
+#'   statistics receive NA p-values, with counts in \code{centrality_validity}.
+#'   Adjustment applies jointly to the requested edges and, separately, to all
+#'   requested node-by-centrality comparisons.
+#' @references Hemerik, J., & Goeman, J. (2018). Exact testing with random
+#'   permutations. TEST, 27, 811--825. doi:10.1007/s11749-017-0571-1.
+#'   Winkler, A. M., Webster, M. A., Vidaurre, D., Nichols, T. E., & Smith,
+#'   S. M. (2015). Multi-level block permutation. NeuroImage, 123, 253--268.
+#'   doi:10.1016/j.neuroimage.2015.05.092.
 #'
 #' @return returns a 'NCT' object that contains the following items:\itemize{
 #' \item\code{glstrinv.real:} The difference in global strength between the networks of the observed data sets.
@@ -52,6 +75,9 @@
 #' network estimated from data1.
 #' \item\code{net2_mask:} a binary matrix that indicates non-zero edges in the
 #' network estimated from data2.
+#' \item\code{info$permutation:} the permutation scheme, sampling unit,
+#' number of pairs and draws, rejected binary draws, p-value rule, and
+#' exchangeability assumption. The call metadata also records paired and it.
 #' }
 #' @export
 #'

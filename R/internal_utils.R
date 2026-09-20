@@ -11,6 +11,10 @@ quicknet_is_directed <- function(x, network = "default") {
     return(quicknet_network_summary_is_directed(x$model, x$meta, network))
   }
   if (inherits(x, "qgraph")) return(any(x$Edgelist$directed))
+  if (is.matrix(x) || is.data.frame(x)) {
+    mat <- quicknet_network_matrix(x)
+    return(!isTRUE(all.equal(unname(mat), unname(t(mat)), check.attributes = FALSE)))
+  }
   FALSE
 }
 
@@ -27,8 +31,11 @@ quicknet_align_network <- function(reference, other) {
         !setequal(reference_names, other_names)) {
       stop("Networks must contain the same unique node names.", call. = FALSE)
     }
-    order <- match(reference_names, other_names)
-    other <- other[order, order, drop = FALSE]
+    row_names <- rownames(other) %||% other_names
+    if (anyNA(row_names) || anyDuplicated(row_names) || !setequal(row_names, reference_names)) {
+      stop("Networks must contain the same unique row and column node names.", call. = FALSE)
+    }
+    other <- other[match(reference_names, row_names), match(reference_names, other_names), drop = FALSE]
   }
   other
 }
@@ -125,7 +132,7 @@ quicknet_check_failed_iterations <- function(failed, context) {
 }
 
 quicknet_plot_to_device <- function(filename,
-                                    device = c("pdf", "svg"),
+                                    device = c("pdf", "svg", "cairo_pdf"),
                                     width,
                                     height,
                                     plot_function,
@@ -137,6 +144,8 @@ quicknet_plot_to_device <- function(filename,
 
   if (device == "pdf") {
     grDevices::pdf(file = filename, width = width, height = height, ...)
+  } else if (device == "cairo_pdf") {
+    grDevices::cairo_pdf(filename = filename, width = width, height = height, ...)
   } else {
     grDevices::svg(filename = filename, width = width, height = height, ...)
   }

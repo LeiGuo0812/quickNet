@@ -21,3 +21,13 @@ A named list of bootstrap stability tables.
 \description{
 Bootstrap stability for longitudinal network fits
 }
+\details{
+Resamples independent participants with replacement, keeping all
+  their rows and time ordering together and giving each sampled copy a new ID.
+  At least two participants are required. Intervals are 95% percentile
+  intervals for off-diagonal edges, conditional on successful fits across all
+  requested layers. Failed fits are not replaced; their causes and counts are
+  recorded in the \code{resampling} attribute of the result and each table.
+  A small number of participants or a regularized estimator may give poor
+  interval coverage; these intervals do not constitute edge significance tests.
+}

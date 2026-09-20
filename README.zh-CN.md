@@ -191,6 +191,8 @@ NIRA 分别记录 Ising 建网 gamma 和调节分析的 `moderation_lambda = 0.2
 
 ## 最小使用示例
 
+以下代码块从示例 1 开始按顺序运行；后面的示例会复用前面生成的数据和拟合对象。安装好所有示例所需依赖后，即可从干净 R 会话执行。随机模拟使用固定种子。为便于核对完整流程，示例显式使用较小的重复次数和调参网格；这些演示预算不能支持正式的显著性、稳定性或功效结论，也不修改包的默认值。正式研究应独立确定并验证所需预算。执行记录见 [工作流核验](docs/workflow-validation.md)。
+
 ### 1. EBICglasso 横断面网络
 
 ```r
@@ -240,12 +242,13 @@ summary(fit)
 
 ```r
 set.seed(1)
-binary_data <- data.frame(
-  x1 = rbinom(120, 1, 0.50),
-  x2 = rbinom(120, 1, 0.45),
-  x3 = rbinom(120, 1, 0.55),
-  x4 = rbinom(120, 1, 0.50)
-)
+ising_graph <- matrix(0, 4, 4)
+ising_graph[cbind(1:3, 2:4)] <- 0.6
+ising_graph <- ising_graph + t(ising_graph)
+binary_data <- as.data.frame(IsingSampler::IsingSampler(
+  n = 300, graph = ising_graph, thresholds = c(-0.8, -0.4, -0.2, -0.6)
+))
+names(binary_data) <- paste0("x", 1:4)
 
 fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 
@@ -305,14 +308,15 @@ fit$nodes
 `PanelNet()` 使用宽格式数据。列名默认格式为 `节点名_t波次`，例如 `x1_t1`、`x1_t2`。
 
 ```r
-set.seed(1)
-n <- 80
+set.seed(12)
+n <- 300
 panel_data <- data.frame(id = seq_len(n))
-
+intercepts <- matrix(rnorm(n * 3, sd = 0.7), n, 3)
+state <- matrix(rnorm(n * 3), n, 3)
 for (wave in 1:3) {
-  panel_data[[paste0("x1_t", wave)]] <- rnorm(n)
-  panel_data[[paste0("x2_t", wave)]] <- rnorm(n)
-  panel_data[[paste0("x3_t", wave)]] <- rnorm(n)
+  if (wave > 1) state <- cbind(0.3 * state[, 1],
+    0.4 * state[, 1] + 0.2 * state[, 2], 0.3 * state[, 3]) + matrix(rnorm(n * 3), n, 3)
+  for (node in 1:3) panel_data[[paste0("x", node, "_t", wave)]] <- intercepts[, node] + state[, node]
 }
 
 panel_fit <- PanelNet(
@@ -320,7 +324,7 @@ panel_fit <- PanelNet(
   nodes = c("x1", "x2", "x3"),
   waves = 1:3,
   id = "id",
-  nfolds = 5
+  nfolds = 5, seed = 12
 )
 
 panel_fit$networks$default       # 包含自回归和横滞后路径
@@ -355,21 +359,23 @@ panel_gvar$networks$between
 
 ### 9. graphicalVAR 密集纵向网络
 
-`LongitudinalNet()` 使用长格式数据，需要个体 ID、天数/日期变量和测量时点变量。
+`LongitudinalNet()` 使用长格式数据，需要个体 ID。`day` 和 `beep` 可选，提供时用于确定日期边界和测量顺序。各后端的处理方式见[数据与时间核验](docs/data-time-validation.md)。
 
 ```r
-set.seed(1)
-ids <- rep(1:8, each = 12)
-time <- rep(1:12, times = 8)
-
-esm_data <- data.frame(
-  id = ids,
-  day = ceiling(time / 4),
-  beep = ((time - 1) %% 4) + 1,
-  x1 = rnorm(length(ids)),
-  x2 = rnorm(length(ids)),
-  x3 = rnorm(length(ids))
-)
+set.seed(13)
+simulate_esm <- function(cross_lag = 0.4, autoregressive = 0.3) do.call(rbind, lapply(1:8, function(person) {
+  person_mean <- rnorm(3, sd = 0.7)
+  do.call(rbind, lapply(1:3, function(day) {
+    state <- matrix(0, 70, 3)
+    for (i in 2:70) state[i, ] <- c(autoregressive * state[i - 1, 1],
+      cross_lag * state[i - 1, 1] + 0.2 * state[i - 1, 2],
+      autoregressive * state[i - 1, 3]) + rnorm(3)
+    values <- sweep(state[41:70, ], 2, person_mean, "+")
+    data.frame(id = person, day = day, beep = 1:30,
+      x1 = values[, 1], x2 = values[, 2], x3 = values[, 3])
+  }))
+}))
+esm_data <- simulate_esm()
 
 gvar_fit <- LongitudinalNet(
   esm_data,
@@ -377,7 +383,7 @@ gvar_fit <- LongitudinalNet(
   id = "id",
   day = "day",
   beep = "beep",
-  model = "graphicalVAR"
+  model = "graphicalVAR", nLambda = 5, subjectNetworks = FALSE
 )
 
 gvar_fit$networks$temporal
@@ -426,7 +432,7 @@ mlvar_fit$nodes
 power <- NetworkPower(
   nodes = 8,
   density = 0.30,
-  replications = 100,
+  sample_sizes = c(100, 200, 400), replications = 5, seed = 14,
   target_metric = "mcc",
   target_value = 0.60,
   target_probability = 0.80
@@ -438,9 +444,17 @@ quicknet_report(power)$text
 ```
 
 如果 `sample_sizes = NULL`，`NetworkPower()` 会根据节点数自动生成候选样本量网格。
-Monte Carlo 分支的默认目标指标为 `mcc`，它比单独使用 sensitivity 更平衡，因为会同时惩罚假阴性和假阳性。
-如果显式设置 `target_metric = "sensitivity"`，应将推荐结果理解为较乐观，并同时报告 specificity
-或假阳性控制情况。
+Monte Carlo 分支的默认目标指标为 `mcc`，同时考虑假阴性和假阳性。
+
+Monte Carlo 达标概率以一次调用中固定的生成网络为条件。
+`estimator = "correlation"` 的 `true_network` 为总体边际相关矩阵，其他估计器的
+真值为偏相关网络；`generating_network` 保留生成数据所用的偏相关网络。
+设置记录实际密度、边强度及保证精度矩阵正定所用的缩放系数。汇总表提供 Monte Carlo
+标准误与逐点精确二项 95% 区间；拟合失败和目标指标无定义分别计数，均计入未达标次数。
+
+推荐 N 是点估计达标的最小候选样本量；没有候选值达标时，`recommended_n` 为 `NA`。
+结果同时提供边界标记和 `lower_bound_supports_target`。独立验证及区间解释见
+[功效核验记录](docs/network-power-validation.md)。
 
 也可以使用 `powerly` 后端进行 GGM 样本量规划：
 
@@ -451,23 +465,40 @@ powerly_plan <- NetworkPower(
   density = 0.30,
   range_lower = 100,
   range_upper = 500,
+  samples = 5, replications = 5, boots = 20, iterations = 1,
+  cores = 1, verbose = FALSE, seed = 15,
   target_metric = "sensitivity",
   target_value = 0.60,
   target_probability = 0.80
 )
 ```
 
+Powerly 推荐值按其 bootstrap 中位曲线解释，保留源软件的数据生成设置，默认生成
+五级序数数据。已有偏相关真值矩阵时，可直接传入 `model_matrix = ...`，无需另给
+`nodes` 和 `density`。使用 `powerly::validate(powerly_plan$fit)` 进行源软件提供的
+独立验证。已测试设计及适用范围见[功效核验记录](docs/network-power-validation.md)。
+
+保存对象与运行环境的核验分别见[历史对象核验](docs/legacy-object-validation.md)和
+[平台兼容性记录](docs/platform-compatibility-validation.md)。报告依据保存的后端证据
+恢复历史设置；重拟合需要足够证据来保留原始估计方法。
+
 ### 13. 验证性、潜变量和动态网络
 
 ```r
+set.seed(16)
+factors <- matrix(rnorm(800), 400, 2) %*% chol(matrix(c(1, 0.4, 0.4, 1), 2))
+continuous_data <- as.data.frame(sapply(1:6, function(j)
+  0.8 * factors[, if (j <= 3) 1 else 2] + rnorm(400, sd = 0.6)))
+names(continuous_data) <- paste0("x", 1:6)
+
 omega <- matrix(1, 6, 6)
 diag(omega) <- 0
 colnames(omega) <- rownames(omega) <- paste0("x", 1:6)
 
-confirmatory <- ConfirmatoryNet(data, vars = paste0("x", 1:6), omega = omega)
+confirmatory <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), omega = omega)
 
-confirmatory_cor <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "cor")
-confirmatory_precision <- ConfirmatoryNet(data, vars = paste0("x", 1:6), model = "precision")
+confirmatory_cor <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "cor")
+confirmatory_precision <- ConfirmatoryNet(continuous_data, vars = paste0("x", 1:6), model = "precision")
 ```
 
 ```r
@@ -481,7 +512,8 @@ Depression =~ d1 + d2 + d3
 Anxiety    =~ a1 + a2 + a3
 "
 
-latent <- LatentNet(data, model = cfa_model)
+latent_data <- setNames(continuous_data, c("d1", "d2", "d3", "a1", "a2", "a3"))
+latent <- LatentNet(latent_data, model = cfa_model)
 latent$networks$latent
 latent$networks$residual
 ```
@@ -491,8 +523,8 @@ lambda <- matrix(0, 6, 2, dimnames = list(paste0("x", 1:6), c("Depression", "Anx
 lambda[1:3, "Depression"] <- 1
 lambda[4:6, "Anxiety"] <- 1
 
-lnm <- LatentNet(data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
-lrnm <- LatentNet(data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
+lnm <- LatentNet(continuous_data, model = "lnm", vars = paste0("x", 1:6), lambda = lambda)
+lrnm <- LatentNet(continuous_data, model = "lrnm", vars = paste0("x", 1:6), lambda = lambda)
 
 lnm$networks$latent
 lrnm$networks$residual
@@ -500,6 +532,11 @@ lrnm$networks$residual
 
 ```r
 panel_sem <- PanelSEMNet(panel_data, nodes = c("x1", "x2", "x3"), waves = 1:3)
+
+set.seed(17)
+time_data <- data.frame(x1 = as.numeric(arima.sim(list(ar = 0.3), n = 250)),
+  x2 = as.numeric(arima.sim(list(ar = -0.2), n = 250)),
+  x3 = sample(1:2, 250, replace = TRUE))
 
 mixed_var <- MixedVARNet(
   time_data,
@@ -523,8 +560,14 @@ tv_mvar <- TimeVaryingNet(
 `MetaNet()` 可基于多个研究的相关/协方差矩阵或多研究原始数据估计 psychonetrics 元分析网络模型。
 
 ```r
-cors <- list(study1_cor, study2_cor, study3_cor)
-nobs <- c(150, 180, 220)
+set.seed(18)
+nobs <- c(150, 180, 220, 160, 190, 210)
+population_cor <- matrix(c(1, 0.3, 0.1, 0.3, 1, 0.2, 0.1, 0.2, 1), 3)
+cors <- lapply(nobs, function(n) {
+  values <- matrix(rnorm(n * 3), n, 3) %*% chol(population_cor)
+  colnames(values) <- c("x1", "x2", "x3")
+  cor(values)
+})
 
 meta_ggm <- MetaNet(
   cors = cors,
@@ -537,17 +580,24 @@ meta_ggm$networks$default
 quicknet_report(meta_ggm)$sample
 ```
 
-对于多研究密集纵向数据：
+对于多研究密集纵向数据： 此处用源软件参数 `lowertri_randomEffects = "diag"` 将随机效应 Cholesky 非对角元素固定为零，作为这个小型演示的模型设定。
 
 ```r
+set.seed(19)
+multi_study_esm <- do.call(rbind, lapply(1:20, function(study) {
+  values <- simulate_esm(cross_lag = runif(1, 0.15, 0.55),
+                         autoregressive = runif(1, 0.15, 0.45))
+  values$study <- study
+  values
+}))
 meta_gvar <- MetaNet(
   data = multi_study_esm,
   studyvar = "study",
-  vars = c("x1", "x2", "x3"),
+  vars = c("x1", "x2"),
   id = "id",
   day = "day",
   beep = "beep",
-  model = "meta_gvar"
+  model = "meta_gvar", lowertri_randomEffects = "diag"
 )
 
 meta_gvar$networks$temporal
@@ -577,7 +627,8 @@ bridge$bridge_data
 
 ```r
 fit <- quickNet(mtcars[, 1:6], model = "correlation", pie = FALSE)
-stability <- Stability(fit, nboot = 100)
+set.seed(20)
+stability <- Stability(fit, nboot = 5)
 
 stability$edge_bootstrap_stability
 stability$case_drop_centrality_stability
@@ -586,7 +637,7 @@ stability$case_drop_centrality_stability
 纵向网络：
 
 ```r
-longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 100)
+longitudinal_stability <- LongitudinalStability(panel_fit, nboot = 5, seed = 20)
 ```
 
 ### 学术汇报参数
@@ -649,9 +700,9 @@ sequence <- Perturbation(fit, "sequence", targets = c("mpg", "cyl", "disp"),
 get_perturbation_plot(blocked, "edge_block")
 get_perturbation_plot(sequence, "sequence")
 
-result <- Perturbation(fit, "symperturb", modules = modules,
+result <- Perturbation(fit, "symperturb", modules = modules, seed = 20,
   config = list(bounds = NULL, sequence_length = 2,
-                bootstrap_replicates = 100, bootstrap_top_k = 2))
+                bootstrap_replicates = 5, bootstrap_top_k = 2))
 result$target_scores    # 七维原始效用、标准化效用、VPPS 和排名
 result$pair_scores     # 相对于较优单靶点的有符号增量
 result$scenario_ranks  # 13 个敏感性场景；稳健性不计入 VPPS
@@ -668,7 +719,7 @@ quicknet_report(result)
 
 R 实现不依赖 Python 运行环境。数值回归数据由本地 Python 参考包生成。bootstrap 使用 R 的随机数发生器；跨语言逐值比较时应传入相同的 `bootstrap_indices`（从 1 开始），不能假定相同整数种子产生相同样本。
 
-验证结果：七组参考配置及 Python 包提供的 12 节点示例均在数值容差内一致。示例的七张结果表最大绝对差约为 `6.7e-13`，其中包含 25 次共享索引的 bootstrap。全部 1,552 项包测试断言通过，`R CMD check --no-manual` 为 0 errors、0 warnings、0 notes。检验范围、接口说明及复现命令见[算法与验证记录](docs/symperturb-validation.md)。
+验证结果：七组参考配置及 Python 包提供的 12 节点示例均在数值容差内一致。示例的七张结果表最大绝对差约为 `6.7e-13`，其中包含 25 次共享索引的 bootstrap。在此前 SymPerturb 专项核验对应的版本中，全包 1,552 项测试断言通过，`R CMD check --no-manual` 为 0 errors、0 warnings、0 notes；这些数字是该次历史核验的记录，并非当前全包测试总数。检验范围、接口说明及复现命令见[算法与验证记录](docs/symperturb-validation.md)。
 
 参考文献：Zhu, Z., Yu, J., Hu, T., Yang, Z., & Wang, J. (2026). *SymPerturb converts symptom-network structure into testable intervention priorities*. arXiv:2607.28673v1；采用修订方法规范及 SymPerturb 0.1.0。
 
@@ -680,12 +731,12 @@ ising_fit <- quickNet(binary_data, model = "ising", gamma = 0.25, pie = FALSE)
 ising_result <- Perturbation(
   ising_fit,
   method = "ising_threshold",
-  targets = c("b1", "b2"),
+  targets = c("x1", "x2"),
   threshold_shift = -0.5
 )
 
 get_perturbation_plot(ising_result, type = "rank")
-get_perturbation_plot(ising_result, type = "node_change", target = "b1")
+get_perturbation_plot(ising_result, type = "node_change", target = "x1")
 ```
 
 若要运行 Wang 等（2026）描述的正式单网络 NIRA 工作流，请使用
@@ -698,12 +749,12 @@ nira_result <- NIRA(
   ising_fit,
   perturbation_type = "alleviating",
   amount_of_SDs_perturbation = 2,
-  n_samples = 5000,
-  moderation_nboot = 1000,
-  n_permutations = 5000,
-  stability_reps = 1000,
-  parallel = TRUE,
-  ncores = 6,
+  n_samples = 100,
+  moderation_nboot = 5,
+  n_permutations = 99,
+  stability_reps = 5,
+  parallel = FALSE,
+  ncores = 1,
   seed = 2025,
   engine = "literature",
   engine_iterations = 100
@@ -731,8 +782,8 @@ Cohen's d 的符号约定，并在末尾列出完整参考文献题录。说明�
 边保持固定”的假设缺少支持。设置 `proceed_on_moderation = TRUE` 可在
 明确警告下继续。
 
-NIRA 要求横断面、完整的 0/1 数据和具有理论意义的总分。结果是基于固定
-估计参数的模型模拟，不应解释为因果治疗效应或 bootstrap 网络稳定性。
+NIRA 要求横断面、完整的 0/1 数据和有意义的总分，结果为给定拟合网络下的模型模拟。
+方法适用范围和源文献信息见 [虚拟干预核验](docs/intervention-reliability-validation.md)。
 
 ### 网络比较
 
@@ -740,18 +791,47 @@ NIRA 要求横断面、完整的 0/1 数据和具有理论意义的总分。结�
 net1 <- quickNet(mtcars[, 1:6], pie = FALSE)
 net2 <- quickNet((mtcars[, 1:6])^2, pie = FALSE)
 
-comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 100, test.edges = TRUE)
+set.seed(21)
+comparison <- NetCompare(mtcars[, 1:6], (mtcars[, 1:6])^2, it = 9, test.edges = TRUE)
 plots <- get_compare_plot(comparison, net1, output = FALSE)
 ```
+
+`paired = TRUE` 沿用 `NetworkComparisonTest::NCT`；两组第 i 行必须为同一受试者。
+方法适用条件和置换来源保存在 `comparison$info$permutation`，
+详细来源及验证见 [配对 NCT 核验](docs/paired-nct-validation.md)。
+
+### MTD 时间序列耦合检验
+
+`MTD.No.Smooth.Test()` 的耦合指标使用 Shine 等作者 MATLAB 程序的导数标准化规则，
+不做时间平滑。显著性检验默认采用 Yuan 与 Shou（2024）的截断时间位移检验（TTS），
+按作者实现要求直接指定截断半径 `radius`：
+
+```r
+set.seed(1)
+series <- cbind(as.numeric(arima.sim(list(ar = 0.5), n = 160)),
+                as.numeric(arima.sim(list(ar = 0.5), n = 160)))
+mtd <- MTD.No.Smooth.Test(series, radius = 39)
+mtd$p.value
+mtd$test_coupling_mean
+```
+
+输入须为等间隔、按时间排序的一对完整序列，并事先指定 `radius`。
+`coupling_mean` 描述完整序列，`test_coupling_mean` 对应截断区间；
+TTS 使用全部位移，不接收 `nperm`。`method = "shuffle", nperm = 999` 选择观测置换。
+源方法的平稳性／可交换性要求与验证记录见 [MTD 核验](docs/mtd-inference-validation.md)。
 
 ### 导出图和表
 
 ```r
 fit <- quickNet(mtcars[, 1:6], pie = FALSE)
 
-get_network_plot(fit, path = tempdir(), prefix = "example")
-get_edges_df(fit)
+export_dir <- file.path(tempdir(), "quicknet-example")
+dir.create(export_dir, showWarnings = FALSE)
+get_network_plot(fit, path = export_dir, prefix = "example")
+utils::write.csv(get_edges_df(fit), file.path(export_dir, "edges.csv"), row.names = FALSE)
+writeLines(quicknet_report(fit)$text, file.path(export_dir, "report.txt"))
 globalCoeff(fit)
+list.files(export_dir)
 ```
 
 ## 参考文献
@@ -779,6 +859,9 @@ globalCoeff(fit)
 - 单网络 NIRA、moderation prerequisite、置换检验和模拟稳定性：Wang, F., Wu, Y., Wu, Y., & Zhu, T. (2026). Simulation intervention for cross-sectional network models: Based on the R packages NodeIdentifyR and NIRApost. *Advances in Methods and Practices in Psychological Science*. https://doi.org/10.1177/25152459261452944
 - 文献兼容 Ising 模拟引擎：Epskamp, S. (2026). *IsingSampler: Sampling Methods and Distribution Functions for the Ising Model*（R package version 0.5.0）。https://doi.org/10.32614/CRAN.package.IsingSampler
 - 中心性解释的谨慎边界：Bringmann, L. F., Elmer, T., Epskamp, S., Krause, R. W., Schoch, D., Wichers, M., Wigman, J. T. W., & Snippe, E. (2019). What do centrality measures measure in psychological networks? *Journal of Abnormal Psychology, 128*(8), 892-903. https://doi.org/10.1037/abn0000446
+
+- MTD 耦合指标：Shine, J. M., Koyejo, O., Bell, P. T., Gorgolewski, K. J., Gilat, M., & Poldrack, R. A. (2015). Estimation of dynamic functional connectivity using Multiplication of Temporal Derivatives. *NeuroImage, 122*, 399–407. https://doi.org/10.1016/j.neuroimage.2015.07.064
+- 时间序列独立性检验：Yuan, A. E., & Shou, W. (2024). A rigorous and versatile statistical test for correlations between stationary time series. *PLOS Biology, 22*(8), e3002758. https://doi.org/10.1371/journal.pbio.3002758
 
 ## 版本更新
 

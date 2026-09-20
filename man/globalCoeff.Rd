@@ -15,7 +15,8 @@ globalCoeff(x, list = FALSE)
 \itemize{
 \item \code{globalStrength}: the global strength.
 \item \code{AGS}: the average of all the edge weights in the network. It
-equals globalStrength/(N * (N-1)/2), where N is the number of nodes.
+equals globalStrength/(N * (N-1)/2) for undirected networks, or
+globalStrength/(N * (N-1)) for directed networks. Self loops are excluded.
 \item \code{ASPL}: the global average shortest path length.
 \item \code{CC}: the global clustering coefficient, averaged across nodes.
 }

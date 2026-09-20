@@ -85,6 +85,19 @@ a list contains the stability test results of the network\itemize{
 \description{
 Estimate edge-weight and node stability of a network
 }
+\details{
+The custom edge table uses observation bootstrap percentile intervals
+  (2.5th and 97.5th percentiles), conditional on successful fits. Failed fits
+  are not replaced; requested, successful, failed and undefined counts are
+  reported. Failure causes are stored in \code{resampling} and the table's
+  \code{resampling} attribute.
+  The custom case-drop table summarizes correlations of centrality vectors
+  at each requested deletion proportion and records the actual sample size.
+  A constant centrality vector gives an undefined correlation, not a failed fit.
+  This table is not the bootnet CS coefficient. For EBICglasso, the additional
+  bootnet results and \code{CS_coefficient} use bootnet's own sampling and
+  retry rules; CS is computed by \code{bootnet::corStability()}.
+}
 \examples{
 
 data('mtcars')

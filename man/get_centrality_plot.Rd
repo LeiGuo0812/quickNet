@@ -22,7 +22,8 @@ get_centrality_plot(
 
 \item{path}{the path of output files, can be either a relative or absolute path.}
 
-\item{device}{any format supported by \code{ggplot2::ggsave}.}
+\item{device}{any format supported by \code{ggplot2::ggsave}, or
+'cairo_pdf' for multilingual PDF labels using installed fonts.}
 
 \item{width}{the width of plot, in inch.}
 

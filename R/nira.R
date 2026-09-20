@@ -174,8 +174,9 @@ NIRA <- function(fit,
   }
 
   moderation_rule_inferred <- is.null(moderation_rule)
+  fitted_AND <- if (is.list(fit$fit)) fit$fit$AND %||% fit$meta$AND else fit$meta$AND
   if (moderation_rule_inferred) {
-    moderation_rule <- if (identical(fit$meta$AND, FALSE)) "OR" else "AND"
+    moderation_rule <- if (identical(fitted_AND, FALSE)) "OR" else "AND"
   } else {
     moderation_rule <- toupper(moderation_rule)
   }
@@ -184,10 +185,10 @@ NIRA <- function(fit,
   stage_streams <- quicknet_nira_make_streams(seed, 4L)
   rng_kind <- c("L'Ecuyer-CMRG", RNGkind()[2:3])
   analysis_warnings <- character()
-  if (moderation_rule_inferred && is.null(fit$meta$AND) && run_moderation) {
+  if (moderation_rule_inferred && is.null(fitted_AND) && run_moderation) {
     analysis_warnings <- c(
       analysis_warnings,
-      "fit$meta$AND was unavailable; moderation_rule = 'AND' was used conservatively."
+      "The fitted backend and metadata did not record AND; moderation_rule = 'AND' was used conservatively."
     )
   }
   construct_warning <- paste(
@@ -197,11 +198,14 @@ NIRA <- function(fit,
   analysis_warnings <- c(analysis_warnings, construct_warning)
   warning(construct_warning, call. = FALSE)
   mixing_warning <- paste(
-    "Finite-iteration MH/Gibbs sampling has no automatic convergence",
-    "diagnostic; strong or multimodal networks may require sensitivity",
-    "analyses with larger engine_iterations."
+    "Finite-iteration sampling follows the selected backend; method assumptions",
+    "and validation are documented in ?NIRA and the cited source method."
   )
   analysis_warnings <- c(analysis_warnings, mixing_warning)
+  analysis_warnings <- c(analysis_warnings, paste(
+    "Condition-mean intervals and permutation tests describe fixed-network",
+    "Monte Carlo results; see ?NIRA for method details."
+  ))
 
   settings <- list(
     perturbation_type = perturbation_type,

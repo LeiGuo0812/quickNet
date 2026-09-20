@@ -227,9 +227,9 @@ quicknet_nira_plot_effect <- function(x, top_n) {
     stringsAsFactors = FALSE
   )
   subtitle <- if (significance$available) {
-    "* adjusted permutation p < .05"
+    "Monte Carlo intervals under a fixed network\n* simulated-distribution adjusted permutation p < .05"
   } else {
-    "Adjusted permutation significance is unavailable"
+    "Monte Carlo intervals under a fixed network\nAdjusted permutation significance is unavailable"
   }
 
   ggplot2::ggplot(
@@ -532,7 +532,7 @@ quicknet_nira_plot_stability <- function(x, top_n) {
     ) +
     ggplot2::labs(
       title = "NIRA Monte Carlo rank stability",
-      subtitle = "Cumulative probability of attaining each rank or better",
+      subtitle = "Cumulative rank probability across simulations of the fixed network",
       x = "Rank threshold",
       y = "Cumulative occurrence",
       colour = "Node",
@@ -696,6 +696,7 @@ quicknet_nira_plot_moderation <- function(x, top_n) {
   } else {
     "No displayed moderation estimate met the stability criterion"
   }
+  subtitle <- paste0(subtitle, "\nIntervals resample participants and refit the moderated models.")
   if ("estimate_scale" %in% names(plot_data) &&
       any(plot_data$estimate_scale == "magnitude", na.rm = TRUE)) {
     subtitle <- paste0(

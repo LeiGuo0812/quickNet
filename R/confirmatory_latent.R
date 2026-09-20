@@ -154,7 +154,7 @@ quicknet_confirmatory_psychonetrics_fit <- function(dat,
       responses = responses, maxNodes = maxNodes)))
   } else if (model != "ggm") args$type <- switch(model, cor = "cor", covariance = "cov", precision = "prec")
   args <- quicknet_psychonetrics_args(fun, args, list(...))
-  raw <- do.call(get(fun, asNamespace("psychonetrics")), args)
+  raw <- quicknet_capture_backend_warnings(do.call(get(fun, asNamespace("psychonetrics")), args))
   list(model = quicknet_psychonetrics_run(raw), matrix_name = matrix_name, template = template,
        backend = paste0("psychonetrics::", fun), args = args)
 }
@@ -256,7 +256,7 @@ LatentNet <- function(data,
   args <- quicknet_backend_args(list(...), lavaan::cfa,
     reserved = c("model", "data", "std.lv", "missing", "estimator"), extra = names(lavaan::lavOptions()))
   args <- c(list(std.lv = std.lv, missing = missing), if (!is.null(estimator)) list(estimator = estimator), args)
-  fit <- do.call(lavaan::cfa, c(list(model = model, data = dat), args))
+  fit <- quicknet_capture_backend_warnings(do.call(lavaan::cfa, c(list(model = model, data = dat), args)))
   latent <- as.matrix(lavaan::lavInspect(fit, "cor.lv"))
   diag(latent) <- 0
   latent_names <- colnames(latent)
@@ -331,7 +331,7 @@ quicknet_psychonetrics_latent_fit <- function(data,
     estimator = estimator, identification = identification, verbose = FALSE)
   if (!is.null(residual)) args$residual <- residual
   args <- quicknet_psychonetrics_args(model, args, list(...))
-  raw_model <- do.call(get(model, asNamespace("psychonetrics")), args)
+  raw_model <- quicknet_capture_backend_warnings(do.call(get(model, asNamespace("psychonetrics")), args))
   fit <- quicknet_psychonetrics_run(raw_model)
 
   networks <- quicknet_psychonetrics_latent_networks(fit, model, vars = vars, latents = latents)
@@ -463,7 +463,7 @@ PanelSEMNet <- function(data,
   args <- quicknet_backend_args(list(...), lavaan::sem,
     reserved = c("model", "data", "missing", "auto.cov.y"), extra = names(lavaan::lavOptions()))
   args <- quicknet_merge_args(list(missing = missing, auto.cov.y = FALSE), args)
-  fit <- do.call(lavaan::sem, c(list(model = syntax, data = dat), args))
+  fit <- quicknet_capture_backend_warnings(do.call(lavaan::sem, c(list(model = syntax, data = dat), args)))
   parameters <- lavaan::standardizedSolution(fit)
   path_table <- parameters[parameters$op == "~", c("lhs", "rhs", "est.std", "se", "z", "pvalue")]
   mat <- quicknet_panel_sem_matrix(path_table, nodes, waves, prefix)

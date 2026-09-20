@@ -8,7 +8,8 @@
 #' @param centrality output from \code{quickNet::Centrality}
 #' @param prefix the prefix of output plot files.
 #' @param path the path of output files, can be either a relative or absolute path.
-#' @param device any format supported by \code{ggplot2::ggsave}.
+#' @param device any format supported by \code{ggplot2::ggsave}, or
+#'   'cairo_pdf' for multilingual PDF labels using installed fonts.
 #' @param width the width of plot, in inch.
 #' @param height the height of plot, in inch.
 #' @param get.table logical. whether get the csv file of centrality. Default is TRUE.
@@ -31,11 +32,15 @@ get_centrality_plot <- function(centrality, prefix = '', path = '.', device = 'p
     prefix <- paste0(prefix,'_')
   }
 
+  extension <- if (identical(device, "cairo_pdf")) "pdf" else device
+  graphics_device <- if (identical(device, "cairo_pdf")) grDevices::cairo_pdf else device
+
   ggsave(filename = path_join(c(path,
                                 paste0(prefix,
                                        'centrality_plot',
                                        '.',
-                                       device))),
+                                       extension))),
+         device = graphics_device,
          plot = centrality$centralityPlot,
          width = width,
          height = height, ...)

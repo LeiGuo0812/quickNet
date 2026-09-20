@@ -19,6 +19,10 @@
 #'
 get_edges <- function(net1, net2 = NULL, method = 'union') {
 
+  if (!is.null(net2) && quicknet_is_directed(net1) != quicknet_is_directed(net2)) {
+    stop("Both networks must have the same directed/undirected interpretation.", call. = FALSE)
+  }
+
   if (is.null(net2)) {
 
     edge_data <- quicknet_edgelist(

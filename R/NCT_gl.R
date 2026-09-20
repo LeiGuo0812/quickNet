@@ -178,6 +178,12 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
         call. = FALSE
       )
     }
+    if (!NCT_binary_group_valid(x1) || !NCT_binary_group_valid(x2)) {
+      stop(paste(if (paired) "Paired binary comparison requires at least two observations in each" else
+                   "Binary comparison requires at least two observations in each",
+                 "category of every variable in each original dataset, matching the",
+                 "restriction used for the conditional permutations."), call. = FALSE)
+    }
   }
   nobs1 <- nrow(x1)
   nobs2 <- nrow(x2)
@@ -307,8 +313,11 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
   }
   if (paired == TRUE) {
     if (verbose)
-      message("Note: NCT for dependent data has not been validated.")
+      message(paste("Note: paired NCT swaps aligned participant pairs and follows",
+                    "the source method's exchangeability assumptions; see ?NetCompare",
+                    "and NetworkComparisonTest::NCT."))
   }
+  rejected_permutations <- 0L
   for (i in seq_len(it)) {
     diffedges.permtemp <- if (test.edges) matrix(0, nvars, nvars) else NULL
     if (paired == FALSE) {
@@ -359,10 +368,9 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
       if (binary.data) {
         while (!okay && counter < 10000) {
           s <- sample(c(1, 2), nobs1, replace = TRUE)
-          x1perm <- x1[s == 1, ]
-          x1perm <- rbind(x1perm, x2[s == 2, ])
-          x2perm <- x2[s == 1, ]
-          x2perm <- rbind(x2perm, x1[s == 2, ])
+          swapped <- NCT_paired_swap(x1, x2, s == 2)
+          x1perm <- swapped$x1
+          x2perm <- swapped$x2
           okay <- NCT_binary_group_valid(x1perm) && NCT_binary_group_valid(x2perm)
           if (!okay) counter <- counter + 1
         }
@@ -375,10 +383,9 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
       }
       else {
         s <- sample(c(1, 2), nobs1, replace = TRUE)
-        x1perm <- x1[s == 1, ]
-        x1perm <- rbind(x1perm, x2[s == 2, ])
-        x2perm <- x2[s == 1, ]
-        x2perm <- rbind(x2perm, x1[s == 2, ])
+        swapped <- NCT_paired_swap(x1, x2, s == 2)
+        x1perm <- swapped$x1
+        x2perm <- swapped$x2
       }
       r1perm <- do.call(estimator, c(list(x1perm), estimatorArgs))
       if (is.list(r1perm))
@@ -399,6 +406,7 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
         r2perm = (r2perm != 0) * 1
       }
     }
+    rejected_permutations <- rejected_permutations + counter
     if (abs) {
       glstrinv.perm[i] <- abs(sum(abs(r1perm[upper.tri(r1perm)])) -
                                 sum(abs(r2perm[upper.tri(r2perm)])))
@@ -523,8 +531,16 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
     }
     diffcen.realmat <- matrix(diffcen.real.vec, it, nnodes *
                                 length(centrality), byrow = TRUE)
+    defined_centrality <- is.finite(diffcen.real.vec) & colSums(is.finite(diffcen.perm)) == it
     diffcen.pvaltemp <- (colSums(abs(diffcen.perm) >= abs(diffcen.realmat)) +
                            1)/(it + 1)
+    diffcen.pvaltemp[!defined_centrality] <- NA_real_
+    res$centrality_validity <- data.frame(
+      node = rep(if (all_nodes) colnames(x1) else nodes, length(centrality)),
+      statistic = rep(centrality, each = nnodes), observed_defined = is.finite(diffcen.real.vec),
+      requested_permutations = it, valid_permutations = colSums(is.finite(diffcen.perm)),
+      undefined_permutations = it - colSums(is.finite(diffcen.perm)), stringsAsFactors = FALSE)
+    if (any(!defined_centrality)) warning("Some centrality statistics are undefined; their p-values are NA. See centrality_validity; undefined draws are not dropped from the denominator.", call. = FALSE)
     diffcen.HBall <- p.adjust(diffcen.pvaltemp, method = p.adjust.methods)
     diffcen.pval <- matrix(diffcen.HBall, nnodes, length(centrality))
     diffcen.real <- matrix(diffcen.real.vec, nrow = nnodes,
@@ -542,8 +558,26 @@ NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
       rownames(res[["diffcen.real"]]) <- rownames(res[["diffcen.pval"]]) <- nodes
     }
   }
-  res$info <- list(call = list(gamma = used_gamma, estimatorArgs = estimatorArgs,
-                               binary.data = binary.data, abs = abs))
+  res$info <- list(
+    call = list(gamma = used_gamma, estimatorArgs = estimatorArgs,
+                binary.data = binary.data, abs = abs, paired = paired, it = it,
+                p.adjust.methods = p.adjust.methods),
+    permutation = list(
+      scheme = if (paired) "within_pair_label_swaps" else "pooled_group_relabeling",
+      unit = if (paired) "independent_pair" else "observation",
+      pairs = if (paired) nobs1 else NULL,
+      draws = it,
+      p_value_rule = "(1 + count(null >= observed)) / (1 + draws)",
+      failure_policy = "Estimator failures abort; no failed permutation is silently discarded.",
+      edge_adjustment_family = if (!test.edges) NULL else if (is.character(edges)) "all undirected edges" else "requested edges",
+      centrality_adjustment_family = if (test.centrality) "all requested node-by-statistic comparisons jointly" else NULL,
+      conditional_on_binary_counts = binary.data,
+      rejected_draws = rejected_permutations,
+      assumption = if (paired) paste("Joint distribution invariant to independent",
+        "within-pair label swaps; row i in both datasets identifies the same participant.")
+        else "Group labels are exchangeable under the null."
+    )
+  )
   class(res) <- "NCT"
   return(res)
 }
@@ -553,6 +587,18 @@ NCT_estimator_Ising <- function(x, gamma = NULL, AND = TRUE){
   gamma <- quicknet_resolve_gamma("ising", gamma)
   IF <- IsingFit::IsingFit(x, AND = AND, gamma=gamma, plot=FALSE, progressbar=FALSE)
   IF$weiadj
+}
+
+# Keep participant positions fixed, including any participant-specific estimator
+# controls. Reordering the unchanged and swapped pairs would detach those controls.
+NCT_paired_swap <- function(x1, x2, swap) {
+  n <- nrow(x1)
+  combined <- rbind(x1, x2)
+  first <- combined[seq_len(n) + n * swap, , drop = FALSE]
+  second <- combined[seq_len(n) + n * !swap, , drop = FALSE]
+  rownames(first) <- rownames(x1)
+  rownames(second) <- rownames(x2)
+  list(x1 = first, x2 = second)
 }
 
 NCT_binary_group_valid <- function(x) {

@@ -57,3 +57,11 @@ A \code{quicknet_fit} object.
 \description{
 Estimate psychonetrics meta-analytic network models
 }
+\details{
+Named matrix row and column axes are independently aligned to vars.
+  Named nobs are matched to unique study-list names; unnamed inputs are
+  positional. Meta-GVAR matrices contain a past block followed by a current
+  block, using the source tsData convention (var_lag1, then var). Variables
+  can be reordered within either block. Raw Meta-GVAR data are sorted by
+  study, subject, day and occasion; missing or duplicate time keys are rejected.
+}

@@ -1,0 +1,140 @@
+name: R compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  complete:
+    name: ${{ matrix.os }} / ${{ matrix.track }} / complete
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        track: [baseline, latest]
+        include:
+          - track: baseline
+            r: '4.5.3'
+          - track: latest
+            r: release
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      _R_CHECK_FORCE_SUGGESTS_: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.r }}
+          use-public-rspm: true
+      - name: Select exact baseline or current dependency specifications
+        id: dependencies
+        shell: Rscript {0}
+        run: |
+          baseline <- read.csv("tools/compatibility-baseline.csv")
+          if ("${{ matrix.track }}" == "baseline") {
+            packages <- with(subset(baseline, Priority != "base"), paste0(Package, "@", Version))
+          } else {
+            d <- read.dcf("DESCRIPTION")
+            parse <- function(x) trimws(gsub("\\s*\\(.*?\\)", "", strsplit(x, ",")[[1L]]))
+            packages <- paste0("any::", setdiff(unique(c(parse(d[1L, "Imports"]), parse(d[1L, "Suggests"]), "rcmdcheck")), c("methods", "parallel")))
+          }
+          cat("packages<<END_PACKAGES\n", paste(packages, collapse = "\n"), "\nEND_PACKAGES\n", sep = "", file = Sys.getenv("GITHUB_OUTPUT"), append = TRUE)
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: deps::.
+          dependencies: '"all"'
+          extra-packages: ${{ steps.dependencies.outputs.packages }}
+          upgrade: ${{ matrix.track == 'latest' && 'TRUE' || 'FALSE' }}
+          cache-version: compatibility-${{ matrix.track }}-1
+      - name: Install package
+        run: R CMD INSTALL .
+        shell: bash
+      - name: Check backend structure and reported settings
+        shell: bash
+        run: Rscript tools/check-compatibility.R complete ${{ matrix.track == 'baseline' && 'baseline' || 'current' }} compatibility-results
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual")'
+          error-on: '"note"'
+          check-dir: '"check"'
+          upload-results: true
+      - name: Reject skipped tests in the complete dependency profile
+        shell: Rscript {0}
+        run: |
+          logs <- list.files("check", pattern = "testthat\\.Rout$", recursive = TRUE, full.names = TRUE)
+          stopifnot(length(logs) >= 1L)
+          for (path in logs) {
+            text <- readLines(path, warn = FALSE)
+            if (any(grepl("SKIP[[:space:]]+[1-9][0-9]*", text))) stop("Complete-profile tests were skipped: ", path)
+          }
+      - name: Execute English and Chinese documented workflows
+        shell: bash
+        run: |
+          Rscript --vanilla tools/validate-workflows.R README.md compatibility-results/README
+          Rscript --vanilla tools/validate-workflows.R README.zh-CN.md compatibility-results/README.zh-CN
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compatibility-${{ matrix.os }}-${{ matrix.track }}-complete
+          path: compatibility-results/
+
+  minimal:
+    name: ${{ matrix.os }} / latest / minimal
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      _R_CHECK_FORCE_SUGGESTS_: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: deps::.
+          dependencies: '"hard"'
+          extra-packages: any::rcmdcheck
+          upgrade: 'TRUE'
+          cache-version: compatibility-minimal-1
+      - name: Install package with required dependencies
+        run: R CMD INSTALL .
+        shell: bash
+      - name: Verify optional backends are absent and diagnostics are actionable
+        run: Rscript tools/check-compatibility.R minimal current compatibility-results
+        shell: bash
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual", "--no-tests")'
+          error-on: '"warning"'
+          check-dir: '"check"'
+          upload-results: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compatibility-${{ matrix.os }}-latest-minimal
+          path: compatibility-results/

@@ -1,5 +1,71 @@
 # quickNet 0.0.0.9000
 
+## Result consistency and validation
+
+- Centrality and bridge statistics use the fitted network matrix. Directed
+  matrices use rows as outcomes and columns as sources; named matrix axes and
+  study sample sizes are aligned explicitly. Meta-GVAR preserves its past and
+  current time blocks. Comparisons reject incompatible edge direction meanings.
+- Longitudinal inputs distinguish omitted time indices from explicit time keys,
+  retain original row mappings, and record the actual observations and subjects
+  used in lagged, node-specific and local estimates. Reports separate these
+  counts from input rows and backend sample sizes.
+- Fit diagnostics retain backend convergence, inadmissibility and parameter
+  checks, with unknown status when evidence is unavailable. Native warnings are
+  saved in reports. Nonfatal glmnet partial paths retain source-returned solutions.
+- Resampling results record failed/undefined repetitions and available failure
+  reasons. Whole-subject longitudinal resampling preserves trajectories and
+  rejects incomplete network layers. Percentile intervals describe the source
+  estimator and are not presented as calibrated edge-significance tests.
+- NIRA infers its moderation rule from the fitted Ising backend and distinguishes
+  fixed-network Monte Carlo uncertainty from participant uncertainty. SymPerturb
+  states its tie convention and complete participant-bootstrap procedure.
+- Reproducible validation includes direct source-package comparisons, hand
+  calculations, exact Ising states, Gaussian integration, exhaustive small
+  sequence searches and finite-simulation coverage/ranking assessments.
+- Both READMEs contain executable demonstration workflows with explicit small
+  simulation budgets. CI executes both languages. Cairo PDF export supports
+  multilingual labels, and undefined centrality values receive a plot caption.
+  Workflow and small/medium serial/parallel performance measurements are recorded
+  separately from statistical evidence.
+
+## Sample size planning and compatibility
+
+- Monte Carlo recovery uses estimator-specific population truth and records the
+  generating graph, actual edge strengths, density and positive-definite scaling.
+  Target domains and unregularized sample-size requirements are validated.
+  Outputs separate failed fits from undefined target metrics and include Monte
+  Carlo uncertainty, boundary flags and the limits of grid-based recommendations.
+- Powerly recommendations follow its bootstrap-median curve, expose source
+  generation settings and accept `model_matrix` directly. Independent validation
+  uses the source package's `validate()` method.
+- Historical EBIC settings are recovered from saved estimator defaults and
+  arguments for reports and downstream refits. Reports distinguish CLPN data
+  preprocessing from glmnet standardization and omit inapplicable correlations.
+- Longitudinal psychonetrics controls follow the installed backend interface;
+  unsupported explicit within-person centering receives a clear diagnostic.
+- Reproducible compatibility checks cover historical serialized fits, complete
+  and minimal dependency environments. CI defines Windows, Linux and macOS
+  checks with a recorded dependency snapshot and current dependencies.
+
+## Dependence tests
+
+- Paired network comparison follows NetworkComparisonTest's within-pair
+  label swaps and records its exchangeability assumptions and permutation
+  details. Participant row positions are retained during swaps. Paired binary
+  inputs satisfy the same category-count restriction as their conditional
+  permutation samples.
+- MTD coupling uses the sample-SD normalization in the Shine authors' MATLAB
+  implementation. Its default inference is the Yuan--Shou truncated time-shift
+  test, with an explicitly supplied `radius`, every allowed shift, and the
+  published finite-sample bound. Outputs distinguish the full-series mean
+  from the central-window statistic and state the stationarity assumption.
+  `method = "shuffle"` explicitly selects raw-observation permutation and
+  accepts `nperm`; this option requires exchangeable observations.
+- Validation includes official NCT numerical comparisons, independent paired
+  swap enumeration, author-generated TTS reference fixtures and reproducible
+  null simulations for paired data and autocorrelated time series.
+
 ## Model parameters
 
 - Model arguments are supplied directly through function parameters and `...`.

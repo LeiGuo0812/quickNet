@@ -1,0 +1,81 @@
+test_that("TTS uses the central MTD and the reference bound rather than a surrogate proportion", {
+  dx <- c(1, -1, 2, 0, -2, 1)
+  dy <- c(2, 0, -1, 1, 0, -2)
+  data <- cbind(c(0, cumsum(dx)), c(0, cumsum(dy)))
+  fit <- MTD.No.Smooth.Test(data, radius = 1)
+  divisor <- sd(dx) * sd(dy)
+  expect_equal(fit$shifts, c(0, 1, -1))
+  expect_equal(fit$null_coupling, c(-.5, 1.75, -1) / divisor)
+  expect_equal(fit$test_coupling_mean, -.5 / divisor)
+  expect_equal(fit$coupling_mean, (-1 / 3) / divisor)
+  expect_equal(fit$extreme_count, 3)
+  expect_equal(fit$tts_bound, 1.5)
+  expect_equal(fit$p.value, 1)
+  expect_equal(fit$minimum_p, .5)
+  expect_identical(fit$derivative_indices, 2:5)
+  expect_identical(fit$method, "tts")
+})
+
+test_that("TTS keeps all ties and supports the reference radius endpoints", {
+  dx <- rep(c(-1, 1), 10)
+  data <- cbind(c(0, cumsum(dx)), c(0, cumsum(-dx)))
+  fit <- MTD.No.Smooth.Test(data, radius = 4)
+  expect_equal(fit$extreme_count, 9)
+  expect_equal(fit$tts_bound, 9 / 5)
+  expect_equal(fit$p.value, 1)
+  none <- MTD.No.Smooth.Test(data, radius = 0)
+  expect_equal(none$p.value, 1)
+  expect_identical(none$shifts, 0L)
+  expect_equal(none$test_coupling_mean, none$coupling_mean)
+  one <- MTD.No.Smooth.Test(data[-nrow(data), ], radius = 9)
+  expect_length(one$derivative_indices, 1)
+  expect_true(is.finite(one$p.value))
+})
+
+test_that("TTS is deterministic and uses two-sided coupling strength", {
+  set.seed(601)
+  x <- as.numeric(arima.sim(list(ar = .5), n = 160))
+  y <- .7 * x + rnorm(160, sd = .2)
+  state <- .Random.seed
+  positive <- MTD.No.Smooth.Test(cbind(x, y), radius = 39)
+  negative <- MTD.No.Smooth.Test(cbind(x, -y), radius = 39)
+  expect_identical(.Random.seed, state)
+  expect_equal(positive$p.value, negative$p.value)
+  expect_lt(positive$p.value, .05)
+  expect_equal(positive$statistic, negative$statistic)
+  expect_equal(positive$test_coupling_mean, -negative$test_coupling_mean)
+  transformed <- MTD.No.Smooth.Test(cbind(2 * x + 10, 3 * y - 7), radius = 39)
+  expect_equal(positive$null_coupling, transformed$null_coupling, tolerance = 1e-12)
+  expect_equal(positive$p.value, transformed$p.value)
+})
+
+test_that("MTD rejects inactive controls and malformed time series", {
+  x <- cbind(c(0, 1, -1, 2, 0), c(2, 1, 2, -1, 0))
+  expect_error(MTD.No.Smooth.Test(x), "Specify radius")
+  expect_error(MTD.No.Smooth.Test(x, nperm = 9, radius = 1), "nperm applies only")
+  expect_error(MTD.No.Smooth.Test(x, method = "shuffle", radius = 1), "radius applies only")
+  for (radius in list(NA_real_, Inf, -1, .5, 2, c(0, 1), "1")) {
+    expect_error(MTD.No.Smooth.Test(x, radius = radius), "radius must")
+  }
+  expect_error(MTD.No.Smooth.Test(x, nperm = 0, method = "shuffle"), "nperm must")
+  expect_error(MTD.No.Smooth.Test(x[1:2, ], radius = 0), "at least three")
+  x[1, 1] <- NA
+  expect_error(MTD.No.Smooth.Test(x, radius = 0), "missing or non-finite")
+})
+
+test_that("MTD TTS matches the authors' independently executed Python reference", {
+  skip_if_not_installed("jsonlite")
+  reference <- jsonlite::fromJSON(test_path("fixtures", "mtd-reference.json"), simplifyVector = FALSE)
+  for (case in reference$cases) {
+    data <- do.call(rbind, lapply(case$data, unlist))
+    fit <- MTD.No.Smooth.Test(data, radius = case$radius)
+    expect_equal(fit$shifts, unlist(case$shifts), info = case$name)
+    expect_equal(abs(fit$null_coupling), unlist(case$distribution), tolerance = 1e-12, info = case$name)
+    expect_equal(fit$null_coupling, unlist(case$null_coupling), tolerance = 1e-12, info = case$name)
+    expect_equal(fit$coupling_mean, case$coupling_mean, tolerance = 1e-12, info = case$name)
+    expect_equal(fit$test_coupling_mean, case$test_coupling_mean, tolerance = 1e-12, info = case$name)
+    expect_equal(fit$extreme_count, case$extreme_count, info = case$name)
+    expect_equal(fit$tts_bound, case$tts_bound, info = case$name)
+    expect_equal(fit$p.value, case$p_value, info = case$name)
+  }
+})

@@ -22,7 +22,8 @@ get_network_plot(
 
 \item{path}{the path of output files, can be either a relative or absolute path.}
 
-\item{device}{'pdf' or 'svg', deciding the output plot format.}
+\item{device}{'pdf', 'svg', or 'cairo_pdf'. Use 'cairo_pdf' with an installed
+font supporting the labels for multilingual PDF output.}
 
 \item{width}{the width of plot, in inch.}
 

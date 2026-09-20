@@ -2,7 +2,8 @@
 #' @param network a qgraph object.
 #' @param prefix the prefix of output plot files.
 #' @param path the path of output files, can be either a relative or absolute path.
-#' @param device 'pdf' or 'svg', deciding the output plot format.
+#' @param device 'pdf', 'svg', or 'cairo_pdf'. Use 'cairo_pdf' with an installed
+#'   font supporting the labels for multilingual PDF output.
 #' @param width the width of plot, in inch.
 #' @param height the height of plot, in inch.
 #' @param get.matrix logical. whether get the csv file of graph matrix. Default is TRUE.
@@ -26,8 +27,9 @@ get_network_plot <- function(network, prefix = '', path = '.', device = 'pdf', w
     prefix <- paste0(prefix,'_')
   }
 
-  device <- match.arg(device, c("pdf", "svg"))
-  filename <- path_join(c(path, paste0(prefix, "network_plot.", device)))
+  device <- match.arg(device, c("pdf", "svg", "cairo_pdf"))
+  extension <- if (device == "cairo_pdf") "pdf" else device
+  filename <- path_join(c(path, paste0(prefix, "network_plot.", extension)))
   quicknet_plot_to_device(
     filename = filename,
     device = device,

@@ -38,7 +38,12 @@ NetCompare(
 
 \item{binary.data}{Logical. Can be TRUE or FALSE to indicate whether the data is binary or not. If binary.data is FALSE, the data is regarded gaussian.}
 
-\item{paired}{Logical. Can be TRUE of FALSE to indicate whether the samples are dependent or not. If paired is TRUE, relabeling is performed within each pair of observations. If paired is FALSE, relabeling is not restricted to pairs of observations. Note that, currently, dependent data is assumed to entail one group measured twice.}
+\item{paired}{Logical. TRUE swaps the complete observation vectors within
+pairs; row i in both datasets must identify the same participant. Distinct
+pairs must be independent and the joint distribution must be invariant to
+within-pair label swaps under the null. Equality of the networks alone does
+not ensure this condition, for example when wave-specific means or scales
+differ. FALSE permutes labels between independent groups.}
 
 \item{weighted}{Logical. Can be TRUE of FALSE to indicate whether the networks to be compared should be weighted of not. If not, the estimated networks are dichotomized. Defaults to TRUE.}
 
@@ -102,10 +107,28 @@ returns a 'NCT' object that contains the following items:\itemize{
 network estimated from data1.
 \item\code{net2_mask:} a binary matrix that indicates non-zero edges in the
 network estimated from data2.
+\item\code{info$permutation:} the permutation scheme, sampling unit,
+number of pairs and draws, rejected binary draws, p-value rule, and
+exchangeability assumption. The call metadata also records paired and it.
 }
 }
 \description{
 a wrapper of \code{NetworkComparisonTest::NCT}
+}
+\details{
+The paired procedure follows NetworkComparisonTest's within-pair
+  swaps and keeps each participant at its original row position. Fixed
+  participant-specific estimator controls therefore remain attached to that
+  participant. This is a comparison of two aligned measurements, not a
+  general test for serially dependent observations. For binary data, the
+  permutation distribution is restricted to splits containing at least two
+  observations of each category in every variable and dataset; binary
+  inputs must themselves satisfy this restriction. General validity for
+  dependent data without exchangeability has not been established.
+  Estimator failures abort the permutation test. Undefined centrality
+  statistics receive NA p-values, with counts in \code{centrality_validity}.
+  Adjustment applies jointly to the requested edges and, separately, to all
+  requested node-by-centrality comparisons.
 }
 \examples{
 data('mtcars')
@@ -118,4 +141,11 @@ NetCompare(
   useCommunities = c(1, 2)
 )
 
+}
+\references{
+Hemerik, J., & Goeman, J. (2018). Exact testing with random
+  permutations. TEST, 27, 811--825. doi:10.1007/s11749-017-0571-1.
+  Winkler, A. M., Webster, M. A., Vidaurre, D., Nichols, T. E., & Smith,
+  S. M. (2015). Multi-level block permutation. NeuroImage, 123, 253--268.
+  doi:10.1016/j.neuroimage.2015.05.092.
 }

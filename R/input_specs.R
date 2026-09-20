@@ -402,6 +402,17 @@ quicknet_check_panel <- function(data, args) {
   nodes <- args$nodes
   waves <- args$waves
   prefix <- args$prefix %||% "_t"
+  id <- args$id %||% "id"
+  if (!is.character(id) || length(id) != 1L || is.na(id) || !nzchar(id)) {
+    errors <- c(errors, "id must be one non-empty column name.")
+  } else if (!is.null(dat) && id %in% names(dat)) {
+    values <- dat[[id]]
+    if (anyNA(values) || any(!nzchar(as.character(values))) ||
+        (is.numeric(values) && any(!is.finite(values)))) {
+      errors <- c(errors, "Subject identifiers must not contain missing, empty or non-finite values.")
+    }
+    if (anyDuplicated(values)) errors <- c(errors, "Wide panel data must have one row per unique subject identifier.")
+  }
   if (is.null(nodes) || length(nodes) < 1) errors <- c(errors, "nodes must be provided.")
   if (is.null(waves) || length(waves) < 2) errors <- c(errors, "At least two waves are required.")
   if (!is.null(nodes) && (!is.character(nodes) || anyNA(nodes) ||
@@ -438,23 +449,51 @@ quicknet_check_longitudinal <- function(data, args) {
   warnings <- checked$warnings
   vars <- args$vars
   id <- args$id %||% "id"
-  day <- if ("day" %in% names(args)) args$day else "day"
-  beep <- if ("beep" %in% names(args)) args$beep else "beep"
+  day <- args$day
+  beep <- args$beep
   if (is.null(vars) || length(vars) < 2) errors <- c(errors, "vars must contain at least two node variables.")
+  if (!is.character(vars) || anyNA(vars) || any(!nzchar(vars)) || anyDuplicated(vars)) {
+    errors <- c(errors, "vars must contain unique, non-empty variable names.")
+  }
+  index_names <- list(id = id, day = day, beep = beep)
+  for (name in names(index_names)) {
+    value <- index_names[[name]]
+    if ((!is.null(value) || name == "id") &&
+        (!is.character(value) || length(value) != 1L || is.na(value) || !nzchar(value))) {
+      errors <- c(errors, paste0(name, " must be one non-empty column name or, for day/beep, NULL."))
+    }
+  }
+  valid_index_names <- all(vapply(index_names, function(value) {
+    is.null(value) || (is.character(value) && length(value) == 1L && !is.na(value) && nzchar(value))
+  }, logical(1)))
+  if (!valid_index_names) return(list(errors = errors, warnings = warnings))
+  index_columns <- c(id, day, beep)
+  if (anyDuplicated(index_columns) || length(intersect(vars, index_columns))) {
+    errors <- c(errors, "Node variables and subject/time identifiers must use distinct columns.")
+  }
   if (!is.null(dat) && !is.null(vars)) {
     required <- c(vars, id, day, beep)
-    out <- quicknet_check_numeric_columns(dat, vars, errors, warnings)
+    out <- quicknet_check_numeric_columns(dat, vars, errors, warnings, require_complete = FALSE)
     errors <- out$errors
     warnings <- out$warnings
     missing_required <- setdiff(required, colnames(dat))
     if (length(missing_required) > 0) errors <- c(errors, paste0("Missing required column(s): ", paste(missing_required, collapse = ", ")))
-    index_columns <- c(id, day, beep)
     if (all(index_columns %in% colnames(dat))) {
-      if (anyNA(dat[, index_columns, drop = FALSE])) {
-        errors <- c(errors, "Subject and time identifiers must not contain missing values.")
+      bad_index <- vapply(dat[, index_columns, drop = FALSE], function(value) {
+        anyNA(value) || any(!nzchar(as.character(value))) ||
+          (is.numeric(value) && any(!is.finite(value)))
+      }, logical(1))
+      if (any(bad_index)) {
+        errors <- c(errors, "Subject and time identifiers must not contain missing, empty or non-finite values.")
       }
-      if (length(index_columns) > 1L && anyDuplicated(dat[, index_columns, drop = FALSE])) {
+      # Without an occasion index, native backends assign consecutive occasions
+      # in input order within each subject/day; repeated id/day keys are valid.
+      if (!is.null(beep) && anyDuplicated(dat[, index_columns, drop = FALSE])) {
         errors <- c(errors, "Each id/day/beep combination must identify a unique observation.")
+      }
+      if (!is.null(beep) && (!is.numeric(dat[[beep]]) ||
+          any(!is.finite(dat[[beep]])) || any(dat[[beep]] != floor(dat[[beep]])))) {
+        errors <- c(errors, "beep must contain finite integer occasion indices; gaps denote missed occasions.")
       }
     }
     if (id %in% colnames(dat)) {

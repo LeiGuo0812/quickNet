@@ -71,6 +71,13 @@ quicknet_fit <- function(model,
   } else {
     network_summary
   }
+  diagnostics <- quicknet_backend_diagnostics(fit)
+  meta$analysis_sample <- quicknet_analysis_sample(data, fit, meta, model)
+  if (any(diagnostics$status == "failed")) {
+    warning("The backend reported an unsuccessful or inadmissible fit; inspect diagnostics before interpreting its estimates.", call. = FALSE)
+  } else if (any(diagnostics$status == "partial")) {
+    warning("glmnet returned a partial regularization path; inspect diagnostics and the available lambda range.", call. = FALSE)
+  }
 
   structure(
     list(
@@ -82,6 +89,7 @@ quicknet_fit <- function(model,
       fit = fit,
       plots = plots,
       meta = meta,
+      diagnostics = diagnostics,
       network_summary = summary_table,
       graph = default_network,
       graphData = list(graph = default_network),
@@ -103,6 +111,9 @@ print.quicknet_fit <- function(x, ...) {
     sum(abs(x$networks[[1]][upper.tri(x$networks[[1]])]) > 1e-10, na.rm = TRUE)
   }
   cat("Nonzero edges: ", nonzero_edges, "\n", sep = "")
+  issue <- quicknet_fit_failure_reason(x)
+  if (!is.null(issue)) cat("Fit status: unsuccessful. ", issue, "\n", sep = "")
+  if (any(quicknet_fit_diagnostics(x)$status == "partial")) cat("Fit status: partial regularization path; inspect diagnostics.\n")
   explanation <- quicknet_ising_comparison_notes(x$model, quicknet_fit_gamma(x))
   quicknet_print_comparison_notes(explanation)
   if (length(explanation) > 0L) cat("Reference: ", quicknet_nira_reference(), "\n", sep = "")
@@ -187,7 +198,19 @@ quicknet_network_matrix <- function(x, network = "default") {
   }
 
   if (is.matrix(x) || is.data.frame(x)) {
-    return(as.matrix(x))
+    mat <- as.matrix(x)
+    if (!is.numeric(mat) || nrow(mat) != ncol(mat) || !nrow(mat) || any(!is.finite(mat))) {
+      stop("A network matrix must be a nonempty finite numeric square matrix.", call. = FALSE)
+    }
+    rn <- rownames(mat)
+    cn <- colnames(mat)
+    if (!is.null(rn) && !is.null(cn)) {
+      if (anyNA(rn) || anyNA(cn) || anyDuplicated(rn) || anyDuplicated(cn) || !setequal(rn, cn)) {
+        stop("Network row and column names must identify the same unique nodes.", call. = FALSE)
+      }
+      mat <- mat[match(cn, rn), , drop = FALSE]
+    }
+    return(mat)
   }
 
   if (is.list(x) && !is.null(x[["graph", exact = TRUE]])) {
@@ -519,6 +542,13 @@ quicknet_cross_refit_args <- function(fit) {
   backend_args <- fit$meta$backend_args %||% list()
   raw <- if (is.list(fit$fit)) fit$fit else list()
   cor_method <- fit$meta$cor_method
+  AND <- TRUE
+  if (fit$model == "ising") {
+    AND <- raw$AND %||% fit$meta$AND
+    if (!is.logical(AND) || length(AND) != 1L || is.na(AND)) {
+      stop("The fitted object's original Ising AND rule is unknown; refit the original data first.", call. = FALSE)
+    }
+  }
   if (fit$model == "mgm") {
     saved <- if (is.list(raw$call)) raw$call else list()
     saved <- saved[intersect(names(saved), setdiff(names(formals(mgm::mgm)), c("...", "data", "type", "level")))]
@@ -527,18 +557,21 @@ quicknet_cross_refit_args <- function(fit) {
     backend_args$lambdaSel <- backend_args$lambdaSel %||% fit$meta$lambdaSel
     if (is.null(backend_args$lambdaSel)) stop("The fitted MGM selection method is unknown; refit the original data first.", call. = FALSE)
   }
-  if (fit$model == "EBICglasso" && is.list(raw$arguments)) {
-    saved <- raw$arguments[intersect(names(raw$arguments), quicknet_cross_backend_names("EBICglasso"))]
+  missing <- fit$meta$missing
+  if (fit$model == "EBICglasso") {
+    saved <- quicknet_saved_ebic_args(fit)
     backend_args <- quicknet_merge_args(backend_args, saved)
     # Earlier quickNet versions recorded cor_method even though bootnet did not
     # receive it. The estimator's own arguments take precedence.
     method <- saved$corMethod
-    if (is.null(method) && is.function(raw$estimator) && "corMethod" %in% names(formals(raw$estimator))) {
-      method <- quicknet_backend_default(raw$estimator, "corMethod", first = TRUE)
+    if (is.null(method)) {
+      stop("The fitted object's original EBIC correlation estimator is unknown; refit the original data first.", call. = FALSE)
     }
-    if (!is.null(method)) {
-      backend_args$corMethod <- method[[1L]]
-      cor_method <- if (identical(method[[1L]], "cor")) saved$corArgs$method %||% "pearson" else NULL
+    backend_args$corMethod <- method[[1L]]
+    cor_method <- if (identical(method[[1L]], "cor")) saved$corArgs$method %||% "pearson" else NULL
+    if (identical(missing, "none") && is.null(fit$meta$backend_args)) {
+      missing <- saved$missing
+      if (is.null(missing)) stop("The fitted object's original EBIC missing-data rule is unknown; refit the original data first.", call. = FALSE)
     }
   }
   reserved <- switch(fit$model, EBICglasso = c("tuning", "missing"), ising = c("family", "AND", "gamma"), correlation = c("use", "method"), partial = c("use", "method"), character())
@@ -547,10 +580,10 @@ quicknet_cross_refit_args <- function(fit) {
   list(
     model = fit$model,
     cor_method = cor_method,
-    missing = fit$meta$missing,
+    missing = missing,
     gamma = quicknet_refit_gamma(fit),
     ordinal_method = fit$meta$ordinal_method %||% "polychoric",
-    AND = if (fit$model == "ising") raw$AND %||% fit$meta$AND %||% TRUE else TRUE,
+    AND = AND,
     types = fit$meta$types,
     levels = fit$meta$levels,
     backend_args = backend_args,
@@ -559,55 +592,64 @@ quicknet_cross_refit_args <- function(fit) {
   )
 }
 
+# A bootstrap draw is retained only when every required network layer is usable.
+# The original error is retained: failed fits are not replaced by a new draw.
+quicknet_resampling_graph <- function(graph, original, layer = "default") {
+  if (!is.matrix(graph) || !identical(dim(graph), dim(original))) {
+    stop("Invalid dimensions in network layer '", layer, "'.", call. = FALSE)
+  }
+  if (!is.numeric(graph) || any(!is.finite(graph))) {
+    stop("Non-finite weights in network layer '", layer, "'.", call. = FALSE)
+  }
+  if (!is.null(rownames(original)) && !is.null(rownames(graph)) &&
+      !is.null(colnames(original)) && !is.null(colnames(graph))) {
+    if (!setequal(rownames(original), rownames(graph)) ||
+        !setequal(colnames(original), colnames(graph))) {
+      stop("Mismatched nodes in network layer '", layer, "'.", call. = FALSE)
+    }
+    graph <- graph[rownames(original), colnames(original), drop = FALSE]
+  }
+  graph
+}
+
+quicknet_resampling_diagnostics <- function(reasons, method, unit, context) {
+  failed <- !is.na(reasons)
+  details <- data.frame(replication = which(failed), reason = reasons[failed],
+                        stringsAsFactors = FALSE)
+  info <- list(method = method, unit = unit, requested = length(reasons),
+    succeeded = sum(!failed), failed = sum(failed),
+    conditional_on_success = TRUE, failure_details = details)
+  if (all(failed)) stop("All ", context, " failed; no valid result can be reported. First cause: ",
+                        reasons[[1]], call. = FALSE)
+  if (any(failed)) warning(sum(failed), " of ", length(failed), " ", context,
+    " failed; summaries condition on successful fits. Reasons are retained in attr(result, 'resampling')$failure_details.",
+    call. = FALSE)
+  info
+}
+
 quicknet_bootstrap_edge_stability <- function(fit,
                                               nboot = 1000,
                                               seed = NULL,
                                               threshold = 1e-10) {
-  if (!inherits(fit, "quicknet_fit")) {
-    stop("fit must be a quicknet_fit object.", call. = FALSE)
-  }
+  if (!inherits(fit, "quicknet_fit")) stop("fit must be a quicknet_fit object.", call. = FALSE)
   if (!is.null(seed)) set.seed(seed)
-
-  data <- fit$data
   original <- fit$graph
-  node_names <- colnames(original)
-  edge_index <- which(upper.tri(original), arr.ind = TRUE)
-  edge_values <- matrix(NA_real_, nrow = nboot, ncol = nrow(edge_index))
-  failed <- logical(nboot)
-
+  edge_array <- array(NA_real_, c(nrow(original), ncol(original), nboot))
+  reasons <- rep(NA_character_, nboot)
   for (boot_index in seq_len(nboot)) {
-    sampled_rows <- sample(seq_len(nrow(data)), nrow(data), replace = TRUE)
-    boot_fit <- tryCatch(
-      quicknet_refit_like(data[sampled_rows, , drop = FALSE], fit),
-      error = function(e) NULL
-    )
-    if (is.null(boot_fit) || !all(dim(boot_fit$graph) == dim(original))) {
-      failed[boot_index] <- TRUE
-      next
-    }
-    edge_values[boot_index, ] <- boot_fit$graph[edge_index]
+    sampled_rows <- sample.int(nrow(fit$data), nrow(fit$data), replace = TRUE)
+    graph <- tryCatch({
+      boot_fit <- quicknet_refit_like(fit$data[sampled_rows, , drop = FALSE], fit)
+      failure_reason <- quicknet_fit_failure_reason(boot_fit)
+      if (!is.null(failure_reason)) stop(failure_reason, call. = FALSE)
+      quicknet_resampling_graph(boot_fit$graph, original)
+    }, error = function(e) { reasons[[boot_index]] <<- conditionMessage(e); NULL })
+    if (!is.null(graph)) edge_array[, , boot_index] <- graph
   }
-  quicknet_check_failed_iterations(failed, "edge bootstrap replications")
-
-  original_values <- original[edge_index]
-  out <- data.frame(
-    node_i = node_names[edge_index[, "row"]],
-    node_j = node_names[edge_index[, "col"]],
-    original_weight = original_values,
-    bootstrap_mean = apply(edge_values, 2, quicknet_safe_mean),
-    bootstrap_sd = apply(edge_values, 2, quicknet_safe_sd),
-    ci_lower = apply(edge_values, 2, quicknet_safe_quantile, probability = 0.025),
-    ci_upper = apply(edge_values, 2, quicknet_safe_quantile, probability = 0.975),
-    selection_rate = apply(abs(edge_values) > threshold, 2, quicknet_safe_mean),
-    valid_bootstraps = colSums(is.finite(edge_values)),
-    failed_bootstraps = sum(failed),
-    stringsAsFactors = FALSE
-  )
-  out$sign_stability <- vapply(seq_along(original_values), function(edge_id) {
-    if (abs(original_values[edge_id]) <= threshold) return(NA_real_)
-    quicknet_safe_mean(sign(edge_values[, edge_id]) == sign(original_values[edge_id]))
-  }, numeric(1))
-  out[order(-abs(out$original_weight), -out$selection_rate), , drop = FALSE]
+  diagnostics <- quicknet_resampling_diagnostics(reasons, "percentile_bootstrap", "observation",
+                                                 "edge bootstrap replications")
+  quicknet_matrix_bootstrap_summary(original, edge_array, threshold = threshold,
+    failed_bootstraps = diagnostics$failed, diagnostics = diagnostics)
 }
 
 quicknet_case_drop_centrality_stability <- function(fit,
@@ -615,98 +657,81 @@ quicknet_case_drop_centrality_stability <- function(fit,
                                                     proportions = c(0.10, 0.25, 0.50),
                                                     seed = NULL,
                                                     statistics = c("strength", "expected_influence")) {
-  if (!inherits(fit, "quicknet_fit")) {
-    stop("fit must be a quicknet_fit object.", call. = FALSE)
-  }
+  if (!inherits(fit, "quicknet_fit")) stop("fit must be a quicknet_fit object.", call. = FALSE)
   if (!is.null(seed)) set.seed(seed)
-
-  data <- fit$data
   original_centrality <- quicknet_node_table(fit$graph)
-  rows <- list()
-
+  if (!length(statistics) || any(!statistics %in% names(original_centrality))) {
+    stop("Unknown case-drop centrality statistic.", call. = FALSE)
+  }
+  rows <- diagnostics <- list()
   for (drop_proportion in proportions) {
-    keep_n <- max(3, floor(nrow(data) * (1 - drop_proportion)))
-    correlations <- matrix(NA_real_, nrow = nboot, ncol = length(statistics), dimnames = list(NULL, statistics))
-    failed <- logical(nboot)
-
+    keep_n <- min(nrow(fit$data), max(3, floor(nrow(fit$data) * (1 - drop_proportion))))
+    correlations <- matrix(NA_real_, nboot, length(statistics), dimnames = list(NULL, statistics))
+    reasons <- rep(NA_character_, nboot)
     for (boot_index in seq_len(nboot)) {
-      sampled_rows <- sample(seq_len(nrow(data)), keep_n, replace = FALSE)
-      boot_fit <- tryCatch(
-        quicknet_refit_like(data[sampled_rows, , drop = FALSE], fit),
-        error = function(e) NULL
-      )
-      if (is.null(boot_fit) || !all(dim(boot_fit$graph) == dim(fit$graph))) {
-        failed[boot_index] <- TRUE
-        next
-      }
-
-      boot_centrality <- quicknet_node_table(boot_fit$graph)
+      sampled_rows <- sample.int(nrow(fit$data), keep_n, replace = FALSE)
+      boot_centrality <- tryCatch({
+        boot_fit <- quicknet_refit_like(fit$data[sampled_rows, , drop = FALSE], fit)
+      failure_reason <- quicknet_fit_failure_reason(boot_fit)
+      if (!is.null(failure_reason)) stop(failure_reason, call. = FALSE)
+        graph <- quicknet_resampling_graph(boot_fit$graph, fit$graph)
+        quicknet_node_table(graph)
+      }, error = function(e) { reasons[[boot_index]] <<- conditionMessage(e); NULL })
+      if (is.null(boot_centrality)) next
       for (statistic in statistics) {
         original_values <- original_centrality[[statistic]]
         boot_values <- boot_centrality[[statistic]]
-        if (stats::sd(original_values, na.rm = TRUE) == 0 || stats::sd(boot_values, na.rm = TRUE) == 0) next
-        correlations[boot_index, statistic] <- stats::cor(original_values, boot_values, use = "complete.obs")
+        if (!all(is.finite(c(original_values, boot_values))) ||
+            !isTRUE(stats::sd(original_values) > 0) || !isTRUE(stats::sd(boot_values) > 0)) next
+        correlations[boot_index, statistic] <- stats::cor(original_values, boot_values)
       }
     }
-    quicknet_check_failed_iterations(
-      failed,
-      paste0("case-drop replications at proportion ", drop_proportion)
-    )
-
+    info <- quicknet_resampling_diagnostics(reasons, "case_drop_centrality_correlation", "observation",
+                                            paste0("case-drop replications at proportion ", drop_proportion))
+    info$requested_proportion_dropped <- drop_proportion
+    info$undefined_by_statistic <- info$succeeded - colSums(is.finite(correlations))
+    info$summary_denominator <- "finite centrality correlations among successful fits"
+    info$observations_retained <- keep_n
+    info$actual_proportion_dropped <- 1 - keep_n / nrow(fit$data)
+    diagnostics[[as.character(drop_proportion)]] <- info
     for (statistic in statistics) {
       values <- correlations[, statistic]
-      finite_values <- values[is.finite(values)]
       rows[[length(rows) + 1]] <- data.frame(
         proportion_dropped = drop_proportion,
-        statistic = statistic,
-        bootstrap_reps = nboot,
-        failed_reps = sum(failed),
-        valid_reps = length(finite_values),
-        median_correlation = ifelse(length(finite_values) > 0, stats::median(finite_values), NA_real_),
-        q05_correlation = ifelse(length(finite_values) > 0, stats::quantile(finite_values, 0.05), NA_real_),
-        q95_correlation = ifelse(length(finite_values) > 0, stats::quantile(finite_values, 0.95), NA_real_),
-        stringsAsFactors = FALSE
-      )
+        actual_proportion_dropped = info$actual_proportion_dropped,
+        observations_retained = keep_n, statistic = statistic,
+        bootstrap_reps = nboot, failed_reps = info$failed, successful_reps = info$succeeded,
+        valid_reps = sum(is.finite(values)), undefined_reps = info$succeeded - sum(is.finite(values)),
+        median_correlation = quicknet_safe_quantile(values, 0.5),
+        q05_correlation = quicknet_safe_quantile(values, 0.05),
+        q95_correlation = quicknet_safe_quantile(values, 0.95), stringsAsFactors = FALSE)
     }
   }
-
-  do.call(rbind, rows)
+  out <- do.call(rbind, rows)
+  attr(out, "resampling") <- diagnostics
+  out
 }
 
 quicknet_matrix_bootstrap_summary <- function(original_matrix,
                                               edge_array,
                                               directed = FALSE,
                                               threshold = 1e-10,
-                                              failed_bootstraps = 0) {
+                                              failed_bootstraps = 0,
+                                              diagnostics = NULL) {
   original <- as.matrix(original_matrix)
   diag(original) <- 0
-  node_names <- rownames(original)
-  if (is.null(node_names)) node_names <- colnames(original)
-  if (is.null(node_names)) node_names <- paste0("V", seq_len(ncol(original)))
-
+  node_names <- rownames(original) %||% colnames(original) %||% paste0("V", seq_len(ncol(original)))
   if (directed) {
     edge_index <- which(row(original) != col(original), arr.ind = TRUE)
-    out <- data.frame(
-      from = node_names[edge_index[, "col"]],
-      to = node_names[edge_index[, "row"]],
-      stringsAsFactors = FALSE
-    )
+    out <- data.frame(from = node_names[edge_index[, "col"]], to = node_names[edge_index[, "row"]],
+                      stringsAsFactors = FALSE)
   } else {
     edge_index <- which(upper.tri(original), arr.ind = TRUE)
-    out <- data.frame(
-      node_i = node_names[edge_index[, "row"]],
-      node_j = node_names[edge_index[, "col"]],
-      stringsAsFactors = FALSE
-    )
+    out <- data.frame(node_i = node_names[edge_index[, "row"]], node_j = node_names[edge_index[, "col"]],
+                      stringsAsFactors = FALSE)
   }
-
   values <- matrix(NA_real_, nrow = dim(edge_array)[3], ncol = nrow(edge_index))
-  for (boot_index in seq_len(dim(edge_array)[3])) {
-    mat <- edge_array[, , boot_index]
-    diag(mat) <- 0
-    values[boot_index, ] <- mat[edge_index]
-  }
-
+  for (boot_index in seq_len(dim(edge_array)[3])) values[boot_index, ] <- edge_array[, , boot_index][edge_index]
   original_values <- original[edge_index]
   out$original_weight <- original_values
   out$bootstrap_mean <- apply(values, 2, quicknet_safe_mean)
@@ -718,9 +743,14 @@ quicknet_matrix_bootstrap_summary <- function(original_matrix,
     if (abs(original_values[edge_id]) <= threshold) return(NA_real_)
     quicknet_safe_mean(sign(values[, edge_id]) == sign(original_values[edge_id]))
   }, numeric(1))
+  out$requested_bootstraps <- dim(edge_array)[3]
   out$valid_bootstraps <- colSums(is.finite(values))
   out$failed_bootstraps <- failed_bootstraps
-  out[order(-abs(out$original_weight), -out$selection_rate), , drop = FALSE]
+  out$successful_bootstraps <- dim(edge_array)[3] - failed_bootstraps
+  out$undefined_bootstraps <- out$successful_bootstraps - out$valid_bootstraps
+  out <- out[order(-abs(out$original_weight), -out$selection_rate), , drop = FALSE]
+  attr(out, "resampling") <- diagnostics
+  out
 }
 
 `%||%` <- function(x, y) {

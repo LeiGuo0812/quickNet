@@ -24,6 +24,17 @@
 #' @param ... Named model arguments for raw data, e.g. \code{lambdaSel = "EBIC"}.
 #'   Fitted inputs retain their original settings. Observation-specific
 #'   arguments such as weights cannot be automatically realigned during resampling.
+#' @details The custom edge table uses observation bootstrap percentile intervals
+#'   (2.5th and 97.5th percentiles), conditional on successful fits. Failed fits
+#'   are not replaced; requested, successful, failed and undefined counts are
+#'   reported. Failure causes are stored in \code{resampling} and the table's
+#'   \code{resampling} attribute.
+#'   The custom case-drop table summarizes correlations of centrality vectors
+#'   at each requested deletion proportion and records the actual sample size.
+#'   A constant centrality vector gives an undefined correlation, not a failed fit.
+#'   This table is not the bootnet CS coefficient. For EBICglasso, the additional
+#'   bootnet results and \code{CS_coefficient} use bootnet's own sampling and
+#'   retry rules; CS is computed by \code{bootnet::corStability()}.
 #' @return a list contains the stability test results of the network\itemize{
 #' \item\code{boot_edge_weight_stability:} the bootstrap result of edge weight accuracy.
 #' \item\code{boot_centrality_stability:} the bootstrap result of centrality stability.
@@ -108,6 +119,8 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
   if (network$model != "EBICglasso" && (ncore != 1 || add.bridge || !missing(cor))) {
     stop("ncore, add.bridge and cor are bootnet controls supported only for EBICglasso fits.", call. = FALSE)
   }
+  failure_reason <- quicknet_fit_failure_reason(network)
+  if (!is.null(failure_reason)) stop("The original fit is not valid: ", failure_reason, call. = FALSE)
   results <- list()
   results$fit <- network
   results$edge_bootstrap_stability <- quicknet_bootstrap_edge_stability(network, nboot = nboot)
@@ -115,6 +128,11 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
     network,
     nboot = nboot,
     proportions = case.drop
+  )
+
+  results$resampling <- list(
+    edges = attr(results$edge_bootstrap_stability, "resampling"),
+    case_drop = attr(results$case_drop_centrality_stability, "resampling")
   )
 
   statistics <- c("edge", "strength", "closeness", "betweenness", "length", "distance", "expectedInfluence")
@@ -127,8 +145,11 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
     return(results)
   }
 
-  boota <- bootnet(network$fit, nBoots = nboot, nCores = ncore)
-  bootb <- bootnet(network$fit, nBoots = nboot, type = "case",  nCores = ncore, statistics = statistics, communities = communities, useCommunities = useCommunities)
+  boota <- quicknet_bootnet_resampling(network$fit, nBoots = nboot, nCores = ncore)
+  bootb <- quicknet_bootnet_resampling(network$fit, nBoots = nboot, type = "case",  nCores = ncore, statistics = statistics, communities = communities, useCommunities = useCommunities)
+
+  results$resampling$bootnet_edges <- attr(boota, "resampling")
+  results$resampling$bootnet_case <- attr(bootb, "resampling")
 
   results$boot_edge_weight_stability <- boota
 
@@ -149,4 +170,21 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
   results$CS_coefficient <- corStability(bootb, cor = cor)
 
   return(results)
+}
+
+# Native bootnet owns its retry policy. Preserve its warning evidence without
+# interpreting unreported failures as zero or replacing its estimator/sampling.
+quicknet_bootnet_resampling <- function(data, nBoots, ...) {
+  warnings <- character()
+  result <- withCallingHandlers(bootnet(data, nBoots = nBoots, ...), warning = function(w) {
+    warnings <<- c(warnings, conditionMessage(w))
+  })
+  pattern <- "^[0-9]+ bootstrap estimation\\(s\\) failed and were resampled[.]$"
+  counts <- warnings[grepl(pattern, warnings)]
+  failures <- if (length(counts)) sum(as.integer(sub(" .*", "", counts))) else NA_integer_
+  attr(result, "resampling") <- list(method = "bootnet_native", requested = nBoots,
+    returned = length(result$boots), reported_failed_attempts = failures,
+    failure_policy = "Native bootnet retries failed fits with newly sampled data; unreported counts remain unknown.",
+    warnings = unique(warnings), backend_version = as.character(utils::packageVersion("bootnet")))
+  result
 }

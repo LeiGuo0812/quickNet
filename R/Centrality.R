@@ -18,9 +18,9 @@ Centrality <- function(network_G, include = 'all', ...){
   results <- list()
 
   network_matrix <- quicknet_network_matrix(network_G)
-  cp_input <- if (inherits(network_G, "quicknet_fit") && !is.null(network_G$plots$network)) {
-    network_G$plots$network
-  } else if (quicknet_is_directed(network_G)) {
+  # A cached plot may threshold or transform edges for display. Statistics
+  # always use the same fitted matrix as the returned node table.
+  cp_input <- if (quicknet_is_directed(network_G)) {
     qgraph::qgraph(
       quicknet_to_qgraph_matrix(network_matrix, directed = TRUE),
       directed = TRUE,
@@ -37,6 +37,11 @@ Centrality <- function(network_G, include = 'all', ...){
   cp <- do.call(centralityPlot, c(list(cp_input, include = include), plot_args))
 
   cp_data <- centrality(cp_input)
+  centrality_values <- unlist(cp_data[setdiff(names(cp_data), "ShortestPaths")], use.names = FALSE)
+  if (any(!is.finite(centrality_values))) {
+    cp <- cp + ggplot2::labs(caption = "Undefined centrality values are omitted, for example for unreachable nodes.")
+    for (i in seq_along(cp$layers)) cp$layers[[i]]$geom_params$na.rm <- TRUE
+  }
 
   cp_data_scale <- cp_data[1:6] %>%
     map(~ quicknet_standardize_centrality(.x) %>%
