@@ -18,7 +18,11 @@
 #' @param target_value Target metric value.
 #' @param target_probability Required proportion of replications that should
 #' achieve the target value.
-#' @param gamma EBIC tuning parameter used by EBICglasso.
+#' @param gamma EBIC hyperparameter in [0,1]. NULL selects 0.5 for
+#'   Monte Carlo EBICglasso estimation. Ignored for partial/correlation
+#'   estimators and for method = 'powerly'; configure that backend via
+#'   powerly_args instead. Inactive gamma is stored as NULL in settings
+#'   and NA in Monte Carlo result rows.
 #' @param estimator Network estimator used in the Monte Carlo loop.
 #' @param seed Random seed.
 #' @param powerly_args Optional named list passed to \code{powerly::powerly()}.
@@ -40,7 +44,7 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
                          target_metric = c("mcc", "sensitivity", "specificity", "edge_weight_correlation", "rmse"),
                          target_value = 0.60,
                          target_probability = 0.80,
-                         gamma = 0.50,
+                         gamma = NULL,
                          estimator = c("EBICglasso", "partial", "correlation"),
                          seed = 20260502,
                          powerly_args = list(),
@@ -58,9 +62,9 @@ NetworkPower <- function(method = c("monte_carlo", "powerly"),
   if (!is.numeric(target_value) || length(target_value) != 1 || !is.finite(target_value)) {
     stop("target_value must be a finite number.", call. = FALSE)
   }
-  if (!is.numeric(gamma) || length(gamma) != 1 || !is.finite(gamma) || gamma < 0) {
-    stop("gamma must be a non-negative finite number.", call. = FALSE)
-  }
+  gamma <- quicknet_resolve_gamma(
+    if (method == "monte_carlo") estimator else "powerly", gamma
+  )
   if (!is.numeric(threshold) || length(threshold) != 1 ||
       !is.finite(threshold) || threshold < 0) {
     stop("threshold must be a non-negative finite number.", call. = FALSE)
@@ -219,7 +223,7 @@ quicknet_power_monte_carlo <- function(nodes,
         metric <- quicknet_power_recovery_metrics(true_network, estimated, threshold = threshold)
         metric$sample_size <- sample_size
         metric$replication <- replication
-        metric$gamma <- gamma
+        metric$gamma <- gamma %||% NA_real_
         metric$estimator <- estimator
         metric$estimated_nonzero_edges <- sum(abs(estimated[upper.tri(estimated)]) > threshold, na.rm = TRUE)
         metric$failed <- FALSE
@@ -490,7 +494,7 @@ quicknet_power_empty_metric <- function(sample_size, replication, gamma, estimat
     rmse = NA_real_,
     sample_size = sample_size,
     replication = replication,
-    gamma = gamma,
+    gamma = gamma %||% NA_real_,
     estimator = estimator,
     estimated_nonzero_edges = NA_integer_,
     failed = TRUE,

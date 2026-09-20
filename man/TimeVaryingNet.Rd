@@ -14,7 +14,7 @@ TimeVaryingNet(
   bandwidth = 0.2,
   lags = 1,
   lambdaSel = "EBIC",
-  gamma = 0.25,
+  gamma = NULL,
   scale = TRUE,
   ...
 )
@@ -39,7 +39,9 @@ TimeVaryingNet(
 
 \item{lambdaSel}{Lambda selection method passed to \code{mgm::tvmvar()}.}
 
-\item{gamma}{EBIC gamma passed as \code{lambdaGam}.}
+\item{gamma}{EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
+NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL
+recorded in metadata because gamma does not select the model.}
 
 \item{scale}{Should variables be scaled by \code{mgm::tvmvar()}?}
 

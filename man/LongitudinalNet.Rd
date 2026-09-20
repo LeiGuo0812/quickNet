@@ -11,7 +11,7 @@ LongitudinalNet(
   day = "day",
   beep = "beep",
   model = "graphicalVAR",
-  gamma = 0.5,
+  gamma = NULL,
   scale = TRUE,
   centerWithin = TRUE,
   lags = 1,
@@ -36,7 +36,8 @@ LongitudinalNet(
 \item{model}{Longitudinal model. One of \code{"graphicalVAR"},
 \code{"mlVAR"}, or \code{"psychonetrics_gvar"}.}
 
-\item{gamma}{EBIC gamma used by \code{graphicalVAR::mlGraphicalVAR()}.}
+\item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
+graphicalVAR. Ignored for mlVAR and psychonetrics_gvar.}
 
 \item{scale}{Should variables be scaled?}
 

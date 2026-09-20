@@ -25,13 +25,14 @@ NetCompare(
   communities = NULL,
   useCommunities = "all",
   sig.level = 0.05,
+  gamma = NULL,
   ...
 )
 }
 \arguments{
-\item{data1}{One of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be the result of estimateNetwork from the bootnet package.}
+\item{data1}{One of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be a cross-sectional exploratory quicknet_fit object, or the result of estimateNetwork from the bootnet package.}
 
-\item{data2}{The other of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be the result of estimateNetwork from the bootnet package.}
+\item{data2}{The other of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be a cross-sectional exploratory quicknet_fit object, or the result of estimateNetwork from the bootnet package.}
 
 \item{it}{The number of iterations (permutations).}
 
@@ -68,6 +69,13 @@ NetCompare(
 \item{useCommunities}{character vector specifying which communities should be included. Default set to "all".}
 
 \item{sig.level}{significance level of the test, this only affect the output of diff_sig_nw1>nw2 and diff_sig_nw1<nw2.}
+
+\item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.25 for raw
+binary data and 0.5 for raw Gaussian data. Two quicknet_fit inputs retain
+their fitted settings, which must match; conflicting overrides are rejected.
+For bootnet objects or custom estimators, configure the original fit or
+estimatorArgs instead. The effective EBIC gamma is recorded in
+\code{info$call$gamma}; NULL indicates an inactive or unknown value.}
 
 \item{...}{other parameters from \code{NetworkComparisonTest::NCT}}
 }

@@ -11,7 +11,8 @@ quicknet_ising_comparison_notes <- function(model, gamma) {
   actual <- if (gamma_recorded) format(gamma, digits = 7L) else "not recorded"
   paste0(
     "Wang et al. (2026) used gamma = 0.25 in their IsingFit example; ",
-    "quickNet() defaults to gamma = 0.5. The gamma used for this fit is ",
+    "quickNet() defaults to gamma = ", quicknet_default_gamma("ising"),
+    " for Ising models. The gamma used for this fit is ",
     actual, "."
   )
 }

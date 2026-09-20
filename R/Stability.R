@@ -7,7 +7,10 @@
 #' @param model network model used when \code{data} is a data frame.
 #' @param cor_method correlation method used by correlation and partial models.
 #' @param missing missing-data handling.
-#' @param gamma EBIC tuning parameter.
+#' @param gamma EBIC hyperparameter in [0,1]. NULL uses model-specific
+#'   defaults for raw data (0.5 for EBICglasso, 0.25 for Ising/MGM). For a
+#'   fitted object its original gamma is retained; conflicting overrides
+#'   are rejected. Gamma is not used by non-EBIC models.
 #' @param ordinal_method association method used by ordinal models.
 #' @param AND logical. Should the Ising model use the AND rule?
 #' @param types MGM variable types, one per variable.
@@ -44,7 +47,7 @@
 #' )
 #'
 
-Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = 0.5, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, case.drop = c(0.10, 0.25, 0.50), add.bridge = FALSE, communities = NULL, useCommunities = 'all', cor = 0.7){
+Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = NULL, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, case.drop = c(0.10, 0.25, 0.50), add.bridge = FALSE, communities = NULL, useCommunities = 'all', cor = 0.7){
 
   if (!quicknet_is_positive_integer(nboot)) {
     stop("nboot must be a positive integer.", call. = FALSE)
@@ -61,7 +64,13 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
   }
 
   if (inherits(data, "quicknet_fit")) {
+    if (!is.null(gamma) && !identical(
+      quicknet_resolve_gamma(data$model, gamma), quicknet_fit_gamma(data)
+    )) {
+      stop("gamma cannot override a fitted object's setting; refit the model first.", call. = FALSE)
+    }
     network <- data
+    network$meta$gamma <- quicknet_refit_gamma(network)
   } else {
     if (!is.null(labels)) {
       colnames(data) <- labels

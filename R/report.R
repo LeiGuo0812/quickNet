@@ -54,7 +54,7 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
     model_specific = quicknet_report_model_specific(fit),
     text = quicknet_report_text(fit, digits = digits, threshold = threshold)
   )
-  explanation <- quicknet_ising_comparison_notes(fit$model, fit$meta$gamma)
+  explanation <- quicknet_ising_comparison_notes(fit$model, quicknet_fit_gamma(fit))
   if (length(explanation) > 0L) {
     report$text <- paste(report$text, paste(explanation, collapse = " "))
     report$references <- quicknet_nira_reference()
@@ -228,9 +228,12 @@ quicknet_report_nira_text <- function(fit, effects, digits) {
 }
 
 quicknet_report_power <- function(fit, digits = 3) {
+  active_settings <- Filter(Negate(is.null), fit$settings)
+  if (identical(fit$method, "monte_carlo") &&
+      !identical(fit$settings$estimator, "EBICglasso")) active_settings$gamma <- NULL
   settings <- data.frame(
-    parameter = names(fit$settings),
-    value = vapply(fit$settings, quicknet_report_collapse, character(1)),
+    parameter = names(active_settings),
+    value = vapply(active_settings, quicknet_report_collapse, character(1)),
     stringsAsFactors = FALSE
   )
   summary <- fit$summary
@@ -442,7 +445,7 @@ quicknet_report_estimation <- function(fit) {
     "randomEffects", "studyvar", "beta_model", "maxNodes"
   )
   for (key in report_keys) {
-    value <- fit$meta[[key]]
+    value <- if (key == "gamma") quicknet_fit_gamma(fit) else fit$meta[[key]]
     if (!is.null(value)) {
       rows[[length(rows) + 1]] <- data.frame(
         parameter = key,

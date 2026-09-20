@@ -17,7 +17,7 @@ NetworkPower(
     "rmse"),
   target_value = 0.6,
   target_probability = 0.8,
-  gamma = 0.5,
+  gamma = NULL,
   estimator = c("EBICglasso", "partial", "correlation"),
   seed = 20260502,
   powerly_args = list(),
@@ -55,7 +55,11 @@ are \code{"sensitivity"}, \code{"specificity"}, \code{"mcc"},
 \item{target_probability}{Required proportion of replications that should
 achieve the target value.}
 
-\item{gamma}{EBIC tuning parameter used by EBICglasso.}
+\item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
+Monte Carlo EBICglasso estimation. Ignored for partial/correlation
+estimators and for method = 'powerly'; configure that backend via
+powerly_args instead. Inactive gamma is stored as NULL in settings
+and NA in Monte Carlo result rows.}
 
 \item{estimator}{Network estimator used in the Monte Carlo loop.}
 

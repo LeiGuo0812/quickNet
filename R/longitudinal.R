@@ -128,7 +128,8 @@ PanelNet <- function(data,
 #' @param beep Beep or measurement-occasion variable within day.
 #' @param model Longitudinal model. One of \code{"graphicalVAR"},
 #' \code{"mlVAR"}, or \code{"psychonetrics_gvar"}.
-#' @param gamma EBIC gamma used by \code{graphicalVAR::mlGraphicalVAR()}.
+#' @param gamma EBIC hyperparameter in [0,1]. NULL selects 0.5 for
+#'   graphicalVAR. Ignored for mlVAR and psychonetrics_gvar.
 #' @param scale Should variables be scaled?
 #' @param centerWithin Should variables be person-mean centered?
 #' @param lags Positive integer vector of lags used by \code{mlVAR}.
@@ -150,7 +151,7 @@ LongitudinalNet <- function(data,
                             day = "day",
                             beep = "beep",
                             model = "graphicalVAR",
-                            gamma = 0.5,
+                            gamma = NULL,
                             scale = TRUE,
                             centerWithin = TRUE,
                             lags = 1,
@@ -160,6 +161,7 @@ LongitudinalNet <- function(data,
                             nCores = 1,
                             ...) {
   model <- match.arg(model, c("graphicalVAR", "mlVAR", "psychonetrics_gvar"))
+  gamma <- quicknet_resolve_gamma(model, gamma)
   lags <- quicknet_validate_lags(lags)
   temporal_setting <- temporal
   contemporaneous_setting <- contemporaneous
@@ -942,7 +944,7 @@ quicknet_longitudinal_bootstrap_stability <- function(fit, nboot, seed) {
         day = fit$meta$day,
         beep = fit$meta$beep,
         model = fit$model,
-        gamma = fit$meta$gamma,
+        gamma = quicknet_refit_gamma(fit),
         scale = fit$meta$scale,
         centerWithin = fit$meta$centerWithin,
         lags = fit$meta$lags %||% 1,

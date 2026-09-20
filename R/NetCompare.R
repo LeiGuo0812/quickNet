@@ -2,8 +2,8 @@
 #' @description a wrapper of \code{NetworkComparisonTest::NCT}
 #' @importFrom magrittr %>%
 #' @importFrom reshape2 melt
-#' @param data1 One of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be the result of estimateNetwork from the bootnet package.
-#' @param data2 The other of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be the result of estimateNetwork from the bootnet package.
+#' @param data1 One of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be a cross-sectional exploratory quicknet_fit object, or the result of estimateNetwork from the bootnet package.
+#' @param data2 The other of two datasets. The dimension of the matrix is nobs x nvars; each row is a vector of observations of the variables. Must be cross-sectional data. Can also be a cross-sectional exploratory quicknet_fit object, or the result of estimateNetwork from the bootnet package.
 #' @param it The number of iterations (permutations).
 #' @param binary.data Logical. Can be TRUE or FALSE to indicate whether the data is binary or not. If binary.data is FALSE, the data is regarded gaussian.
 #' @param paired Logical. Can be TRUE of FALSE to indicate whether the samples are dependent or not. If paired is TRUE, relabeling is performed within each pair of observations. If paired is FALSE, relabeling is not restricted to pairs of observations. Note that, currently, dependent data is assumed to entail one group measured twice.
@@ -22,6 +22,12 @@
 #' @param communities used for bridge centrality measures. If add.bridge is set TRUE, this should be provided. Note: should only be a numeric vector with the same length of nodes, the number indicates the community that each community belongs to.
 #' @param useCommunities character vector specifying which communities should be included. Default set to "all".
 #' @param sig.level significance level of the test, this only affect the output of diff_sig_nw1>nw2 and diff_sig_nw1<nw2.
+#' @param gamma EBIC hyperparameter in [0,1]. NULL selects 0.25 for raw
+#'   binary data and 0.5 for raw Gaussian data. Two quicknet_fit inputs retain
+#'   their fitted settings, which must match; conflicting overrides are rejected.
+#'   For bootnet objects or custom estimators, configure the original fit or
+#'   estimatorArgs instead. The effective EBIC gamma is recorded in
+#'   \code{info$call$gamma}; NULL indicates an inactive or unknown value.
 #' @param ... other parameters from \code{NetworkComparisonTest::NCT}
 #'
 #' @return returns a 'NCT' object that contains the following items:\itemize{
@@ -60,7 +66,7 @@
 #'   useCommunities = c(1, 2)
 #' )
 #'
-NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=TRUE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = TRUE, centrality = 'all', nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, ...){
+NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALSE, weighted = TRUE, AND = TRUE, abs_edge = TRUE, test.edges=TRUE, edges='all', progressbar=TRUE, make.positive.definite = TRUE, p.adjust.methods = 'none', test.centrality = TRUE, centrality = 'all', nodes = 'all', add.bridge = FALSE, communities = NULL, useCommunities = 'all',sig.level = 0.05, gamma = NULL, ...){
   if (!is.logical(add.bridge) || length(add.bridge) != 1 || is.na(add.bridge)) {
     stop("Error: add.bridge should be logical.")
   }
@@ -83,6 +89,7 @@ NetCompare <- function(data1, data2, it = 5000, binary.data=FALSE, paired = FALS
   results <- NCT_gl(
     data1,
     data2,
+    gamma = gamma,
     it = it,
     binary.data = binary.data,
     paired = paired,

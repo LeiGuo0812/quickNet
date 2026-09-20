@@ -103,7 +103,7 @@ print.quicknet_fit <- function(x, ...) {
     sum(abs(x$networks[[1]][upper.tri(x$networks[[1]])]) > 1e-10, na.rm = TRUE)
   }
   cat("Nonzero edges: ", nonzero_edges, "\n", sep = "")
-  explanation <- quicknet_ising_comparison_notes(x$model, x$meta$gamma)
+  explanation <- quicknet_ising_comparison_notes(x$model, quicknet_fit_gamma(x))
   quicknet_print_comparison_notes(explanation)
   if (length(explanation) > 0L) cat("Reference: ", quicknet_nira_reference(), "\n", sep = "")
   invisible(x)
@@ -382,7 +382,7 @@ quicknet_fit_cross_sectional <- function(data,
                                          model = c("EBICglasso", "correlation", "partial", "ising", "ordinal", "mgm"),
                                          cor_method = c("pearson", "spearman", "kendall"),
                                          missing = c("listwise", "none"),
-                                         gamma = 0.5,
+                                         gamma = NULL,
                                          ordinal_method = c("polychoric", "spearman", "pearson"),
                                          AND = TRUE,
                                          types = NULL,
@@ -391,6 +391,7 @@ quicknet_fit_cross_sectional <- function(data,
   cor_method <- match.arg(cor_method)
   missing <- match.arg(missing)
   ordinal_method <- match.arg(ordinal_method)
+  gamma <- quicknet_resolve_gamma(model, gamma)
 
   dat <- quicknet_complete_numeric_data(data, missing = missing)
   node_names <- colnames(dat)
@@ -505,6 +506,7 @@ quicknet_fit_cross_sectional <- function(data,
       cor_method = cor_method,
       ordinal_method = if (model == "ordinal") ordinal_method else NULL,
       gamma = gamma,
+      lambdaSel = if (model == "mgm") "EBIC" else NULL,
       AND = if (model == "ising") AND else NULL,
       types = if (model == "mgm") types else NULL,
       levels = if (model == "mgm") levels else NULL,
@@ -521,7 +523,7 @@ quicknet_refit_like <- function(data, fit) {
     model = fit$model,
     cor_method = fit$meta$cor_method %||% "pearson",
     missing = fit$meta$missing %||% "listwise",
-    gamma = fit$meta$gamma %||% 0.5,
+    gamma = quicknet_refit_gamma(fit),
     ordinal_method = fit$meta$ordinal_method %||% "polychoric",
     AND = fit$meta$AND %||% TRUE,
     types = fit$meta$types,

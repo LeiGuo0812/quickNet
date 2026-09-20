@@ -138,7 +138,7 @@ test_that("Stability requests an actual centrality difference plot", {
     calls[[length(calls) + 1]] <<- list(...)
     NULL
   }, .package = "base")
-  fit <- structure(list(model = "EBICglasso", fit = list()), class = "quicknet_fit")
+  fit <- structure(list(model = "EBICglasso", fit = list(), meta = list(gamma = 0.5)), class = "quicknet_fit")
   invisible(Stability(fit, nboot = 1))
   strength_calls <- Filter(function(x) length(x) >= 2 && identical(x[[2]], "strength"), calls)
   expect_length(strength_calls, 1)

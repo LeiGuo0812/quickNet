@@ -6,7 +6,9 @@
 #' @param levels MGM variable levels, one per variable.
 #' @param lags Positive integer vector of temporal lags.
 #' @param lambdaSel Lambda selection method passed to \code{mgm::mvar()}.
-#' @param gamma EBIC gamma passed as \code{lambdaGam}.
+#' @param gamma EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
+#'   NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL
+#'   recorded in metadata because gamma does not select the model.
 #' @param scale Should variables be scaled by \code{mgm::mvar()}?
 #' @param signInfo Should sign information be requested from \code{mgm}?
 #' @param ... Additional arguments passed to \code{mgm::mvar()}.
@@ -19,10 +21,11 @@ MixedVARNet <- function(data,
                         levels,
                         lags = 1,
                         lambdaSel = "EBIC",
-                        gamma = 0.25,
+                        gamma = NULL,
                         scale = TRUE,
                         signInfo = TRUE,
                         ...) {
+  lambdaSel <- match.arg(lambdaSel, c("EBIC", "CV"))
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
   lags <- quicknet_validate_lags(lags)
@@ -35,6 +38,7 @@ MixedVARNet <- function(data,
     lags = lags
   )
   quicknet_dynamic_validate(dat, vars, types, levels)
+  gamma <- quicknet_resolve_gamma("mixedVAR", gamma, lambdaSel)
   matrix_data <- as.matrix(dat[, vars, drop = FALSE])
   fit <- NULL
   invisible(utils::capture.output({
@@ -44,7 +48,7 @@ MixedVARNet <- function(data,
       level = levels,
       lags = lags,
       lambdaSel = lambdaSel,
-      lambdaGam = gamma,
+      lambdaGam = gamma %||% quicknet_default_gamma("mixedVAR"),
       scale = scale,
       pbar = FALSE,
       warnings = FALSE,
@@ -96,8 +100,8 @@ MixedVARNet <- function(data,
       types = types,
       levels = levels,
       lags = lags,
-      lambdaSel = lambdaSel,
-      gamma = gamma,
+      lambdaSel = fit$call$lambdaSel,
+      gamma = quicknet_resolve_gamma("mixedVAR", fit$call$lambdaGam, fit$call$lambdaSel),
       scale = scale,
       signInfo = signInfo,
       call = match.call()
@@ -117,7 +121,9 @@ MixedVARNet <- function(data,
 #' @param bandwidth Kernel bandwidth.
 #' @param lags Positive integer vector of temporal lags.
 #' @param lambdaSel Lambda selection method passed to \code{mgm::tvmvar()}.
-#' @param gamma EBIC gamma passed as \code{lambdaGam}.
+#' @param gamma EBIC hyperparameter in [0,1], passed as \code{lambdaGam}.
+#'   NULL selects 0.25 when lambdaSel is EBIC. Ignored for CV, with NULL
+#'   recorded in metadata because gamma does not select the model.
 #' @param scale Should variables be scaled by \code{mgm::tvmvar()}?
 #' @param ... Additional arguments passed to \code{mgm::tvmvar()}.
 #'
@@ -132,9 +138,10 @@ TimeVaryingNet <- function(data,
                            bandwidth = 0.20,
                            lags = 1,
                            lambdaSel = "EBIC",
-                           gamma = 0.25,
+                           gamma = NULL,
                            scale = TRUE,
                            ...) {
+  lambdaSel <- match.arg(lambdaSel, c("EBIC", "CV"))
   dat <- as.data.frame(data)
   if (is.null(vars)) vars <- colnames(dat)
   lags <- quicknet_validate_lags(lags)
@@ -150,6 +157,7 @@ TimeVaryingNet <- function(data,
     bandwidth = bandwidth
   )
   quicknet_dynamic_validate(dat, vars, types, levels)
+  gamma <- quicknet_resolve_gamma("time_varying_mvar", gamma, lambdaSel)
   matrix_data <- as.matrix(dat[, vars, drop = FALSE])
   if (is.null(timepoints)) {
     timepoints <- seq(0, 1, length.out = nrow(matrix_data))
@@ -169,7 +177,7 @@ TimeVaryingNet <- function(data,
       bandwidth = bandwidth,
       lags = lags,
       lambdaSel = lambdaSel,
-      lambdaGam = gamma,
+      lambdaGam = gamma %||% quicknet_default_gamma("time_varying_mvar"),
       scale = scale,
       pbar = FALSE,
       warnings = FALSE,
@@ -209,8 +217,8 @@ TimeVaryingNet <- function(data,
       estpoints = estpoints,
       bandwidth = bandwidth,
       lags = lags,
-      lambdaSel = lambdaSel,
-      gamma = gamma,
+      lambdaSel = fit$call$lambdaSel,
+      gamma = quicknet_resolve_gamma("time_varying_mvar", fit$call$lambdaGam, fit$call$lambdaSel),
       scale = scale,
       call = match.call()
     )

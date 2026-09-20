@@ -102,6 +102,7 @@ test_that("LongitudinalNet returns graphicalVAR network layers", {
 
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "graphicalVAR")
+  expect_equal(fit$meta$gamma, 0.5)
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(fit$networks)))
   expect_true(all(c("temporal", "contemporaneous", "between") %in% unique(fit$edges$network)))
   expect_true(all(c("default", "temporal", "contemporaneous", "between") %in% summary(fit)$network))
@@ -171,6 +172,8 @@ test_that("LongitudinalNet supports mlVAR", {
 
   expect_s3_class(fit, "quicknet_fit")
   expect_equal(fit$model, "mlVAR")
+  expect_null(fit$meta$gamma)
+  expect_false("gamma" %in% quicknet_report(fit)$estimation$parameter)
   expect_true(all(c("temporal", "contemporaneous", "between") %in% names(fit$networks)))
   expect_true(all(c("default", "temporal", "contemporaneous", "between") %in% summary(fit)$network))
 

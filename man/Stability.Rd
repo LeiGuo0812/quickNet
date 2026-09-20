@@ -12,7 +12,7 @@ Stability(
   model = "EBICglasso",
   cor_method = "pearson",
   missing = "listwise",
-  gamma = 0.5,
+  gamma = NULL,
   ordinal_method = "polychoric",
   AND = TRUE,
   types = NULL,
@@ -39,7 +39,10 @@ Stability(
 
 \item{missing}{missing-data handling.}
 
-\item{gamma}{EBIC tuning parameter.}
+\item{gamma}{EBIC hyperparameter in [0,1]. NULL uses model-specific
+defaults for raw data (0.5 for EBICglasso, 0.25 for Ising/MGM). For a
+fitted object its original gamma is retained; conflicting overrides
+are rejected. Gamma is not used by non-EBIC models.}
 
 \item{ordinal_method}{association method used by ordinal models.}
 

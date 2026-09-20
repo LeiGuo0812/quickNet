@@ -770,7 +770,7 @@ quicknet_nira_provenance <- function(fit,
     source_license = "MIT",
     model = fit$model,
     R_version = R.version.string,
-    estimation_gamma = fit$meta$gamma %||% NA_real_,
+    estimation_gamma = quicknet_fit_gamma(fit) %||% NA_real_,
     platform = R.version$platform,
     package_versions = c(
       quickNet = package_version("quickNet"),

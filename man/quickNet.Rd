@@ -19,7 +19,7 @@ quickNet(
   model = "EBICglasso",
   cor_method = "pearson",
   missing = "listwise",
-  gamma = 0.5,
+  gamma = NULL,
   ordinal_method = "polychoric",
   AND = TRUE,
   types = NULL,
@@ -54,7 +54,9 @@ quickNet(
 
 \item{missing}{missing-data handling. The default "listwise" removes rows with missing values.}
 
-\item{gamma}{EBIC tuning parameter for EBICglasso, Ising, and MGM.}
+\item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
+EBICglasso and 0.25 for Ising or MGM. Ignored for correlation, partial,
+and ordinal models, whose metadata records NULL.}
 
 \item{ordinal_method}{association method used by ordinal models.}
 

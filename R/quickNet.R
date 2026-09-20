@@ -16,7 +16,9 @@
 #' @param model network model. One of "EBICglasso", "correlation", "partial", "ising", "ordinal", or "mgm".
 #' @param cor_method correlation method used by correlation and partial models.
 #' @param missing missing-data handling. The default "listwise" removes rows with missing values.
-#' @param gamma EBIC tuning parameter for EBICglasso, Ising, and MGM.
+#' @param gamma EBIC hyperparameter in [0,1]. NULL selects 0.5 for
+#'   EBICglasso and 0.25 for Ising or MGM. Ignored for correlation, partial,
+#'   and ordinal models, whose metadata records NULL.
 #' @param ordinal_method association method used by ordinal models.
 #' @param AND logical. Should the Ising model use the AND rule?
 #' @param types MGM variable types, one per variable.
@@ -30,7 +32,7 @@
 #' data("mtcars")
 #' quickNet(mtcars)
 #'
-quickNet <- function(data, layout = 'spring', pie = TRUE, maximum = 0.47, groups = NULL, color = c("#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2", "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1"), legend = FALSE, nodeNames = NULL, border.width=2, border.color='#555555', model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = 0.5, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, ...){
+quickNet <- function(data, layout = 'spring', pie = TRUE, maximum = 0.47, groups = NULL, color = c("#71d0f5", "#fed439", "#66bb6a", "#fd7446", "#d2af81", "#d5e4a2", "#f44336", "#197ec0", "#46732e", "#8073ac", "#709ae1"), legend = FALSE, nodeNames = NULL, border.width=2, border.color='#555555', model = "EBICglasso", cor_method = "pearson", missing = "listwise", gamma = NULL, ordinal_method = "polychoric", AND = TRUE, types = NULL, levels = NULL, ...){
 
   model <- match.arg(model, c("EBICglasso", "correlation", "partial", "ising", "ordinal", "mgm"))
   quicknet_validate_input(

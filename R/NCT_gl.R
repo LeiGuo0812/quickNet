@@ -9,7 +9,7 @@
 #' @import IsingFit
 #' @importFrom networktools bridge
 
-NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
+NCT_gl = function (data1, data2, gamma = NULL, it = 100, binary.data = FALSE,
           paired = FALSE, weighted = TRUE, AND = TRUE, abs = TRUE,
           test.edges = FALSE, edges = "all", progressbar = TRUE, make.positive.definite = TRUE,
           p.adjust.methods = c("none", "holm", "hochberg", "hommel",
@@ -44,6 +44,28 @@ NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
   }
   if (missing(edges))
     edges <- "all"
+  fitted_inputs <- inherits(data1, "quicknet_fit") || inherits(data2, "quicknet_fit")
+  if (fitted_inputs) {
+    if (!inherits(data1, "quicknet_fit") || !inherits(data2, "quicknet_fit")) {
+      stop("Supply two quicknet_fit objects, or two raw datasets.", call. = FALSE)
+    }
+    if (!missing(estimator) || length(estimatorArgs)) {
+      stop("Custom estimators are not supported with quicknet_fit objects.", call. = FALSE)
+    }
+    settings <- quicknet_nct_fit_settings(data1)
+    if (!identical(settings, quicknet_nct_fit_settings(data2))) {
+      stop("The two fits must use identical estimation settings, including gamma.", call. = FALSE)
+    }
+    if (!is.null(gamma) && !identical(quicknet_resolve_gamma(data1$model, gamma), settings$gamma)) {
+      stop("gamma cannot override a fitted object's setting; refit the model first.", call. = FALSE)
+    }
+    estimator <- quicknet_nct_refit
+    estimatorArgs <- list(settings = settings)
+    binary.data <- identical(data1$model, "ising")
+    gamma <- NULL
+    data1 <- data1$data
+    data2 <- data2$data
+  }
   if (is(data1, "bootnetResult") || is(data2, "bootnetResult")) {
 
     if (!missing(estimator)) {
@@ -74,32 +96,22 @@ NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
     }
     data2 <- data2$data
   }
-  if (missing(gamma)) {
-    if (binary.data) {
-      gamma <- 0.25
-    }
-    else {
-      gamma <- 0.5
-    }
-  }
   if (missing(estimator)) {
+    model <- if (binary.data) "ising" else "EBICglasso"
+    gamma <- quicknet_resolve_gamma(model, gamma %||% estimatorArgs$gamma)
     if (binary.data) {
       estimator <- NCT_estimator_Ising
       estimatorArgs$AND <- AND
-    }
-    else {
+    } else {
       estimator <- NCT_estimator_GGM
       estimatorArgs$make.positive.definite <- make.positive.definite
     }
     estimatorArgs$gamma <- gamma
+  } else if (!is.null(gamma)) {
+    stop(paste("For bootnet objects or custom estimators, set gamma in the original",
+               "fit or estimatorArgs, not in the standalone gamma argument."), call. = FALSE)
   }
-  else {
-    mc <- match.call()
-    if ("binary.data" %in% names(mc)) {
-      if (verbose)
-        message("Note: Both 'estimator' and 'binary.data' arguments used: only the 'estimator' will be used ('binary.data' will be ignored)")
-    }
-  }
+  used_gamma <- quicknet_nct_estimator_gamma(estimator, estimatorArgs)
   if (progressbar == TRUE) {
     pb <- txtProgressBar(max = it, style = 3)
     on.exit(try(close(pb), silent = TRUE), add = TRUE)
@@ -530,12 +542,15 @@ NCT_gl = function (data1, data2, gamma, it = 100, binary.data = FALSE,
       rownames(res[["diffcen.real"]]) <- rownames(res[["diffcen.pval"]]) <- nodes
     }
   }
+  res$info <- list(call = list(gamma = used_gamma, estimatorArgs = estimatorArgs,
+                               binary.data = binary.data, abs = abs))
   class(res) <- "NCT"
   return(res)
 }
 
 # These are the two estimator functions based on code exactly as in the original NCT:
-NCT_estimator_Ising <- function(x, gamma = 0.25, AND = TRUE){
+NCT_estimator_Ising <- function(x, gamma = NULL, AND = TRUE){
+  gamma <- quicknet_resolve_gamma("ising", gamma)
   IF <- IsingFit::IsingFit(x, AND = AND, gamma=gamma, plot=FALSE, progressbar=FALSE)
   IF$weiadj
 }
@@ -548,8 +563,9 @@ NCT_binary_group_valid <- function(x) {
 }
 
 
-NCT_estimator_GGM <- function(x, make.positive.definite = TRUE, gamma = 0.5, corMethod = c("cor","cor_auto"), verbose=FALSE){
+NCT_estimator_GGM <- function(x, make.positive.definite = TRUE, gamma = NULL, corMethod = c("cor","cor_auto"), verbose=FALSE){
 
+  gamma <- quicknet_resolve_gamma("EBICglasso", gamma)
   corMethod <- match.arg(corMethod)
 
   if (corMethod == "cor"){

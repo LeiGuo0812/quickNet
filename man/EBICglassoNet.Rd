@@ -4,12 +4,12 @@
 \alias{EBICglassoNet}
 \title{Gaussian Markov random field estimation using graphical LASSO and extended Bayesian information criterion}
 \usage{
-EBICglassoNet(data, gamma = 0.5, ...)
+EBICglassoNet(data, gamma = NULL, ...)
 }
 \arguments{
 \item{data}{a data frame, each column presents a node, there should be no miss values in the data frame.}
 
-\item{gamma}{EBIC tuning parameter.}
+\item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5.}
 
 \item{...}{Reserved for future extensions.}
 }

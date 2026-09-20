@@ -113,6 +113,42 @@ check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
 
 主要建模函数内部也会调用同一套校验器。明确的格式错误会提前停止；样本量过小、二分类变量极度不平衡等风险情况会以 warning 提醒。
 
+## EBIC 参数设置
+
+`gamma = NULL` 按模型解析 EBIC 超参数。显式指定 [0,1] 内的数值时优先使用
+该值，其中 0 表示 BIC。
+
+| 模型／函数 | 实际默认 gamma |
+|---|---:|
+| `quickNet(model = "EBICglasso")`、`EBICglassoNet()` | 0.5 |
+| `quickNet(model = "ising")` 或 `quickNet(model = "mgm")` | 0.25 |
+| `LongitudinalNet(model = "graphicalVAR")` | 0.5 |
+| `MixedVARNet()`／`TimeVaryingNet()`，且 `lambdaSel = "EBIC"` | 0.25 |
+| `NetworkPower(method = "monte_carlo", estimator = "EBICglasso")` | 0.5 |
+| correlation、partial、ordinal、mlVAR，或 `lambdaSel = "CV"` 的 mixed VAR | 不适用 |
+
+横断面 MGM 使用 EBIC。Mixed VAR 与时变 VAR 默认使用 EBIC，也支持
+`lambdaSel = "CV"`；原生 `mgm::mgm()` 和 `mgm::mvar()` 默认使用 CV。
+采用 CV 或不使用 EBIC 选模时，gamma 不参与估计，`fit$meta$gamma` 为 `NULL`，
+报告不展示该参数；Monte Carlo 功效结果行中的无效 gamma 记为 `NA`。
+Powerly 的设置通过 `powerly_args` 指定。当前 ordinal 接口估计关联网络，
+不进行 EBIC 选模。验证性模型、潜变量模型和元分析接口也不使用此 EBIC 参数。
+
+`Stability(raw_data, model = ...)` 与 `quickNet()` 使用相同的模型默认值。
+`Stability(fit)` 保留拟合时的实际设置。旧对象缺少元数据时，可从后端拟合结果
+恢复 gamma；若无法确定原始值，需先重新拟合原始数据，再进行重抽样。
+
+`NetCompare(data1, data2, binary.data = TRUE)` 默认使用 0.25；原始高斯数据
+比较默认使用 0.5。`NetCompare(fit1, fit2)` 支持两个探索性横断面
+`quicknet_fit` 对象，保留两者一致的估计设置，拒绝冲突的 gamma 覆盖值。
+Bootnet 对象沿用其估计参数；自定义估计器通过 `estimatorArgs` 配置。
+比较结果的实际 gamma 存储于 `result$info$call$gamma`；自定义估计器中不适用
+或无法确定的 gamma 记为 `NULL`。
+
+NIRA 分别记录 Ising 建网 gamma 和调节分析的 `moderation_lambda = 0.25`，
+后者传给 MGM 的 EBIC `lambdaGam`。SymPerturb 的 `propagation_gamma = 0.45`
+控制传播衰减，是另一个参数。
+
 ## 最小使用示例
 
 ### 1. EBICglasso 横断面网络
@@ -634,8 +670,8 @@ plot(nira_result, type = "effect")
 plot(nira_result, type = "stability")
 ```
 
-打印结果时，会在普通说明句中交代实际 EBIC `gamma`、quickNet 默认值
-（0.5）和 Wang 等（2026）的示例值（0.25）。NIRA 结果及
+打印结果时，会在普通说明句中交代实际 EBIC `gamma`、quickNet 的 Ising 默认值
+（0.25）和 Wang 等（2026）的示例值（0.25）。NIRA 结果及
 `quicknet_report(nira_result)` 还会在结果文字中说明调节效应统计方式与
 Cohen's d 的符号约定，并在末尾列出完整参考文献题录。说明文字和题录
 也可通过 `summary(nira_result)$text` 和 `$references` 获取。若需与 Wang 等（2026）表 4

@@ -1,5 +1,18 @@
 # quickNet 0.0.0.9000
 
+## EBIC settings
+
+- `gamma = NULL` selects 0.5 for EBICglasso/graphicalVAR and 0.25 for
+  Ising/MGM/mixed VAR/time-varying mixed VAR. Explicit values in [0,1] are
+  validated and retained. Non-EBIC estimation and CV record inactive gamma
+  as NULL; Monte Carlo result rows use NA.
+- Stability and network comparison preserve fitted estimation settings.
+  `NetCompare()` accepts two exploratory cross-sectional `quicknet_fit`
+  objects with matching settings and records its effective gamma.
+- Reports and NIRA provenance use backend evidence or recorded metadata for
+  existing fits. Resampling requires a known original EBIC gamma. Console
+  explanations and bilingual documentation describe the model defaults.
+
 ## Virtual perturbation
 
 - Continuous `Perturbation()` methods implement the SymPerturb 0.1.0 method

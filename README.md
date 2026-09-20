@@ -114,6 +114,45 @@ check_input(esm_data, model = "graphicalVAR", vars = c("x1", "x2", "x3"))
 
 Model-fitting functions call the same validator internally. Clear format errors stop early; risk conditions such as very small samples or imbalanced binary variables are shown as warnings.
 
+## EBIC settings
+
+`gamma = NULL` resolves the EBIC hyperparameter by model. Explicit numeric
+values in [0,1], including zero (BIC), take precedence.
+
+| Model / function | Effective default gamma |
+|---|---:|
+| `quickNet(model = "EBICglasso")`, `EBICglassoNet()` | 0.5 |
+| `quickNet(model = "ising")` or `quickNet(model = "mgm")` | 0.25 |
+| `LongitudinalNet(model = "graphicalVAR")` | 0.5 |
+| `MixedVARNet()` / `TimeVaryingNet()`, with `lambdaSel = "EBIC"` | 0.25 |
+| `NetworkPower(method = "monte_carlo", estimator = "EBICglasso")` | 0.5 |
+| Correlation, partial, ordinal, mlVAR, or mixed VAR with `lambdaSel = "CV"` | Not applicable |
+
+Cross-sectional MGM uses EBIC. Mixed and time-varying VAR default to EBIC and
+also accept `lambdaSel = "CV"`; the original `mgm::mgm()` and `mgm::mvar()`
+default to CV. For CV and models without EBIC selection, gamma is ignored and
+`fit$meta$gamma` is `NULL`; reports omit it. Monte Carlo power result rows use
+`NA` for inactive gamma. Powerly settings are configured via `powerly_args`.
+The current ordinal interface estimates associations, without EBIC selection.
+Confirmatory, latent and meta-analysis interfaces do not use this EBIC setting.
+
+`Stability(raw_data, model = ...)` uses the same model defaults as `quickNet()`.
+`Stability(fit)` preserves the fitted setting. Backend records can recover gamma
+from older objects with missing metadata; if the fitted setting cannot be
+established, refitting the original data is required before resampling.
+
+`NetCompare(data1, data2, binary.data = TRUE)` defaults to 0.25; raw Gaussian
+comparisons default to 0.5. `NetCompare(fit1, fit2)` accepts two exploratory
+cross-sectional `quicknet_fit` objects and preserves their estimation settings,
+which must match. A conflicting gamma override is rejected. Bootnet objects
+retain their estimator arguments; for custom estimators configure
+`estimatorArgs`. The effective gamma is available in `result$info$call$gamma`;
+`NULL` denotes an inactive or unknown gamma for a custom estimator.
+
+NIRA records the fitted Ising gamma separately from `moderation_lambda = 0.25`,
+which is the EBIC `lambdaGam` used for moderation. SymPerturb's
+`propagation_gamma = 0.45` controls propagation decay and is a different parameter.
+
 ## Minimal Examples
 
 ### 1. EBICglasso Cross-Sectional Network
@@ -637,8 +676,8 @@ plot(nira_result, type = "effect")
 plot(nira_result, type = "stability")
 ```
 
-Printed results explain the actual Ising EBIC `gamma`, the quickNet default
-(0.5), and the example in Wang et al. (2026) (0.25) in ordinary sentences.
+Printed results explain the actual Ising EBIC `gamma`, the quickNet Ising default
+(0.25), and the example in Wang et al. (2026) (0.25) in ordinary sentences.
 NIRA results and `quicknet_report(nira_result)` also explain moderation
 statistics and the Cohen's d sign convention within the result text, followed
 by the full reference. The explanation and reference are also available in
