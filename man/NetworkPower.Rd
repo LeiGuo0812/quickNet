@@ -3,10 +3,10 @@
 \name{NetworkPower}
 \alias{NetworkPower}
 \alias{SampleSize}
-\title{Network power and sample size planning}
+\title{Network recovery simulation and sample size planning}
 \usage{
 NetworkPower(
-  method = c("monte_carlo", "powerly"),
+  method = c("netSimulator", "powerly"),
   nodes = NULL,
   density = NULL,
   positive = NULL,
@@ -17,91 +17,92 @@ NetworkPower(
   target_value = 0.6,
   target_probability = 0.8,
   gamma = NULL,
-  estimator = c("EBICglasso", "partial", "correlation"),
   seed = NULL,
-  powerly_args = list(),
-  threshold = 1e-10,
+  model_matrix = NULL,
+  model = NULL,
   ...
 )
 
 SampleSize(...)
 }
 \arguments{
-\item{method}{Planning method. \code{"monte_carlo"} runs a transparent
-simulation for Gaussian graphical models. \code{"powerly"} delegates GGM
-planning to \code{powerly::powerly()}.}
+\item{method}{"netSimulator" (default) directly wraps bootnet::netSimulator
+for recovery at prespecified sample sizes. "powerly" wraps powerly::powerly
+for automated GGM sample-size search.}
 
-\item{nodes}{Number of network nodes. Required for powerly; defaults to 8
-for quickNet's Monte Carlo design. With powerly's model_matrix in ...,
-nodes and density are inferred and no generator arguments are required.}
+\item{nodes}{Number of nodes for powerly's generator. Unnecessary when a
+powerly model_matrix is supplied.}
 
-\item{density}{Expected proportion of nonzero edges in the assumed true
-network. Required for powerly; Monte Carlo defaults to 0.30.}
+\item{density}{Nonzero edge density for the powerly generator.}
 
-\item{positive}{Proportion of nonzero edges with positive signs.}
+\item{positive}{Positive-edge proportion for those generators.}
 
-\item{edge_strength}{Absolute nonzero edge-weight range used for the assumed
-true partial-correlation network.}
+\item{edge_strength}{Absolute edge-weight range for those generators.}
 
-\item{sample_sizes}{Candidate sample sizes for \code{method = "monte_carlo"}.
-If \code{NULL}, an adaptive grid is generated from \code{nodes}.}
+\item{sample_sizes}{Alias for netSimulator's nCases; NULL inherits its native
+grid. For powerly use range_lower and range_upper in ... .}
 
-\item{replications}{Replications per sample size. NULL inherits 30 for
-powerly and uses 100 for the quickNet Monte Carlo design.}
+\item{replications}{Alias for native nReps for netSimulator. NULL inherits
+the backend default: 100 for netSimulator, 30 for powerly.}
 
-\item{target_metric}{Metric used for the power criterion. Supported values
-are \code{"sensitivity"}, \code{"specificity"}, \code{"mcc"},
-\code{"edge_weight_correlation"}, and \code{"rmse"}.}
+\item{target_metric}{Powerly recovery criterion: sensitivity, specificity,
+mcc or edge_weight_correlation. Not applicable to descriptive netSimulator
+studies.}
 
-\item{target_value}{Target metric value: [0,1] for sensitivity/specificity,
-[-1,1] for MCC/edge-weight correlation, and nonnegative for RMSE.}
+\item{target_value}{Performance threshold, distinct from target_probability.}
 
-\item{target_probability}{Required proportion of replications that should
-achieve the target value.}
+\item{target_probability}{Required probability of attaining target_value.}
 
-\item{gamma}{EBIC hyperparameter in [0,1]. NULL selects 0.5 for
-Monte Carlo EBICglasso estimation. Ignored for partial/correlation
-estimators and for method = 'powerly'. Powerly's internal GGM estimator
-uses its own gamma default (0.5), recorded separately as backend_gamma;
-the top-level gamma does not configure it. Inactive gamma is stored as NULL in settings
-and NA in Monte Carlo result rows.}
+\item{gamma}{For netSimulator an explicitly supplied value aliases native
+tuning; use tuning in ... for multiple conditions. Powerly's
+public API cannot configure gamma; a non-NULL value is rejected.}
 
-\item{estimator}{Network estimator used in the Monte Carlo loop. Correlation
-is evaluated against the true marginal correlation matrix; partial and
-EBICglasso are evaluated against the generating partial correlations.}
+\item{seed}{Optional random seed. NULL uses the current RNG stream.}
 
-\item{seed}{Optional random seed. NULL draws from the current RNG stream.}
+\item{model_matrix}{Explicit hypothesized network. For netSimulator this
+is native input: a matrix, graph/intercepts list, or generator function.
+For powerly it is a symmetric partial-correlation matrix with zero diagonal.}
 
-\item{powerly_args}{Legacy optional list. Named arguments through ... are
-preferred and override entries in this list; no parameter object is needed.}
+\item{model}{Native powerly model name. NULL or "ggm" is supported; other
+model names are not implemented by powerly's public API.}
 
-\item{threshold}{Absolute threshold used to define selected edges.}
-
-\item{...}{Named powerly controls, including required range_lower and
-range_upper, e.g. \code{range_lower = 100, range_upper = 500, samples = 30}.
-SampleSize forwards its arguments to NetworkPower.}
+\item{...}{Native arguments. netSimulator accepts default, dataGenerator,
+nCases, nReps, nCores, estimation conditions such as tuning, moreArgs and
+moreOutput. Powerly accepts range_lower, range_upper, samples, measure,
+measure_value, statistic_value, boots, tolerance, iterations and cores.
+SampleSize forwards its arguments unchanged to NetworkPower.}
 }
 \value{
-A \code{quicknet_power} object. Results depend on the assumed true
-network and simulation design; true_network is the target of recovery and
-generating_network contains the generating partial-correlation matrix.
-Results should be reported as design-based
-planning evidence, not as a universal sample size rule.
+A quicknet_power object retaining the backend fit, recovery summary,
+  assumptions and conditional recommendation (not applicable for netSimulator).
 }
 \description{
-Network power and sample size planning
+Network recovery simulation and sample size planning
 }
 \details{
-Each call conditions on one fixed true network. Monte Carlo summaries
-  include failed fits, undefined target metrics, Monte Carlo standard errors
-  and pointwise exact-binomial 95% intervals. Failed or undefined target values
-  count as not achieved. The candidate N uses the point estimate; its interval
-  is not adjusted for selecting among candidate sample sizes. Validate a chosen
-  candidate with independent simulations. The actual generating edge strengths
-  and any positive-definiteness scaling are recorded.
+netSimulator implements the recovery study described by Epskamp and
+  Fried (2018). It preserves native edge/centrality measures, conditions,
+  errors and undefined values in fit and results. It does not automatically
+  recommend N or apply a target-attainment rule. summary and plot dispatch
+  to native methods. A matrix/list fixes the assumed network; a native input
+  function may generate a different true network for each replication.
+  If a reference network is estimated from data, the tutorial suggests an
+  unregularized refit of its selected structure (refit = TRUE); quickNet never
+  automatically refits, rescales or modifies a supplied network.
 
-  Powerly's bootstrap-median curve determines its median N; the source curve
-  and sample-size interval are retained. Its source GGM generator uses five
-  ordinal levels by default and replaces undefined recovery measures with zero.
-  Use powerly::validate() on the returned fit component for native validation.
+  Powerly implements iterative Monte Carlo, monotone curve-fitting and
+  stratified bootstrap (Constantin et al., 2023). Its native object, sample-size
+  interval and convergence diagnostics are retained. The bootstrap-median
+  curve determines its median N. Native GGM generation uses five ordinal
+  levels and its estimator uses gamma = 0.5. The source replaces undefined
+  recovery values by zero. Use ValidateNetworkPower for native independent
+  validation. An interpolated candidate is not evidence of guaranteed recovery.
+}
+\references{
+Epskamp, S., & Fried, E. I. (2018). A tutorial on regularized
+  partial correlation networks. Psychological Methods, 23, 617--634.
+  \doi{10.1037/met0000167}.
+  Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2023).
+  A general Monte Carlo method for sample size analysis in the context of
+  network models. \doi{10.1037/met0000555}.
 }

@@ -2,22 +2,19 @@
 % Please edit documentation in R/power.R
 \name{plot.quicknet_power}
 \alias{plot.quicknet_power}
-\title{Plot network power planning results}
+\title{Plot native network recovery and sample size planning results}
 \usage{
-\method{plot}{quicknet_power}(x, type = c("power", "metric"), ...)
+\method{plot}{quicknet_power}(x, ...)
 }
 \arguments{
-\item{x}{A \code{quicknet_power} object.}
+\item{x}{A quicknet_power object from a native network simulation or search.}
 
-\item{type}{Plot type. \code{"power"} shows the target-achievement
-probability across candidate sample sizes. \code{"metric"} shows the mean
-target metric across candidate sample sizes.}
-
-\item{...}{Unused.}
+\item{...}{Arguments forwarded to native plot methods: e.g. yvar for
+netSimulator and step for powerly.}
 }
 \value{
-A \code{ggplot} object.
+The native backend plot result.
 }
 \description{
-Plot network power planning results
+Plot native network recovery and sample size planning results
 }

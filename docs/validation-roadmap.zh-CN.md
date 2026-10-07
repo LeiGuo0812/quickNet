@@ -7,8 +7,8 @@
 后续执行记录：配对 NCT 与 MTD 两项已按用户授权完成实现核对、有限模拟及修复。
 配对 NCT 以官方 2.2.2 为参照，保留其方法及交换性限制；MTD 的显著性检验采用
 Yuan–Shou 作者提供源码的 TTS 方法。详见 [配对 NCT 核验](paired-nct-validation.md)
-和 [MTD 核验](mtd-inference-validation.md)。F 项的实现核对与独立模拟见
-[功效核验](network-power-validation.md)；G 项的历史对象和环境测试见
+和 [MTD 核验](mtd-inference-validation.md)。F 项现使用原生 netSimulator 与 powerly，当前实现核对与独立模拟见
+[原生样本量规划与核验](native-network-power.md)；G 项的历史对象和环境测试见
 [历史对象核验](legacy-object-validation.md)及[平台兼容性](platform-compatibility-validation.md)。
 macOS 及远端 CI 的实际结果仍待获得。
 
@@ -102,17 +102,17 @@ macOS、远端CI、最低依赖版本及未来正式tag仍需实际发布环境�
 
 **依据：**`R/nira_simulation.R`；`tests/testthat/test-nira.R:188`、`:255`；`R/symperturb_core.R`；`R/symperturb_analysis.R`。
 
-### F. 功效与样本量推荐的独立验证：高优先级
+### F. 原生恢复模拟与样本量规划的独立验证：高优先级
 
-1. 核对正定化后实际网络的密度、边强度和报告值。
-2. 区分给定一个真实网络的条件结果与跨网络结构的稳健性；增加多个网络种子、拓扑、弱边及模型类型。
-3. 达标概率附 Monte Carlo 误差，并核对拟合失败计入分母的规则。
-4. 推荐样本量得到后，用独立新模拟验证其达标概率和不确定性；检查候选范围边界、未达标及非单调结果。
-5. 真实 Powerly 集成继续保留慢速验证；已有小规模运行只用于接口与结果提取检查。
+1. 在同种子、同总体假设下，与 `bootnet::netSimulator()` 核对原始恢复指标、多条件、数据生成机制、摘要、绘图和错误保留。
+2. 区分给定一个真实网络的条件结果与跨网络结构的稳健性；比较合理的拓扑、弱边与测量生成机制。netSimulator 仅描述恢复，不自动推荐 N。
+3. 与 `powerly::powerly()` 核对三阶段、bootstrap 中位曲线、推荐区间、曲线达标和搜索收敛；保留源程序的无定义指标处理规则。
+4. 推荐样本量得到后，用原生独立验证评估新数据中的达标概率，以 MCSE 和精确二项区间报告模拟误差；检查范围边界、未达标及搜索方向与验证方向不同的情形。
+5. 原生集成继续保留可执行验证；小规模运行用于接口与结果提取核对，不构成研究样本量建议。
 
-**验收：**推荐值可复现、实际设计透明、边界与未达标情况不被报告为成功；恢复概率的含义与边假设检验 power 分别说明。
+**验收：**与原生数值一致、实际设计透明、边界与未达标情况不被报告为成功；恢复概率与边假设检验 power 分别说明。
 
-**依据：**`R/power.R:223`、`:433`、`:566`；`docs/backend-parameter-audit.md` 的小规模运行记录。
+**依据：**`R/power.R`、`R/power_netsimulator.R`、`R/power_validation.R`；[原生规划说明](native-network-power.md)及 `tools/validate-network-power.R`。
 
 ### G. 跨会话、跨平台与依赖版本：发布前完成
 

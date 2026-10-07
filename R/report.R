@@ -1,7 +1,8 @@
 #' Extract report-ready model information
 #'
 #' @param fit A \code{quicknet_nira}, \code{quicknet_fit},
-#'   \code{quicknet_perturbation}, or \code{quicknet_power} object.
+#'   \code{quicknet_perturbation}, \code{quicknet_power}, or
+#'   \code{quicknet_power_validation} object.
 #' @param digits Number of digits used in plain-text summaries and in NIRA or
 #'   power-analysis numerical report tables.
 #' @param threshold Absolute edge-weight threshold used to count nonzero edges
@@ -30,14 +31,14 @@ quicknet_report <- function(fit, digits = 3, threshold = 1e-10) {
   if (inherits(fit, "quicknet_perturbation")) {
     return(quicknet_report_perturbation(fit, digits = digits))
   }
-  if (inherits(fit, "quicknet_power")) {
+  if (inherits(fit, "quicknet_power") || inherits(fit, "quicknet_power_validation")) {
     return(quicknet_report_power(fit, digits = digits))
   }
   if (!inherits(fit, "quicknet_fit")) {
     stop(
       paste(
         "fit must be a quicknet_nira, quicknet_fit,",
-        "quicknet_perturbation, or quicknet_power object."
+        "quicknet_perturbation, quicknet_power, or quicknet_power_validation object."
       ),
       call. = FALSE
     )
@@ -244,19 +245,21 @@ quicknet_report_nira_text <- function(fit, effects, digits) {
 
 quicknet_report_power <- function(fit, digits = 3) {
   active_settings <- Filter(Negate(is.null), fit$settings)
-  if (identical(fit$method, "monte_carlo") &&
-      !identical(fit$settings$estimator, "EBICglasso")) active_settings$gamma <- NULL
   settings <- data.frame(
     parameter = names(active_settings),
     value = vapply(active_settings, quicknet_report_collapse, character(1)),
     stringsAsFactors = FALSE
   )
   summary <- fit$summary
-  numeric_columns <- vapply(summary, is.numeric, logical(1))
-  summary[numeric_columns] <- lapply(summary[numeric_columns], round, digits)
+  if (is.data.frame(summary) && !identical(fit$method, "netSimulator")) {
+    numeric_columns <- vapply(summary, is.numeric, logical(1))
+    summary[numeric_columns] <- lapply(summary[numeric_columns], round, digits)
+  }
   recommendation <- fit$recommendation
-  numeric_recommendation <- vapply(recommendation, is.numeric, logical(1))
-  recommendation[numeric_recommendation] <- lapply(recommendation[numeric_recommendation], round, digits)
+  if (is.data.frame(recommendation)) {
+    numeric_recommendation <- vapply(recommendation, is.numeric, logical(1))
+    recommendation[numeric_recommendation] <- lapply(recommendation[numeric_recommendation], round, digits)
+  }
   report <- list(
     model = fit$model,
     method = fit$method,
@@ -265,6 +268,9 @@ quicknet_report_power <- function(fit, digits = 3) {
     recommendation = recommendation,
     text = fit$report
   )
+  report$status <- fit$status %||% fit$recommendation$status
+  report$summary_error <- fit$summary_error
+  report$references <- fit$settings$reference
   class(report) <- "quicknet_report"
   report
 }

@@ -159,21 +159,22 @@ test_that("NetCompare reports bootnet settings without inventing custom estimato
   expect_equal(result$info$call$estimatorArgs$gamma, 5)
 })
 
-test_that("power planning records only an active EBIC gamma", {
-  for (estimator in c("EBICglasso", "partial", "correlation")) {
-    power <- NetworkPower(nodes = 3, sample_sizes = 40, replications = 1, estimator = estimator)
-    if (estimator == "EBICglasso") {
-      expect_equal(power$settings$gamma, 0.5)
-      expect_equal(power$results$gamma, 0.5)
-    } else {
-      expect_null(power$settings$gamma)
-      expect_true(all(is.na(power$results$gamma)))
-      expect_false("gamma" %in% quicknet_report(power)$settings$parameter)
-      failed <- quicknet_power_empty_metric(40, 1, NULL, estimator)
-      expect_equal(nrow(failed), 1L)
-      expect_true(is.na(failed$gamma))
-    }
-  }
+test_that("native recovery planning forwards gamma only as the tuning alias", {
+  skip_if_not_installed("bootnet")
+  graph <- matrix(0, 3, 3)
+  graph[1, 2] <- graph[2, 1] <- graph[2, 3] <- graph[3, 2] <- .3
+  set.seed(20261008)
+  capture.output(native <- bootnet::netSimulator(graph, nCases = 80, nReps = 1,
+    default = "EBICglasso", corMethod = "cor", tuning = .7, nCores = 1))
+  capture.output(power <- NetworkPower(model_matrix = graph, sample_sizes = 80,
+    replications = 1, default = "EBICglasso", corMethod = "cor", gamma = .7,
+    seed = 20261008, nCores = 1))
+  expect_identical(power$fit, native)
+  expect_equal(power$settings$backend_args$tuning, .7)
+  expect_false("gamma" %in% names(power$settings$backend_args))
+  expect_equal(power$results$tuning, .7)
+  expect_error(NetworkPower(model_matrix = graph, gamma = .7, tuning = .5), "not both")
+  expect_error(NetworkPower(method = "powerly", model_matrix = graph, gamma = .7), "gamma")
 })
 
 test_that("graphicalVAR bootstraps preserve explicit gamma", {

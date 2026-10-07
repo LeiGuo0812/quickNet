@@ -178,7 +178,7 @@ quicknet_input_specs <- function() {
     meta_gvar = quicknet_input_spec("multi-study intensive longitudinal data or Toeplitz covariances", "data + studyvar + id/day/beep + vars, or covs + nobs + vars", "numeric repeated-measures variables by study", "handled by psychonetrics meta-analytic VAR", "missing study/time identifiers; insufficient studies"),
     mixedVAR = quicknet_input_spec("time-ordered data.frame/matrix", "vars, types, levels", "numeric continuous/category codes in temporal order", "complete cases recommended", "types/levels mismatch; unordered rows"),
     time_varying_mvar = quicknet_input_spec("time-ordered data.frame/matrix", "vars, types, levels, timepoints/estpoints", "numeric continuous/category codes in temporal order", "complete cases recommended", "timepoints length mismatch; invalid estpoints"),
-    power = quicknet_input_spec("no raw data required", "nodes, density, sample_sizes, replications", "simulation design parameters", "not applicable", "unrealistic true-network assumptions; too few replications"),
+    power = quicknet_input_spec("assumed network; no raw observations required", "method, model_matrix/input; nCases/nReps for netSimulator, range_lower/range_upper for powerly", "native recovery simulation or automated GGM search", "data generator controls missingness", "unrealistic assumed network; mismatched generator/estimator; too few replications"),
     perturbation = quicknet_input_spec("quicknet_fit object", "fit and method", "supported fitted model for chosen perturbation method", "not applicable", "method not supported for fit$model"),
     nira = quicknet_input_spec("quicknet_fit object with original analysis data", "fit; simulation, moderation, permutation, and stability settings", "binary 0/1 Ising nodes with strictly aligned names", "no imputation; fitted analysis data must be complete", "non-Ising fit; missing data; unmatched graph/threshold names; fixed-edge assumption violation")
   )
@@ -737,34 +737,65 @@ quicknet_check_meta <- function(data, args) {
 
 quicknet_check_power <- function(args) {
   errors <- warnings <- character()
-  nodes <- args$nodes %||% 8
-  density <- args$density %||% 0.30
-  sample_sizes <- args$sample_sizes
-  if (is.null(sample_sizes)) {
-    sample_sizes <- if (quicknet_is_positive_integer(nodes)) {
-      quicknet_power_default_sample_sizes(nodes)
-    } else {
-      numeric()
-    }
+  method <- args$method %||% "netSimulator"
+  if (!is.character(method) || length(method) != 1L || !method %in% c("netSimulator", "powerly")) {
+    return(list(errors = "method must be netSimulator or powerly.", warnings = warnings))
   }
-  replications <- args$replications %||% 100
-  if (!quicknet_is_positive_integer(nodes) || nodes < 3) {
-    errors <- c(errors, "nodes must be an integer of at least 3.")
+  removed <- intersect(names(args), c("estimator", "powerly_args"))
+  if (length(removed)) errors <- c(errors, paste("Removed sample-size controls:", paste(removed, collapse = ", ")))
+  if (method == "netSimulator") {
+    inactive <- intersect(names(args), c("nodes", "density", "positive", "edge_strength",
+      "target_metric", "target_value", "target_probability"))
+    if (length(inactive)) errors <- c(errors, paste("Controls not applicable to netSimulator:", paste(inactive, collapse = ", ")))
+    native_args <- args[setdiff(names(args), c("method", "model_matrix", "sample_sizes", "replications", "seed", "gamma", "missing", "require_complete", inactive, removed))]
+    checked <- tryCatch({
+      if (!is.null(args$gamma)) {
+        if ("tuning" %in% names(native_args)) stop("Supply gamma or native tuning, not both.")
+        native_args$tuning <- quicknet_resolve_gamma("EBICglasso", args$gamma)
+      }
+      quicknet_power_netsimulator_args(args$model_matrix, args$sample_sizes, args$replications, native_args)
+    }, error = function(e) e)
+    if (inherits(checked, "error")) errors <- c(errors, conditionMessage(checked))
+    reps <- args$replications %||% args$nReps
+  } else {
+    checked <- tryCatch({
+      if (requireNamespace("powerly", quietly = TRUE)) {
+        native <- args[setdiff(names(args), c("method", "seed", "target_metric", "target_value",
+          "target_probability", "edge_strength", "gamma", "sample_sizes", "missing", "require_complete", removed))]
+        quicknet_backend_args(native, powerly::powerly,
+          extra = c("nodes", "density", "positive", "constant", "range"))
+      }
+      if (!is.null(args$model_matrix)) quicknet_power_validate_true_matrix(args$model_matrix)
+      else if (!quicknet_is_positive_integer(args$nodes) || args$nodes < 2 ||
+          !is.numeric(args$density) || length(args$density) != 1 ||
+          !is.finite(args$density) || args$density <= 0 || args$density > 1) {
+        stop("Supply a model_matrix or valid nodes and density for powerly.")
+      }
+      if (!quicknet_is_positive_integer(args$range_lower) ||
+          !quicknet_is_positive_integer(args$range_upper) || args$range_upper <= args$range_lower) {
+        stop("range_lower and range_upper must be positive integers with range_lower < range_upper.")
+      }
+      if (!is.null(args$gamma)) stop("powerly's public API cannot configure gamma.")
+      if (!is.null(args$sample_sizes)) stop("Use range_lower and range_upper for powerly.")
+      if (!is.null(args$replications) && !quicknet_is_positive_integer(args$replications)) stop("replications must be a positive integer.")
+      metric_map <- c(sen = "sensitivity", spe = "specificity", mcc = "mcc", rho = "edge_weight_correlation")
+      metric <- match.arg(args$target_metric %||% "sensitivity", unname(metric_map))
+      quicknet_power_validate_target(metric, args$target_value %||% 0.6, args$target_probability %||% 0.8)
+      statistic <- args[["statistic"]]
+      measure <- args[["measure"]]
+      if (!is.null(statistic) && !identical(statistic, "power")) stop("statistic must be 'power'.")
+      if (!is.null(measure)) {
+        if (!is.character(measure) || length(measure) != 1L || !measure %in% names(metric_map)) stop("Unsupported powerly measure.")
+        metric <- unname(metric_map[[measure]])
+      }
+      quicknet_power_validate_target(metric,
+        args$measure_value %||% args$target_value %||% 0.6,
+        args$statistic_value %||% args$target_probability %||% 0.8)
+    }, error = function(e) e)
+    if (inherits(checked, "error")) errors <- c(errors, conditionMessage(checked))
+    reps <- args$replications
   }
-  if (!is.numeric(density) || length(density) != 1 || !is.finite(density) ||
-      density <= 0 || density > 1) {
-    errors <- c(errors, "density must be a finite number in (0, 1].")
-  }
-  valid_sample_sizes <- is.numeric(sample_sizes) && length(sample_sizes) > 0 &&
-    all(is.finite(sample_sizes)) &&
-    all(vapply(sample_sizes, quicknet_is_positive_integer, logical(1))) &&
-    all(sample_sizes >= 5)
-  if (!valid_sample_sizes) {
-    errors <- c(errors, "sample_sizes must contain positive integers of at least 5.")
-  }
-  if (!quicknet_is_positive_integer(replications)) {
-    errors <- c(errors, "replications must be a positive integer.")
-  } else if (replications < 10) {
+  if (!is.null(reps) && quicknet_is_positive_integer(reps) && reps < 10) {
     warnings <- c(warnings, "Very few replications; use larger values for applied studies.")
   }
   list(errors = errors, warnings = warnings)

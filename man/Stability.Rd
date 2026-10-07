@@ -26,7 +26,8 @@ Stability(
 )
 }
 \arguments{
-\item{data}{a data frame or \code{quicknet_fit} object.}
+\item{data}{A data frame or an exploratory cross-sectional \code{quicknet_fit}
+from EBICglasso, correlation, partial, ordinal, Ising or MGM estimation.}
 
 \item{nboot}{number of bootstraps.}
 
@@ -86,7 +87,10 @@ a list contains the stability test results of the network\itemize{
 Estimate edge-weight and node stability of a network
 }
 \details{
-The custom edge table uses observation bootstrap percentile intervals
+Supports the six exploratory cross-sectional models listed above.
+  Other fitted models are rejected before resampling. For supported PanelNet
+  and LongitudinalNet fits, use \code{LongitudinalStability()}.
+  The custom edge table uses observation bootstrap percentile intervals
   (2.5th and 97.5th percentiles), conditional on successful fits. Failed fits
   are not replaced; requested, successful, failed and undefined counts are
   reported. Failure causes are stored in \code{resampling} and the table's

@@ -1,129 +1,139 @@
 #!/usr/bin/env Rscript
-# Run from package root; optional first argument is the artifact directory.
-# Uses native powerly and its validate() method first; independent Gaussian
-# simulation subsequently validates quickNet's own conditional Monte Carlo design.
+# Run from package root; optional first argument is a new artifact directory.
+# Compare public quickNet interfaces with the unmodified native implementations.
+# Fixed-design budgets verify implementation; they do not establish a general N.
 Sys.setenv(OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1")
 args <- commandArgs(trailingOnly = TRUE)
-out_dir <- if (length(args)) args[[1]] else "../output/audit/power"
+out_dir <- if (length(args)) args[[1]] else "../output/audit/power-native"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 pkgload::load_all(quiet = TRUE)
-make_truth <- function(edges, strength, p = 5L) {
-  graph <- matrix(0, p, p, dimnames = list(paste0("v", seq_len(p)), paste0("v", seq_len(p))))
-  for (i in seq_len(nrow(edges))) graph[edges[i, 1], edges[i, 2]] <- rep(strength, length.out = nrow(edges))[[i]]
-  graph + t(graph)
+
+assert_equal <- function(actual, expected, label) {
+  comparison <- all.equal(actual, expected)
+  if (!isTRUE(comparison)) {
+    stop(label, ": ", paste(comparison, collapse = "; "), call. = FALSE)
+  }
 }
-chain <- cbind(1:4, 2:5)
-truth <- make_truth(chain, .3)
+
+truth <- matrix(0, 5, 5, dimnames = list(paste0("v", 1:5), paste0("v", 1:5)))
+truth[cbind(1:4, 2:5)] <- 0.30
+truth <- truth + t(truth)
+
+# Native netSimulator: continuous multi-condition and five-level ordinal designs.
+simulator_designs <- list(
+  continuous_conditions = list(seed = 88101L, nCases = c(80L, 120L), nReps = 2L,
+    native_args = list(default = "EBICglasso", corMethod = "cor", tuning = c(.25, .5),
+      dataGenerator = bootnet::ggmGenerator(ordinal = FALSE), nCores = 1L)),
+  ordinal_five_levels = list(seed = 88102L, nCases = c(80L, 120L), nReps = 2L,
+    native_args = list(default = "EBICglasso", corMethod = "cor_auto", tuning = .5,
+      dataGenerator = bootnet::ggmGenerator(ordinal = TRUE, nLevels = 5), nCores = 1L))
+)
+simulator_rows <- lapply(names(simulator_designs), function(name) {
+  design <- simulator_designs[[name]]
+  set.seed(design$seed)
+  native <- do.call(bootnet::netSimulator, c(
+    list(input = truth, nCases = design$nCases, nReps = design$nReps), design$native_args))
+  wrapped <- do.call(NetworkPower, c(
+    list(model_matrix = truth, sample_sizes = design$nCases,
+      replications = design$nReps, seed = design$seed), design$native_args))
+  alias <- do.call(SampleSize, c(
+    list(model_matrix = truth, sample_sizes = design$nCases,
+      replications = design$nReps, seed = design$seed), design$native_args))
+  assert_equal(wrapped$fit, native, paste(name, "native results"))
+  assert_equal(alias$fit, native, paste(name, "SampleSize alias results"))
+  assert_equal(wrapped$results, native, paste(name, "raw results"))
+  utils::capture.output(native_summary <- summary(native))
+  utils::capture.output(wrapped_summary <- summary(wrapped))
+  assert_equal(wrapped_summary, native_summary, paste(name, "summary"))
+  stopifnot(identical(wrapped$method, "netSimulator"),
+    identical(wrapped$recommendation$status, "not_applicable"),
+    is.na(wrapped$recommendation$recommended_n))
+  saveRDS(list(native = native, quickNet = wrapped, design = design, truth = truth),
+    file.path(out_dir, paste0("netsimulator-", name, ".rds")))
+  write.csv(as.data.frame(native),
+    file.path(out_dir, paste0("netsimulator-", name, ".csv")), row.names = FALSE)
+  data.frame(design = name, seed = design$seed, native_rows = nrow(native),
+    failed_rows = sum(native$error), repetitions_per_condition = design$nReps,
+    native_results_equal = TRUE, native_summary_equal = TRUE)
+})
+simulator_summary <- do.call(rbind, simulator_rows)
+write.csv(simulator_summary, file.path(out_dir, "netsimulator-native-parity.csv"), row.names = FALSE)
+print(simulator_summary)
+
+# Native powerly: identical population assumptions, random seed and three stages.
 source_args <- list(range_lower = 50L, range_upper = 500L, samples = 8L, replications = 20L,
   model_matrix = truth, measure = "sen", statistic = "power", measure_value = .6,
-  statistic_value = .8, boots = 80L, iterations = 1L, tolerance = 50L, cores = 1L, verbose = FALSE)
-set.seed(88021)
+  statistic_value = .8, boots = 80L, iterations = 1L, tolerance = 50L,
+  cores = 1L, verbose = FALSE)
+set.seed(88021L)
 native <- do.call(powerly::powerly, source_args)
-set.seed(88021)
-wrapped <- do.call(NetworkPower, c(list(method = "powerly"), source_args))
-stopifnot(identical(native$recommendation, wrapped$fit$recommendation),
-  identical(native$step_1$statistics, wrapped$summary$achieved_probability),
-  identical(native$step_1$true_model_parameters, wrapped$true_network),
-  identical(native$step_1$measures, wrapped$fit$step_1$measures))
+wrapped <- do.call(NetworkPower, c(list(method = "powerly", seed = 88021L), source_args))
+assert_equal(wrapped$true_network, native$step_1$true_model_parameters, "powerly population graph")
+assert_equal(wrapped$fit$step_1$measures, native$step_1$measures, "powerly recovery measures")
+assert_equal(wrapped$fit$step_1$statistics, native$step_1$statistics, "powerly attainment statistics")
+assert_equal(wrapped$fit$step_2$interpolation, native$step_2$interpolation, "powerly fitted curve")
+assert_equal(wrapped$fit$step_3$ci, native$step_3$ci, "powerly bootstrap curves")
+assert_equal(wrapped$fit$recommendation, native$recommendation, "powerly native recommendation")
+assert_equal(wrapped$recommendation$algorithm_converged, native$converged, "powerly convergence")
+assert_equal(wrapped$recommendation$algorithm_iterations, native$iteration, "powerly iterations")
 median_n <- native$recommendation[["50%"]]
 index <- match(median_n, native$step_2$interpolation$x)
-stopifnot(isTRUE(all.equal(wrapped$recommendation$achieved_probability,
-                         as.numeric(native$step_3$ci[index, "50%"]))))
-set.seed(88022)
-validated <- powerly::validate(native, replications = 300L, cores = 1L, verbose = FALSE)
-native_measures <- as.numeric(validated$measures)
-native_successes <- sum(native_measures >= .6)
-native_n <- length(native_measures)
-native_probability <- native_successes / native_n
-native_ci <- as.numeric(binom.test(native_successes, native_n)$conf.int)
-native_summary <- data.frame(
-  method = "powerly", sample = validated$sample,
-  native_recommended_n = median_n, wrapper_reached = wrapped$recommendation$reached,
+assert_equal(wrapped$recommendation$achieved_probability,
+  as.numeric(native$step_3$ci[index, "50%"]), "powerly median-curve probability")
+assert_equal(wrapped$recommendation$backend_n_lower,
+  unname(native$recommendation[["2.5%"]]), "powerly lower sample-size bound")
+assert_equal(wrapped$recommendation$backend_n_upper,
+  unname(native$recommendation[["97.5%"]]), "powerly upper sample-size bound")
+
+# New simulation stream: direct native validation and the public validation API.
+set.seed(88022L)
+native_validation <- powerly::validate(native, replications = 300L, cores = 1L, verbose = FALSE)
+validation <- ValidateNetworkPower(wrapped, replications = 300L, seed = 88022L,
+  cores = 1L, verbose = FALSE)
+assert_equal(validation$fit$sample, native_validation$sample, "validation sample size")
+assert_equal(validation$fit$measures, native_validation$measures, "validation recovery measures")
+assert_equal(validation$fit$statistic, native_validation$statistic, "validation native probability")
+assert_equal(validation$fit$percentile_value, native_validation$percentile_value, "validation percentile")
+measures <- as.numeric(native_validation$measures)
+successes <- sum(is.finite(measures) & measures >= .6)
+repetitions <- length(measures)
+probability <- successes / repetitions
+interval <- as.numeric(stats::binom.test(successes, repetitions)$conf.int)
+assert_equal(validation$summary$achieved_probability, probability, "validation counted probability")
+assert_equal(c(validation$summary$probability_ci_lower, validation$summary$probability_ci_upper),
+  interval, "independent exact-binomial interval")
+assert_equal(validation$summary$probability_mcse,
+  sqrt(probability * (1 - probability) / repetitions), "independent Monte Carlo standard error")
+expected_status <- if (interval[[1L]] >= .8) "supported" else if (interval[[2L]] < .8) "below_target" else "uncertain"
+stopifnot(identical(validation$status, expected_status))
+
+powerly_summary <- data.frame(
+  method = "powerly", sample = as.numeric(native_validation$sample),
+  native_recommended_n = unname(median_n), wrapper_reached = wrapped$recommendation$reached,
+  algorithm_converged = native$converged, algorithm_iterations = native$iteration,
+  recommendation_interval_width = wrapped$recommendation$recommendation_interval_width,
   bootstrap_median_probability = wrapped$recommendation$achieved_probability,
   point_curve_probability = wrapped$recommendation$fitted_probability,
-  validation_replications = native_n, validation_successes = native_successes,
-  validation_probability = native_probability,
-  validation_mcse = sqrt(native_probability * (1 - native_probability) / native_n),
-  validation_ci_lower = native_ci[[1]], validation_ci_upper = native_ci[[2]],
-  target_metric = "sensitivity", target_value = .6, target_probability = .8)
-stopifnot(isTRUE(all.equal(as.numeric(validated$statistic), native_probability)))
-write.csv(native_summary, file.path(out_dir, "powerly-native-validation.csv"), row.names = FALSE)
-saveRDS(list(native = native, quickNet = wrapped, validation = validated, args = source_args),
-        file.path(out_dir, "powerly-native-validation.rds"))
-print(native_summary)
+  validation_replications = repetitions, validation_successes = successes,
+  validation_probability = probability,
+  validation_mcse = sqrt(probability * (1 - probability) / repetitions),
+  validation_ci_lower = interval[[1L]], validation_ci_upper = interval[[2L]],
+  validation_status = validation$status, target_metric = "sensitivity",
+  target_value = .6, target_probability = .8)
+write.csv(powerly_summary, file.path(out_dir, "powerly-native-validation.csv"), row.names = FALSE)
+write.csv(validation$summary, file.path(out_dir, "powerly-independent-validation.csv"), row.names = FALSE)
+saveRDS(list(native = native, quickNet = wrapped, native_validation = native_validation,
+  validation = validation, args = source_args, truth = truth),
+  file.path(out_dir, "powerly-native-validation.rds"))
+print(powerly_summary)
 
-# Independent held-out estimator: distinct base-R Cholesky sampler; direct
-# qgraph call; independent confusion-count expression for MCC.
-held_out <- function(graph, n, repetitions, seed) {
-  set.seed(seed)
-  precision <- diag(nrow(graph)) - graph
-  covariance <- cov2cor(solve(precision))
-  ch <- chol(covariance)
-  truth_values <- graph[upper.tri(graph)]
-  true_positive_mask <- abs(truth_values) > 1e-10
-  do.call(rbind, lapply(seq_len(repetitions), function(i) {
-    attempted <- tryCatch({
-      data <- matrix(rnorm(n * nrow(graph)), nrow = n) %*% ch
-      estimated <- suppressMessages(suppressWarnings(qgraph::EBICglasso(cor(data), n = n, gamma = .5, verbose = FALSE)))
-      mask <- abs(estimated[upper.tri(estimated)]) > 1e-10
-      a <- sum(mask & true_positive_mask); b <- sum(mask & !true_positive_mask)
-      c <- sum(!mask & true_positive_mask); d <- sum(!mask & !true_positive_mask)
-      denominator <- sqrt((a + b) * (a + c) * (d + b) * (d + c))
-      data.frame(replication = i, metric = if (denominator > 0) (a * d - b * c) / denominator else NA_real_,
-                 failed = FALSE, error_message = NA_character_)
-    }, error = function(e) data.frame(replication = i, metric = NA_real_, failed = TRUE,
-                                     error_message = conditionMessage(e)))
-    attempted
-  }))
-}
-scenarios <- list(
-  chain_weak = make_truth(chain, .15),
-  chain_strong = make_truth(chain, .3),
-  star = make_truth(cbind(rep(1, 4), 2:5), .25),
-  cycle = make_truth(rbind(chain, c(1, 5)), .25),
-  signed = make_truth(rbind(chain, c(1, 3), c(2, 5)), c(.2, -.2, .2, -.2, .2, .2))
-)
-rows <- list()
-for (j in seq_along(scenarios)) {
-  name <- names(scenarios)[[j]]
-  graph <- scenarios[[j]]
-  values <- graph[upper.tri(graph)]; nonzero <- values != 0
-  stopifnot(min(eigen(diag(5) - graph, symmetric = TRUE)$values) > 0)
-  train <- quicknet_power_monte_carlo(nodes = 5, density = mean(nonzero),
-    positive = mean(values[nonzero] > 0), edge_strength = range(abs(values[nonzero])),
-    sample_sizes = c(60, 120, 240, 480, 960), replications = 100,
-    target_metric = "mcc", target_value = .6, target_probability = .8,
-    gamma = .5, estimator = "EBICglasso", seed = 71000L + j,
-    threshold = 1e-10, true_network = graph)
-  recommended_n <- train$recommendation$recommended_n
-  check_n <- if (is.finite(recommended_n)) recommended_n else max(train$summary$sample_size)
-  held <- held_out(graph, check_n, 300L, 72000L + j)
-  achieved <- is.finite(held$metric) & held$metric >= .6 & !held$failed
-  success <- sum(achieved); probability <- success / nrow(held)
-  ci <- as.numeric(binom.test(success, nrow(held))$conf.int)
-  train_row <- train$summary[train$summary$sample_size == check_n, ]
-  rows[[name]] <- data.frame(scenario = name, recommended_n = recommended_n,
-    checked_n = check_n, check_type = if (is.finite(recommended_n)) "recommended_candidate" else "upper_range_without_recommendation",
-    training_repetitions = 100, training_probability = train_row$achieved_probability,
-    training_ci_lower = train_row$probability_ci_lower, training_ci_upper = train_row$probability_ci_upper,
-    validation_repetitions = nrow(held), validation_probability = probability,
-    validation_mcse = sqrt(probability * (1 - probability) / nrow(held)),
-    validation_ci_lower = ci[[1]], validation_ci_upper = ci[[2]],
-    validation_failed = sum(held$failed), validation_undefined_metric = sum(!held$failed & !is.finite(held$metric)),
-    validation_lower_supports_target = ci[[1]] >= .8,
-    training_seed = 71000L + j, validation_seed = 72000L + j)
-  saveRDS(list(truth = graph, training = train, held_out = held),
-          file.path(out_dir, paste0("monte-carlo-", name, ".rds")))
-  write.csv(held, file.path(out_dir, paste0("held-out-", name, ".csv")), row.names = FALSE)
-  print(rows[[name]]); flush.console()
-}
-summary <- do.call(rbind, rows)
-write.csv(summary, file.path(out_dir, "monte-carlo-held-out-summary.csv"), row.names = FALSE)
-provenance <- list(source = tools::md5sum(c("R/power.R", "tools/validate-network-power.R")),
-  source_versions = sapply(c("powerly", "qgraph", "MASS"), function(x) as.character(packageVersion(x))),
-  source_args = source_args, native_seed = 88021L, native_validation_seed = 88022L,
-  candidate_sample_sizes = c(60, 120, 240, 480, 960), training_repetitions = 100L,
-  held_out_repetitions = 300L, target_metric = "mcc", target_value = .6,
-  target_probability = .8, scenarios = scenarios, session = sessionInfo())
-saveRDS(provenance, file.path(out_dir, "network-power-provenance.rds"))
-writeLines(capture.output(str(provenance)), file.path(out_dir, "network-power-provenance.txt"))
+provenance <- list(
+  source = tools::md5sum(c("R/power.R", "R/power_netsimulator.R", "R/power_validation.R",
+    "tools/validate-network-power.R")),
+  source_versions = sapply(c("bootnet", "powerly", "qgraph"), function(x) as.character(packageVersion(x))),
+  simulator_designs = simulator_designs, source_args = source_args,
+  powerly_seed = 88021L, native_validation_seed = 88022L,
+  validation_repetitions = 300L, truth = truth, session = sessionInfo())
+saveRDS(provenance, file.path(out_dir, "network-power-native-provenance.rds"))
+writeLines(capture.output(str(provenance)), file.path(out_dir, "network-power-native-provenance.txt"))
+cat("Native netSimulator, powerly and independent validation comparisons passed.\n")

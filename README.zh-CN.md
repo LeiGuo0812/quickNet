@@ -123,7 +123,7 @@ psychonetrics 的模型，报告会在常规样本、网络、边和节点摘要
 | 验证性横断面数据 | `ConfirmatoryNet()` | `"confirmatory_covariance"` | 基于 psychonetrics 的验证性协方差模型 |
 | 验证性横断面数据 | `ConfirmatoryNet()` | `"confirmatory_precision"` | 基于 psychonetrics 的验证性精度矩阵模型 |
 
-样本量规划使用单独的 `quicknet_power` 对象，由 `NetworkPower()` 或别名 `SampleSize()` 返回。
+样本量规划使用单独的 `quicknet_power` 对象，由 `NetworkPower()` 或别名 `SampleSize()` 返回。默认的原生 netSimulator 流程比较各模拟条件的恢复情况；powerly 还可搜索推荐样本量，并通过 `ValidateNetworkPower()` 进行独立验证。
 
 `EBICglassoNet()` 是保留的便捷接口，等价于估计 `model = "EBICglasso"` 的横断面网络。
 
@@ -210,9 +210,11 @@ fit_ebic$meta$backend_settings
   控制可选的逐波预处理。按受试者分组的 CV 和相邻波次合并属于该面板方法的规则。
 - 验证性与潜变量模型继承对应后端的估计器、缺失处理和识别设置。
   `LatentNet(..., estimator = "MLR")` 可直接配置 lavaan；其 `std.lv` 默认为 FALSE。
-- Powerly 默认使用 sensitivity、30 个样本量点、30 次重复和 10000 次 bootstrap；
-  提供 `nodes`、`density` 或已知的 `model_matrix`，并指定 `range_lower`、`range_upper`。
-  Monte Carlo 分支有单独记录的模拟设计。
+- `NetworkPower()` 默认调用原生 `bootnet::netSimulator()`，需明确指定
+  `model_matrix`、候选 `sample_sizes` 和 `replications`；用 `default` 配置估计器，
+  `tuning` 配置 EBIC，`dataGenerator` 配置测量模型。
+  Powerly 默认使用 sensitivity、30 个样本量点、30 次重复和 10000 次 bootstrap；
+  提供 `model_matrix`（或 `nodes`、`density`），并指定 `range_lower`、`range_upper`。
 - `NetCompare()` 默认 100 次置换，逐边和中心性检验默认关闭；
   `Bridge()` 默认不归一化，`netCor()` 默认 999 次置换且不绘图。
 
@@ -233,16 +235,19 @@ NIRA 和 SymPerturb 使用各自方法要求的预设，详见对应章节。
 | `quickNet(model = "ising")`；采用 `lambdaSel = "EBIC"` 的 MGM | 0.25 |
 | `LongitudinalNet(model = "graphicalVAR")` | 0.5 |
 | `MixedVARNet()`／`TimeVaryingNet()`，且 `lambdaSel = "EBIC"` | 0.25 |
-| `NetworkPower(method = "monte_carlo", estimator = "EBICglasso")` | 0.5 |
+| `NetworkPower(method = "netSimulator", default = "EBICglasso")` | 使用原生 `tuning = 0.5` |
 | correlation、partial、ordinal、mlVAR，或 `lambdaSel = "CV"` 的 mixed VAR | 不适用 |
 
 MGM 和 Mixed VAR 继承源软件的 CV 默认值；MGM 使用 AND 规则。时变 VAR
 默认使用 EBIC。使用 `lambdaSel = "EBIC"` 时，MGM 家族的默认 gamma 为 0.25。
 采用 CV 或不使用 EBIC 选模时，gamma 不参与估计，`fit$meta$gamma` 为 `NULL`，
-报告不展示该参数；Monte Carlo 功效结果行中的无效 gamma 记为 `NA`。
+报告不展示该参数。
+原生 netSimulator 的 EBIC 设置通过 `...` 中的 `tuning` 配置。
 Powerly 的参数直接写入函数调用，例如 `samples = 30, boots = 10000`。
 其内部 GGM 估计器的 gamma 默认值为 0.5，单独记录为 `backend_gamma`；
-顶层 `gamma` 参数不改变该内部设置。当前 ordinal 接口估计关联网络，
+显式提供非 `NULL` 的顶层 `gamma` 会报错。Powerly 公共接口也不支持配置
+序数级数 `levels`；需要改变测量生成设置时，使用 netSimulator 的 `dataGenerator`。
+当前 ordinal 接口估计关联网络，
 不进行 EBIC 选模。验证性模型、潜变量模型和元分析接口也不使用此 EBIC 参数。
 
 `Stability(raw_data, model = ...)` 与 `quickNet()` 使用相同的模型默认值。
@@ -613,52 +618,63 @@ mlvar_fit$nodes
 
 ### 12. 网络统计功效和样本量规划
 
+`NetworkPower()`（别名 `SampleSize()`）默认使用 `method = "netSimulator"`，
+将明确指定的总体偏相关假设矩阵传给 `bootnet::netSimulator()`。
+这对应 [Epskamp 与 Fried（2018）第 7.1 节](https://arxiv.org/html/1607.01367v9#S7.SS1)
+的事前规划流程：比较不同候选样本量与估计设置下的边恢复和中心性恢复。
+原生模拟对象保存在 `$fit`，`summary()` 保留逐条件汇总，`plot()` 调用原生绘图方法。
+该分支不自动推荐样本量。
+
 ```r
 library(quickNet)
 set.seed(14)
 
-# 先指定总体生成机制，NetworkPower 在内部生成网络与模拟数据。
-# 每个样本量仅重复5次用于演示流程，不能据此作正式研究的样本量建议。
-power <- NetworkPower(
-  method = "monte_carlo", nodes = 8, density = 0.30,
-  positive = 0.70, edge_strength = c(0.15, 0.45),
-  sample_sizes = c(100, 200, 400), replications = 5, seed = 14,
-  target_metric = "mcc", target_value = 0.60, target_probability = 0.80
+# 明确指定总体偏相关假设：五节点链式网络。
+true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
+true_graph[cbind(1:4, 2:5)] <- 0.30
+true_graph <- true_graph + t(true_graph)
+
+# 每个条件重复3次仅演示接口，不能据此作正式研究结论。
+plan <- NetworkPower(
+  method = "netSimulator", model_matrix = true_graph,
+  sample_sizes = c(40, 80), replications = 3, seed = 14,
+  default = "EBICglasso",
+  dataGenerator = bootnet::ggmGenerator(ordinal = TRUE, nLevels = 5),
+  corMethod = "cor_auto", tuning = 0.5, nCores = 1
 )
 
-power$generating_network
-head(power$results)
-summary(power)
-power$recommendation
-plot(power)
-quicknet_report(power)$text
+plan$true_network
+summary(plan)
+plot(plan)
+plot(plan, yvar = c("strength", "closeness", "betweenness"))
+quicknet_report(plan)$text
 ```
 
-如果 `sample_sizes = NULL`，`NetworkPower()` 会根据节点数自动生成候选样本量网格。
-Monte Carlo 分支的默认目标指标为 `mcc`，同时考虑假阴性和假阳性。
+`sample_sizes` 和 `replications` 分别对应原生参数 `nCases` 和 `nReps`。
+`...` 中其他具名参数保留原生含义，例如 `tuning = c(0.25, 0.5)`
+用于比较两种 EBIC 设置，不会将其合并或取平均。
+数据生成机制应匹配计划使用的测量资料；上例使用五级序数数据，连续数据可用
+`bootnet::ggmGenerator(ordinal = FALSE)`。正式研究应增加重复次数，同时检查
+灵敏度、特异度、边权重相关以及研究关心的中心性恢复。这些是给定网络假设下的
+恢复指标，不是零假设检验的统计功效。
 
-Monte Carlo 达标概率以一次调用中固定的生成网络为条件。
-`estimator = "correlation"` 的 `true_network` 为总体边际相关矩阵，其他估计器的
-真值为偏相关网络；`generating_network` 保留生成数据所用的偏相关网络。
-设置记录实际密度、边强度及保证精度矩阵正定所用的缩放系数。汇总表提供 Monte Carlo
-标准误与逐点精确二项 95% 区间；拟合失败和目标指标无定义分别计数，均计入未达标次数。
+已发表研究或预调查得到的邻接矩阵仍是假设，具有不确定性。
+Epskamp 与 Fried 提到，可用 `refit = TRUE` 获取 EBICglasso 的模拟基线，
+减轻正则化对边权重的压缩。还应比较多种合理的网络结构和边强度，
+不能把估计矩阵当作已知总体真值；文中的 PTSD 示例也不是通用最低样本量规定。
 
-推荐 N 是点估计达标的最小候选样本量；没有候选值达标时，`recommended_n` 为 `NA`。
-结果同时提供边界标记和 `lower_bound_supports_target`。独立验证及区间解释见
-[功效核验记录](docs/network-power-validation.md)。
-
-也可以使用 `powerly` 后端进行 GGM 样本量规划：
+需要自动搜索 GGM 样本量时，使用 `method = "powerly"`：
 
 ```r
 library(quickNet)
 set.seed(88021)
 
-# 预先指定总体偏相关真值，不使用从预调查数据估计的网络充当已知真值。
+# 明确的总体假设；此代码块不依赖其他示例中的对象。
 true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
 true_graph[cbind(1:4, 2:5)] <- 0.30
 true_graph <- true_graph + t(true_graph)
-true_graph
 
+# 小规模演示预算，不能据此给出正式研究的样本量建议。
 powerly_plan <- NetworkPower(
   method = "powerly", model_matrix = true_graph,
   range_lower = 50, range_upper = 500,
@@ -670,13 +686,59 @@ powerly_plan <- NetworkPower(
 summary(powerly_plan)
 powerly_plan$true_network
 powerly_plan$recommendation
+plot(powerly_plan)
 quicknet_report(powerly_plan)$text
 ```
 
-Powerly 推荐值按其 bootstrap 中位曲线解释，保留源软件的数据生成设置，默认生成
-五级序数数据。已有偏相关真值矩阵时，可直接传入 `model_matrix = ...`，无需另给
-`nodes` 和 `density`。使用 `powerly::validate(powerly_plan$fit)` 进行源软件提供的
-独立验证。已测试设计及适用范围见[功效核验记录](docs/network-power-validation.md)。
+Powerly 搜索使恢复指标达到目标值、且达标概率达到指定要求的样本量，
+保留原生拟合对象和样本量不确定区间；推荐值依据 bootstrap 中位曲线。
+传入 `model_matrix` 时自动推断 `nodes`、`density`；否则需要同时给出这两项，
+指定随机生成的假设网络。原生 GGM 生成器默认使用五级序数数据。
+每个样本量的重复次数、候选样本量点数和 bootstrap 次数分别由
+`replications`、`samples`、`boots` 控制。公共接口不提供 GGM `gamma` 或
+序数级数 `levels` 设置：原生默认 gamma = 0.5、五级序数，无法支持的覆盖参数会报错。
+Powerly 保留源软件将无定义恢复指标替换为零的规则。
+
+应检查 `powerly_plan$recommendation$algorithm_converged`、
+`algorithm_iterations` 和 `recommendation_interval_width`。
+曲线达到目标与搜索收敛是两个不同条件；达到迭代上限仍未收敛的推荐值仅是暂定值。
+上例只允许一次迭代，正是这种演示限制，正式研究需增加预算。
+
+选定样本量后，应使用新的模拟进行独立验证。下面的代码块可独立运行。
+`ValidateNetworkPower()` 调用 `powerly::validate()`，原生验证对象保存在 `$fit`。
+省略 `replications` 时继承已安装后端的默认值（powerly 1.10.0 中为 3000）。
+`sample = NULL` 在推荐值的中位曲线达标时验证推荐 N；否则应显式指定
+`sample` 或扩大搜索范围。显式指定 `sample` 则验证该样本量。
+
+```r
+library(quickNet)
+set.seed(88021)
+
+true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
+true_graph[cbind(1:4, 2:5)] <- 0.30
+true_graph <- true_graph + t(true_graph)
+powerly_plan <- NetworkPower(
+  method = "powerly", model_matrix = true_graph,
+  range_lower = 50, range_upper = 500,
+  samples = 8, replications = 20, boots = 80, iterations = 1, tolerance = 50,
+  cores = 1, verbose = FALSE, seed = 88021,
+  target_metric = "sensitivity", target_value = 0.60, target_probability = 0.80
+)
+
+# 使用新的随机数流；20次重复仅演示验证流程。
+validation <- ValidateNetworkPower(
+  powerly_plan, replications = 20, seed = 88022, cores = 1, verbose = FALSE
+)
+summary(validation$fit)
+plot(validation$fit)
+quicknet_report(validation)$text
+```
+
+以上规划流程针对横断面 GGM 恢复，不提供组间差异、桥中心性、CLPN、
+SEM 面板模型或 ESM 时间序列的通用样本量公式；这些问题需要匹配的模拟设计。
+数据收集后，可用 `Stability()` 检查边准确性和 case-drop 中心性稳定性，
+事前模拟的恢复相关并不是 CS 系数。原生流程与独立验证见
+[原生样本量规划说明](docs/native-network-power.md)。
 
 保存对象与运行环境的核验分别见[历史对象核验](docs/legacy-object-validation.md)和
 [平台兼容性记录](docs/platform-compatibility-validation.md)。报告依据保存的后端证据
@@ -1239,7 +1301,8 @@ cat(readLines(file.path(export_dir, "report.txt")), sep = "\n")
 - 混合图模型：Haslbeck, J. M. B., & Waldorp, L. J. (2020). `mgm`: Estimating time-varying mixed graphical models in high-dimensional data. *Journal of Statistical Software, 93*(8), 1-46. https://doi.org/10.18637/jss.v093.i08
 - 横断面和时间序列高斯图模型，包括 graphicalVAR 类模型：Epskamp, S., Waldorp, L. J., Mõttus, R., & Borsboom, D. (2018). The Gaussian graphical model in cross-sectional and time-series data. *Multivariate Behavioral Research, 53*(4), 453-480. https://doi.org/10.1080/00273171.2018.1454823
 - 纵向心理病理网络和向量自回归：Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
-- 网络样本量规划：Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2021). A general Monte Carlo method for sample size analysis in the context of network models. https://doi.org/10.31234/osf.io/j5v7u
+- 事前模拟与正则化偏相关网络：Epskamp, S., & Fried, E. I. (2018). A tutorial on regularized partial correlation networks. *Psychological Methods, 23*(4), 617-634. [https://doi.org/10.1037/met0000167](https://doi.org/10.1037/met0000167)
+- 自动化网络样本量规划：Constantin, M. A., Schuurman, N. K., & Vermunt, J. K.（2026 年正式刊出，2023 年在线发表）. A general Monte Carlo method for sample size analysis in the context of network models. *Psychological Methods, 31*(3), 385-405. [https://doi.org/10.1037/met0000555](https://doi.org/10.1037/met0000555)
 - 广义网络心理计量和验证性网络模型：Epskamp, S., Rhemtulla, M., & Borsboom, D. (2017). Generalized network psychometrics: Combining network and latent variable models. *Psychometrika, 82*, 904-927. https://doi.org/10.1007/s11336-017-9557-x
 - 随机截距横滞后面板模型：Hamaker, E. L., Kuiper, R. M., & Grasman, R. P. P. P. (2015). A critique of the cross-lagged panel model. *Psychological Methods, 20*(1), 102-116. https://doi.org/10.1037/a0038889
 - 元分析结构方程模型：Jak, S., & Cheung, M. W.-L. (2020). Meta-analytic structural equation modeling with moderating effects on SEM parameters. *Psychological Methods, 25*(4), 430-455. https://doi.org/10.1037/met0000245

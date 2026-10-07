@@ -140,6 +140,12 @@ test_that("powerly forwards direct controls and reports effective targets", {
   expect_equal(fit$settings$target_probability,.9)
   expect_equal(fit$summary$metric,"mcc")
   expect_equal(fit$summary$target,.4)
+  NetworkPower(method="powerly",nodes=4,density=.3,positive=.6,edge_strength=c(.1,.2),
+    range_lower=100,range_upper=400)
+  expect_equal(seen$dots$nodes,4)
+  expect_equal(seen$dots$density,.3)
+  expect_equal(seen$dots$positive,.6)
+  expect_equal(seen$dots$range,c(.1,.2))
 })
 
 test_that("unknown arguments and inherited comparison controls are explicit", {

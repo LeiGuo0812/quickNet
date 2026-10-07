@@ -17,21 +17,10 @@ test_that("MTD matches the temporal-derivative normalization in Shine Eq. 2", {
   expect_error(MTD.No.Smooth.Test(cbind(1:20, (1:20)^2), radius = 4), "temporal derivatives")
 })
 
-test_that("MCC does not overflow with thousands of edges", {
-  graph <- matrix(0, 100, 100)
-  graph[upper.tri(graph)] <- rep(c(0, 0.3), length.out = sum(upper.tri(graph)))
-  graph <- graph + t(graph)
-  expect_no_warning(perfect <- quicknet_power_recovery_metrics(graph, graph, 1e-10))
-  expect_equal(perfect$mcc, 1)
-  wrong <- matrix(0.3, 100, 100) - graph
-  diag(wrong) <- 0
-  expect_equal(quicknet_power_recovery_metrics(graph, wrong, 1e-10)$mcc, -1)
-  expect_error(NetworkPower(threshold = -0.1), "threshold")
-})
-
 test_that("powerly boundary fallback is not reported as a successful recommendation", {
   backend <- list(recommendation = c(`50%` = 150),
-                  step_2 = list(interpolation = list(x = 50:150, fitted = rep(0, 101))))
+    step_2 = list(interpolation = list(x = 50:150, fitted = rep(0, 101))),
+    step_3 = list(ci = cbind(`50%` = rep(0, 101))))
   result <- quicknet_power_powerly_recommendation(backend, .8)
   expect_false(result$reached)
   expect_true(is.na(result$recommended_n))
@@ -39,9 +28,22 @@ test_that("powerly boundary fallback is not reported as a successful recommendat
   expect_equal(result$achieved_probability, 0)
   expect_true(result$at_upper_boundary)
   backend$step_2$interpolation$fitted <- seq(0, 1, length.out = 101)
+  backend$step_3$ci[, "50%"] <- seq(0, 1, length.out = 101)
   result <- quicknet_power_powerly_recommendation(backend, .8)
   expect_true(result$reached)
   expect_equal(result$recommended_n, 150)
+})
+
+test_that("powerly requires the native bootstrap median curve for attainment", {
+  backend <- list(recommendation = c(`50%` = 150),
+    step_2 = list(interpolation = list(x = 50:150, fitted = rep(.9, 101))))
+  result <- quicknet_power_powerly_recommendation(backend, .8)
+  expect_false(result$reached)
+  expect_true(is.na(result$recommended_n))
+  expect_true(is.na(result$achieved_probability))
+  expect_equal(result$backend_recommended_n, 150)
+  expect_equal(result$fitted_probability, .9)
+  expect_identical(result$probability_source, "bootstrap_median_unavailable")
 })
 
 test_that("NCT accepts an estimateNetwork object in either argument", {

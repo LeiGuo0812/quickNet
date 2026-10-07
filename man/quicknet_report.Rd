@@ -8,7 +8,8 @@ quicknet_report(fit, digits = 3, threshold = 1e-10)
 }
 \arguments{
 \item{fit}{A \code{quicknet_nira}, \code{quicknet_fit},
-\code{quicknet_perturbation}, or \code{quicknet_power} object.}
+\code{quicknet_perturbation}, \code{quicknet_power}, or
+\code{quicknet_power_validation} object.}
 
 \item{digits}{Number of digits used in plain-text summaries and in NIRA or
 power-analysis numerical report tables.}

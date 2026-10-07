@@ -2,7 +2,7 @@
 % Please edit documentation in R/get_stability_plot.R
 \name{get_stability_plot}
 \alias{get_stability_plot}
-\title{Get stability plot from stability results}
+\title{Export stability plots and tables}
 \usage{
 get_stability_plot(
   stability,
@@ -28,15 +28,26 @@ get_stability_plot(
 
 \item{height}{the height of plot, in inch.}
 
-\item{get.table}{logical. whether get the csv file of CS-coefficient. Default is TRUE.}
+\item{get.table}{Logical. Export available custom edge-bootstrap and case-drop
+tables, plus bootnet's CS-coefficient table when present. Default is TRUE.}
 
 \item{...}{other parameter from \code{pdf} or \code{svg}.}
 }
 \value{
-four plot files will be output to the specified path, if the bridge stability is calculated, the outputs will also contain the bridge stability plot.
+Exports available plots and tables to the specified path, then
+  returns \code{NULL} invisibly. Custom table filenames end in
+  \code{edge_bootstrap_stability_table.csv} and
+  \code{case_drop_centrality_stability_table.csv}.
 }
 \description{
-Get stability plot from stability results
+Export stability plots and tables
+}
+\details{
+EBICglasso results include native bootnet plots and CS coefficients.
+  Other supported cross-sectional models provide custom stability tables;
+  these are exported as CSV files when \code{get.table = TRUE}. A custom
+  case-drop correlation table is not a bootnet CS coefficient. If no plots
+  or requested tables are available, the function reports an error.
 }
 \examples{
 data('mtcars')

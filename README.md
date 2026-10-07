@@ -124,7 +124,7 @@ network, edge, and node summaries.
 | Confirmatory cross-sectional data | `ConfirmatoryNet()` | `"confirmatory_covariance"` | Psychonetrics confirmatory covariance model. |
 | Confirmatory cross-sectional data | `ConfirmatoryNet()` | `"confirmatory_precision"` | Psychonetrics confirmatory precision-matrix model. |
 
-Sample size planning uses a separate `quicknet_power` object returned by `NetworkPower()` or its alias `SampleSize()`.
+Sample size planning uses a separate `quicknet_power` object returned by `NetworkPower()` or its alias `SampleSize()`. The default native netSimulator workflow compares recovery across conditions; powerly additionally searches for a sample-size recommendation and supports independent validation with `ValidateNetworkPower()`.
 
 `EBICglassoNet()` is retained as a convenience wrapper for the cross-sectional `model = "EBICglasso"` workflow.
 
@@ -219,10 +219,12 @@ are rejected.
 - Confirmatory and latent models inherit their backend estimator, missing-data
   and identification settings. `LatentNet(..., estimator = "MLR")` directly
   configures lavaan; its `std.lv` default is FALSE.
-- Powerly defaults to sensitivity, 30 sample-size points, 30 replications and
-  10000 bootstrap samples. Supply `nodes` and `density`, or a known `model_matrix`,
-  together with `range_lower` and `range_upper`. The Monte Carlo branch has its
-  own documented simulation design.
+- `NetworkPower()` defaults to native `bootnet::netSimulator()` planning with
+  an explicit `model_matrix`, candidate `sample_sizes` and `replications`.
+  Set its estimator with `default`, its EBIC setting with `tuning`, and its
+  measurement model with `dataGenerator`. Powerly defaults to sensitivity,
+  30 sample-size points, 30 replications and 10000 bootstrap samples; provide
+  `model_matrix` (or `nodes` and `density`) and `range_lower` / `range_upper`.
 - `NetCompare()` defaults to 100 permutations with edge and centrality tests
   disabled. `Bridge()` defaults to no normalization; `netCor()` uses 999
   permutations without plotting.
@@ -246,16 +248,19 @@ values in [0,1], including zero (BIC), take precedence.
 | `quickNet(model = "ising")`; MGM with `lambdaSel = "EBIC"` | 0.25 |
 | `LongitudinalNet(model = "graphicalVAR")` | 0.5 |
 | `MixedVARNet()` / `TimeVaryingNet()`, with `lambdaSel = "EBIC"` | 0.25 |
-| `NetworkPower(method = "monte_carlo", estimator = "EBICglasso")` | 0.5 |
+| `NetworkPower(method = "netSimulator", default = "EBICglasso")` | Use native `tuning = 0.5` |
 | Correlation, partial, ordinal, mlVAR, or mixed VAR with `lambdaSel = "CV"` | Not applicable |
 
 MGM and mixed VAR inherit CV selection from their source estimators; MGM uses
 AND regularization. Time-varying VAR defaults to EBIC. For `lambdaSel = "EBIC"`,
 the MGM family uses gamma = 0.25. With CV or without EBIC selection, gamma is
-inactive and `fit$meta$gamma` is `NULL`; reports omit it. Monte Carlo result rows
-use `NA` for inactive gamma. Pass powerly settings directly, e.g.
+inactive and `fit$meta$gamma` is `NULL`; reports omit it. For native netSimulator,
+configure EBIC through
+`tuning` in `...`. Pass powerly settings directly, e.g.
 `samples = 30, boots = 10000`. Powerly's internal GGM estimator uses gamma = 0.5,
-recorded separately as `backend_gamma`; the top-level `gamma` does not override it.
+recorded separately as `backend_gamma`; a non-NULL top-level `gamma` is rejected.
+Powerly's public API also does not expose `levels`; use netSimulator's
+`dataGenerator` when the measurement-generation settings need to vary.
 The current ordinal interface estimates associations, without EBIC selection.
 Confirmatory, latent and meta-analysis interfaces do not use this EBIC setting.
 
@@ -629,57 +634,68 @@ mlvar_fit$nodes
 
 ### 12. Network Power and Sample Size Planning
 
+`NetworkPower()` (alias `SampleSize()`) defaults to `method = "netSimulator"`,
+which calls `bootnet::netSimulator()` using an explicit assumed population
+partial-correlation matrix. This follows the a priori workflow in
+[Epskamp and Fried (2018), Section 7.1](https://arxiv.org/html/1607.01367v9#S7.SS1):
+compare edge recovery and centrality recovery across candidate sample sizes and
+estimation settings. The result retains the native simulator object in `$fit`;
+`summary()` preserves its condition-wise summaries and `plot()` delegates to its
+plot method. This branch does not automatically recommend a sample size.
+
 ```r
 library(quickNet)
 set.seed(14)
 
-# Assumed generating design; NetworkPower generates the network and data internally.
-# Five replications per sample size demonstrate the workflow, not a research recommendation.
-power <- NetworkPower(
-  method = "monte_carlo", nodes = 8, density = 0.30,
-  positive = 0.70, edge_strength = c(0.15, 0.45),
-  sample_sizes = c(100, 200, 400), replications = 5, seed = 14,
-  target_metric = "mcc", target_value = 0.60, target_probability = 0.80
+# Assumed population partial correlations: a five-node chain.
+true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
+true_graph[cbind(1:4, 2:5)] <- 0.30
+true_graph <- true_graph + t(true_graph)
+
+# Three replications demonstrate the API; they cannot support a research conclusion.
+plan <- NetworkPower(
+  method = "netSimulator", model_matrix = true_graph,
+  sample_sizes = c(40, 80), replications = 3, seed = 14,
+  default = "EBICglasso",
+  dataGenerator = bootnet::ggmGenerator(ordinal = TRUE, nLevels = 5),
+  corMethod = "cor_auto", tuning = 0.5, nCores = 1
 )
 
-power$generating_network
-head(power$results)
-summary(power)
-power$recommendation
-plot(power)
-quicknet_report(power)$text
+plan$true_network
+summary(plan)
+plot(plan)
+plot(plan, yvar = c("strength", "closeness", "betweenness"))
+quicknet_report(plan)$text
 ```
 
-If `sample_sizes = NULL`, `NetworkPower()` generates an adaptive candidate
-grid from the number of nodes. The Monte Carlo default target metric is `mcc`,
-which accounts for both false negatives and false positives.
+`sample_sizes` and `replications` map to native `nCases` and `nReps`.
+Other named arguments in `...` retain the simulator's meaning: for example,
+`tuning = c(0.25, 0.5)` compares two EBIC settings rather than averaging them.
+Configure the data generator to match the planned measurements; the example
+uses five-level ordinal data. For continuous data, use
+`bootnet::ggmGenerator(ordinal = FALSE)`. Increase repetitions for research and
+inspect sensitivity, specificity, edge-weight correlation and the centrality
+measures relevant to the study. These are recovery measures conditional on the
+assumed network, not power for a null-hypothesis test.
 
-Monte Carlo probabilities describe recovery of one fixed generating network.
-`true_network` is the population marginal-correlation matrix for
-`estimator = "correlation"` and the partial-correlation graph for the other
-estimators; `generating_network` retains the generating partial graph.
-Settings record the actual density, edge strengths and any scaling needed for
-a positive-definite precision matrix. Summaries include Monte Carlo standard
-errors and pointwise exact-binomial 95% intervals. Failed fits and undefined
-target metrics count as non-achievements and are reported separately.
+An adjacency matrix from a published study or pilot fit is an assumption with
+uncertainty. Epskamp and Fried discuss `refit = TRUE` when obtaining a baseline
+from EBICglasso, because regularization shrinks edge weights. Compare plausible
+alternative structures and strengths instead of treating an estimated matrix
+as known truth. Their PTSD example does not establish a universal minimum N.
 
-The recommended N is the smallest evaluated candidate whose point estimate
-meets the target; `recommended_n` is `NA` if none qualifies. Boundary flags and
-`lower_bound_supports_target` accompany the result. Independent validation and
-interval interpretation are documented in the [power validation record](docs/network-power-validation.md).
-
-For `powerly`-based GGM planning:
+For an automated GGM sample-size search, use `method = "powerly"`:
 
 ```r
 library(quickNet)
 set.seed(88021)
 
-# Prespecified population partial correlations, not a network estimated from pilot data.
+# Explicit population assumption; this block needs no objects from other examples.
 true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
 true_graph[cbind(1:4, 2:5)] <- 0.30
 true_graph <- true_graph + t(true_graph)
-true_graph
 
+# Small demonstration budget, not a research-grade recommendation.
 powerly_plan <- NetworkPower(
   method = "powerly", model_matrix = true_graph,
   range_lower = 50, range_upper = 500,
@@ -691,15 +707,66 @@ powerly_plan <- NetworkPower(
 summary(powerly_plan)
 powerly_plan$true_network
 powerly_plan$recommendation
+plot(powerly_plan)
 quicknet_report(powerly_plan)$text
 ```
 
-Powerly recommendations use its bootstrap-median curve and retain the native
-generation settings, including five ordinal levels by default. Pass a known
-partial-correlation graph directly as `model_matrix = ...`; `nodes` and `density`
-are then unnecessary. Use `powerly::validate(powerly_plan$fit)` for the source
-package's independent validation. See the [power validation record](docs/network-power-validation.md)
-for tested designs and their limits.
+Powerly searches for the sample size at which the target recovery measure is
+reached with the requested probability, retaining its native fit and sample-size
+uncertainty. Its recommendation follows the bootstrap-median curve. With
+`model_matrix`, `nodes` and `density` are inferred; otherwise supply both to
+specify a generated assumed network. Native GGM generation uses five ordinal
+levels by default. Repetitions per sample size, sampled candidate sizes and
+bootstrap draws are separate budgets (`replications`, `samples`, `boots`).
+Its public API exposes neither GGM `gamma` nor generated ordinal `levels`; the
+native defaults are gamma = 0.5 and five levels. Unsupported overrides are
+rejected. Powerly retains its native rule that undefined recovery measures are
+replaced with zero.
+
+Inspect `powerly_plan$recommendation$algorithm_converged`,
+`algorithm_iterations` and `recommendation_interval_width`. A target-attaining
+curve and a converged search are different conditions: an estimate from a search
+that stopped before convergence remains provisional. The one-iteration example
+above illustrates this limitation and requires a larger research budget.
+
+Validate the recommendation using new simulations, as in this independent
+example. `ValidateNetworkPower()` delegates to `powerly::validate()` and keeps
+the native validation object in `$fit`. An omitted `replications` inherits the
+installed native default (3000 in powerly 1.10.0). `sample = NULL` validates the
+recommended N when its median curve attained the target; otherwise supply an
+explicit `sample` or extend the search. An explicit `sample` validates that chosen N.
+
+```r
+library(quickNet)
+set.seed(88021)
+
+true_graph <- matrix(0, 5, 5, dimnames = list(paste0("x", 1:5), paste0("x", 1:5)))
+true_graph[cbind(1:4, 2:5)] <- 0.30
+true_graph <- true_graph + t(true_graph)
+powerly_plan <- NetworkPower(
+  method = "powerly", model_matrix = true_graph,
+  range_lower = 50, range_upper = 500,
+  samples = 8, replications = 20, boots = 80, iterations = 1, tolerance = 50,
+  cores = 1, verbose = FALSE, seed = 88021,
+  target_metric = "sensitivity", target_value = 0.60, target_probability = 0.80
+)
+
+# A new random stream; 20 repetitions only demonstrate validation.
+validation <- ValidateNetworkPower(
+  powerly_plan, replications = 20, seed = 88022, cores = 1, verbose = FALSE
+)
+summary(validation$fit)
+plot(validation$fit)
+quicknet_report(validation)$text
+```
+
+The documented planning workflows concern cross-sectional GGM recovery. They
+do not provide sample-size formulas for group differences, bridge centrality,
+CLPN, SEM panel models or ESM time series. Those questions require a matching
+simulation design. After collecting data, assess edge accuracy and case-dropping
+centrality stability with `Stability()`; recovery correlations from planning are
+not CS coefficients. The native workflows and independent validation are
+documented in [native sample-size planning](docs/native-network-power.md).
 
 Saved-fit and platform checks are documented in the
 [legacy-object audit](docs/legacy-object-validation.md) and
@@ -1269,7 +1336,8 @@ If you use `quickNet` in academic work, cite the package and the method referenc
 - Mixed Graphical Models: Haslbeck, J. M. B., & Waldorp, L. J. (2020). `mgm`: Estimating time-varying mixed graphical models in high-dimensional data. *Journal of Statistical Software, 93*(8), 1-46. https://doi.org/10.18637/jss.v093.i08
 - Cross-sectional and time-series Gaussian graphical models, including graphicalVAR-style models: Epskamp, S., Waldorp, L. J., Mõttus, R., & Borsboom, D. (2018). The Gaussian graphical model in cross-sectional and time-series data. *Multivariate Behavioral Research, 53*(4), 453-480. https://doi.org/10.1080/00273171.2018.1454823
 - Longitudinal psychopathology networks and vector autoregression: Bringmann, L. F., Vissers, N., Wichers, M., Geschwind, N., Kuppens, P., Peeters, F., Borsboom, D., & Tuerlinckx, F. (2013). A network approach to psychopathology: New insights into clinical longitudinal data. *PLOS ONE, 8*(4), e60188. https://doi.org/10.1371/journal.pone.0060188
-- Network sample size planning: Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2021). A general Monte Carlo method for sample size analysis in the context of network models. https://doi.org/10.31234/osf.io/j5v7u
+- A priori simulation and regularized partial-correlation networks: Epskamp, S., & Fried, E. I. (2018). A tutorial on regularized partial correlation networks. *Psychological Methods, 23*(4), 617-634. [https://doi.org/10.1037/met0000167](https://doi.org/10.1037/met0000167)
+- Automated network sample size planning: Constantin, M. A., Schuurman, N. K., & Vermunt, J. K. (2026; first published online in 2023). A general Monte Carlo method for sample size analysis in the context of network models. *Psychological Methods, 31*(3), 385-405. [https://doi.org/10.1037/met0000555](https://doi.org/10.1037/met0000555)
 - Generalized network psychometrics and confirmatory network models: Epskamp, S., Rhemtulla, M., & Borsboom, D. (2017). Generalized network psychometrics: Combining network and latent variable models. *Psychometrika, 82*, 904-927. https://doi.org/10.1007/s11336-017-9557-x
 - Random-intercept cross-lagged panel models: Hamaker, E. L., Kuiper, R. M., & Grasman, R. P. P. P. (2015). A critique of the cross-lagged panel model. *Psychological Methods, 20*(1), 102-116. https://doi.org/10.1037/a0038889
 - Meta-analytic structural equation modeling: Jak, S., & Cheung, M. W.-L. (2020). Meta-analytic structural equation modeling with moderating effects on SEM parameters. *Psychological Methods, 25*(4), 430-455. https://doi.org/10.1037/met0000245

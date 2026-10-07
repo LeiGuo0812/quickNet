@@ -6,9 +6,12 @@ returned table, summary, report or plot. Each complete block can be copied into 
 fresh R session after installing its dependencies. Earlier examples do not supply
 objects or helper functions to later ones.
 
-Sample-size planning begins with an explicit data-generating design and candidate
-sample sizes; the planning function generates the simulated observations. The
-powerly example constructs a known population network directly.
+Sample-size planning starts from an explicit assumed population network. The
+native netSimulator example compares candidate sample sizes; powerly searches a
+specified range for a recovery target. A third independent block validates the
+powerly recommendation using new simulations. Every block defines its own
+assumed network, and the validator retains `quicknet_power_validation` objects
+alongside planning results for report checks and saved artifacts.
 
 ## Running the documented examples
 

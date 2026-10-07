@@ -4,70 +4,66 @@ power_validation_chain <- function(strength = 0.3) {
   x
 }
 
-test_that("correlation recovery uses marginal truth and preserves the generating network", {
-  local_mocked_bindings(quicknet_power_simulate_estimate = function(sample_size, covariance, estimator, gamma) {
-    diag(covariance) <- 0
-    covariance
-  })
-  x <- NetworkPower(nodes = 3, density = 2/3, edge_strength = c(.3, .3),
-    positive = 1, estimator = "correlation", sample_sizes = 20, replications = 3,
-    target_metric = "rmse", target_value = 0, seed = 6491)
-  # The missing edge of a three-node partial-correlation chain has a nonzero
-  # population marginal correlation, derived by inverting its precision.
-  sigma <- cov2cor(solve(diag(3) - x$generating_network)); diag(sigma) <- 0
-  expect_equal(unname(x$true_network), unname(sigma))
-  expect_gt(sum(abs(x$true_network - x$generating_network)), .01)
-  expect_equal(x$results$rmse, rep(0, 3))
-  expect_identical(x$settings$estimand, "marginal_correlation")
-  expect_match(x$report, "conditional on one fixed")
-})
-
-test_that("Monte Carlo records actual PD shrinkage and generated edge strengths", {
-  x <- NetworkPower(nodes = 5, density = 1, positive = 1, edge_strength = c(.8, .8),
-    sample_sizes = 60, replications = 1, target_metric = "rmse", seed = 7392)
-  expect_lt(x$settings$positive_definite_scale, 1)
-  expect_equal(x$settings$generated_edge_strength, rep(.8 * x$settings$positive_definite_scale, 2))
-  expect_equal(x$settings$edge_strength, c(.8, .8))
-  expect_gt(min(eigen(diag(5) - x$generating_network, symmetric = TRUE)$values), 0)
-  expect_equal(x$settings$generated_density, 1)
-  expect_equal(x$true_network, x$generating_network)
-  expect_match(x$report, "positive-definite scaling factor")
-})
-
-test_that("invalid targets and singular unregularized designs fail before simulation", {
+test_that("invalid native powerly targets and ranges fail before simulation", {
+  skip_if_not_installed("powerly")
+  controls <- list(method = "powerly", model_matrix = power_validation_chain(),
+    range_lower = 50, range_upper = 300)
   for (metric in c("sensitivity", "specificity")) {
-    for (value in c(-.01, 1.01)) expect_error(NetworkPower(target_metric = metric, target_value = value), "target_value")
+    for (value in c(-.01, 1.01)) {
+      expect_error(do.call(NetworkPower, c(controls,
+        list(target_metric = metric, target_value = value))), "target_value")
+      checked <- do.call(check_input, c(list(model = "power", quiet = TRUE),
+        controls, list(target_metric = metric, target_value = value)))
+      expect_false(checked$ok)
+      expect_match(paste(checked$errors, collapse = " "), "target_value")
+    }
   }
   for (metric in c("mcc", "edge_weight_correlation")) {
-    for (value in c(-1.01, 1.01)) expect_error(NetworkPower(target_metric = metric, target_value = value), "target_value")
+    for (value in c(-1.01, 1.01)) {
+      expect_error(do.call(NetworkPower, c(controls,
+        list(target_metric = metric, target_value = value))), "target_value")
+      checked <- do.call(check_input, c(list(model = "power", quiet = TRUE),
+        controls, list(target_metric = metric, target_value = value)))
+      expect_false(checked$ok)
+      expect_match(paste(checked$errors, collapse = " "), "target_value")
+    }
   }
-  expect_error(NetworkPower(target_metric = "rmse", target_value = -.1), "target_value")
-  expect_error(NetworkPower(nodes = 8, sample_sizes = 8, estimator = "partial"), "exceed nodes")
+  for (probability in c(-.01, 1.01)) {
+    expect_error(do.call(NetworkPower, c(controls,
+      list(target_probability = probability))), "target_probability")
+    checked <- do.call(check_input, c(list(model = "power", quiet = TRUE),
+      controls, list(target_probability = probability)))
+    expect_false(checked$ok)
+    expect_match(paste(checked$errors, collapse = " "), "target_probability")
+  }
   expect_error(NetworkPower(method = "powerly", model_matrix = power_validation_chain(),
     range_lower = 200, range_upper = 100), "range_lower < range_upper")
   expect_error(NetworkPower(method = "powerly", model_matrix = power_validation_chain(),
     range_lower = 50, range_upper = 300, measure = "mcc", measure_value = 1.2), "target_value")
+  expect_error(do.call(NetworkPower, c(controls, list(target_metric = "rmse"))))
+  expect_error(do.call(NetworkPower, c(controls, list(statistic = "other"))), "power")
+  expect_false(do.call(check_input, c(list(model = "power", quiet = TRUE),
+    controls, list(statistic = "other")))$ok)
+  expect_false(do.call(check_input, c(list(model = "power", quiet = TRUE),
+    controls, list(measure = "sen", measure_value = -.4)))$ok)
+  expect_true(do.call(check_input, c(list(model = "power", quiet = TRUE),
+    controls, list(measure = "mcc", measure_value = -.4, statistic_value = .9)))$ok)
+  expect_true(do.call(check_input, c(list(model = "power", quiet = TRUE),
+    controls, list(measure_value = .4, statistic_value = .9)))$ok)
+  expect_true(do.call(check_input, c(list(model = "power", quiet = TRUE),
+    controls, list(target_metric = "mcc", measure_value = -.4,
+      statistic_value = .9)))$ok)
 })
 
-test_that("failed fits and undefined metrics are separate and retained in the denominator", {
-  graph <- power_validation_chain()
-  ok <- quicknet_power_recovery_metrics(graph, graph, 1e-10)
-  undefined <- quicknet_power_recovery_metrics(graph, matrix(.2, 3, 3), 1e-10)
-  add <- function(row) {
-    row$sample_size <- 60; row$replication <- 1; row$gamma <- .5
-    row$estimator <- "EBICglasso"; row$estimated_nonzero_edges <- 2
-    row$failed <- FALSE; row$error_message <- NA_character_; row
-  }
-  rows <- rbind(add(ok), add(undefined), quicknet_power_empty_metric(60, 3, .5, "EBICglasso"))
-  summary <- quicknet_power_summary(rows, "mcc", .6)
-  expect_equal(summary$achieved_probability, 1 / 3)
-  expect_equal(summary$failed_replications, 1)
-  expect_equal(summary$undefined_target_replications, 1)
-  expect_equal(summary$valid_target_replications, 1)
-  expect_equal(c(summary$probability_ci_lower, summary$probability_ci_upper),
-               as.numeric(binom.test(1, 3)$conf.int))
-  none <- quicknet_power_summary(rows[2, ], "mcc", 0)
-  expect_false(quicknet_power_recommend(none, 0)$reached)
+test_that("powerly assumed networks must define a valid GGM precision matrix", {
+  expect_silent(quicknet_power_validate_true_matrix(power_validation_chain()))
+  invalid <- power_validation_chain()
+  invalid[1, 2] <- .1
+  expect_error(quicknet_power_validate_true_matrix(invalid), "symmetric")
+  diag(invalid) <- .1
+  expect_error(quicknet_power_validate_true_matrix(invalid), "zero diagonal")
+  expect_error(quicknet_power_validate_true_matrix(matrix(c(0, 1.1, 1.1, 0), 2)),
+    "positive-definite")
 })
 
 test_that("boundary attainment retains interval uncertainty despite zero plug-in MCSE", {
@@ -77,13 +73,8 @@ test_that("boundary attainment retains interval uncertainty despite zero plug-in
   expect_lt(full$lower, .8)
   expect_equal(none$mcse, 0)
   expect_gt(none$upper, 0)
-  summary <- data.frame(sample_size = 50, achieved_probability = 1, valid_target_replications = 4,
-    probability_mcse = full$mcse, probability_ci_lower = full$lower, probability_ci_upper = full$upper)
-  rec <- quicknet_power_recommend(summary, .8)
-  expect_true(rec$reached)
-  expect_true(rec$at_lower_boundary)
-  expect_false(rec$lower_bound_supports_target)
-  expect_match(quicknet_power_report_text(rec, "mcc", .6, .8), "not adjusted for selecting")
+  expect_equal(c(full$lower, full$upper), as.numeric(binom.test(4, 4)$conf.int))
+  expect_equal(c(none$lower, none$upper), as.numeric(binom.test(0, 4)$conf.int))
 })
 
 test_that("powerly recommendations follow the bootstrap median curve", {
@@ -133,24 +124,25 @@ test_that("a native true model matrix requires no unused generator controls", {
   expect_equal(result$settings$backend_data_levels, 5)
   expect_equal(result$summary$replications, c(2, 2))
   expect_match(result$settings$denominator_policy, "replaces_NA")
+  undefined <- NetworkPower(method = "powerly", model_matrix = truth,
+    range_lower = 100, range_upper = 200, measure = "mcc")
+  expect_false(undefined$settings$target_defined_for_truth)
+  expect_false(undefined$recommendation$reached)
+  expect_true(is.na(undefined$recommendation$recommended_n))
+  expect_match(undefined$report, "undefined")
 })
 
-test_that("partial backend failures keep their cause and never leave the probability denominator", {
-  calls <- 0L
-  local_mocked_bindings(quicknet_power_simulate_estimate = function(sample_size, covariance, estimator, gamma) {
-    calls <<- calls + 1L
-    if (calls == 1L) stop("deliberate backend failure")
-    if (calls == 2L) return(matrix(NaN, nrow(covariance), ncol(covariance)))
-    diag(covariance) <- 0
-    covariance
-  })
-  expect_warning(result <- NetworkPower(nodes = 3, density = 2/3, sample_sizes = 30,
-    replications = 3, estimator = "correlation", target_metric = "rmse", target_value = 0,
-    seed = 3231), "2 of 3 Monte Carlo")
-  expect_equal(result$summary$failed_replications, 2)
-  expect_equal(result$summary$undefined_target_replications, 0)
-  expect_equal(result$summary$achieved_probability, 1 / 3)
-  expect_match(result$results$error_message[[1]], "deliberate backend failure")
-  expect_match(result$results$error_message[[2]], "invalid network")
-  expect_false(result$results$failed[[3]])
+test_that("native powerly summary keeps zero-valued recovery in the denominator", {
+  measures <- cbind(c(1, 0, 0), c(1, .7, 0))
+  backend <- list(range = list(partition = c(50, 100)),
+    step_1 = list(measures = measures, statistics = c(1 / 3, 2 / 3)))
+  result <- quicknet_power_powerly_summary(backend, "mcc", .6)
+  expect_equal(result$replications, c(3, 3))
+  expect_equal(result$finite_metric_replications, c(3, 3))
+  expect_equal(result$achieved_replications, c(1, 2))
+  expect_equal(result$achieved_probability, c(1 / 3, 2 / 3))
+  expect_equal(c(result$probability_ci_lower[[1]], result$probability_ci_upper[[1]]),
+    as.numeric(binom.test(1, 3)$conf.int))
+  expect_error(quicknet_power_powerly_summary(list(range = list(partition = 50),
+    step_1 = list(statistics = c(.5, .8))), "mcc", .6), "mismatched")
 })

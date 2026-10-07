@@ -148,7 +148,7 @@ local({
       if (length(fit_names)) saveRDS(mget(fit_names, .GlobalEnv), file.path(output, "fitted-models.rds"), compress = "xz")
       result_names <- Filter(function(name) {
         value <- get(name, .GlobalEnv)
-        inherits(value, c("quicknet_nira", "quicknet_power", "quicknet_perturbation"))
+        inherits(value, c("quicknet_nira", "quicknet_power", "quicknet_power_validation", "quicknet_perturbation"))
       }, objects)
       record$results <- lapply(result_names, function(name) {
         value <- get(name, .GlobalEnv)

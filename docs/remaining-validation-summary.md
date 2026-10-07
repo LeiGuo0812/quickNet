@@ -29,6 +29,6 @@
 
 ## 先前两项核验
 
-功效与样本量规划见[功效核验](network-power-validation.md)；历史对象、跨会话及依赖兼容见[旧对象核验](legacy-object-validation.md)和[平台兼容性](platform-compatibility-validation.md)。这些记录及其原始检查清单保留，不与本轮结果混写。
+当前功效与样本量规划及保留的原生核验证据见[原生样本量规划与核验](native-network-power.md)；历史对象、跨会话及依赖兼容见[旧对象核验](legacy-object-validation.md)和[平台兼容性](platform-compatibility-validation.md)。这些记录及其原始检查清单保留，不与本轮结果混写。
 
 本记录汇总本地核验结果；macOS 和远端 CI 的状态以对应提交的 GitHub Actions 运行记录为准，配置文件本身不作为通过证据。

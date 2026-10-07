@@ -1,4 +1,4 @@
-#' @title Get stability plot from stability results
+#' @title Export stability plots and tables
 #' @importFrom stringr str_sub
 #' @importFrom fs path_join
 #' @importFrom dplyr select mutate everything
@@ -8,9 +8,18 @@
 #' @param device 'pdf' or 'svg', deciding the output plot format.
 #' @param width the width of plot, in inch.
 #' @param height the height of plot, in inch.
-#' @param get.table logical. whether get the csv file of CS-coefficient. Default is TRUE.
+#' @param get.table Logical. Export available custom edge-bootstrap and case-drop
+#'   tables, plus bootnet's CS-coefficient table when present. Default is TRUE.
 #' @param ... other parameter from \code{pdf} or \code{svg}.
-#' @return four plot files will be output to the specified path, if the bridge stability is calculated, the outputs will also contain the bridge stability plot.
+#' @details EBICglasso results include native bootnet plots and CS coefficients.
+#'   Other supported cross-sectional models provide custom stability tables;
+#'   these are exported as CSV files when \code{get.table = TRUE}. A custom
+#'   case-drop correlation table is not a bootnet CS coefficient. If no plots
+#'   or requested tables are available, the function reports an error.
+#' @return Exports available plots and tables to the specified path, then
+#'   returns \code{NULL} invisibly. Custom table filenames end in
+#'   \code{edge_bootstrap_stability_table.csv} and
+#'   \code{case_drop_centrality_stability_table.csv}.
 #' @export
 #'
 #' @examples
@@ -20,6 +29,10 @@
 #'
 
 get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf', width = 10, height = 7, get.table = TRUE, ...){
+
+  if (!is.logical(get.table) || length(get.table) != 1L || is.na(get.table)) {
+    stop("get.table must be TRUE or FALSE.", call. = FALSE)
+  }
 
   if (str_sub(prefix,-1) %in% c('_','.','')) {
     prefix <- prefix
@@ -37,6 +50,18 @@ get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf
   if (!is.null(stability$bridge_stability_plot)) {
     plot_specs$bridge_stability_plot <- stability$bridge_stability_plot
   }
+  plot_specs <- Filter(Negate(is.null), plot_specs)
+  table_specs <- Filter(is.data.frame, list(
+    edge_bootstrap_stability_table = stability$edge_bootstrap_stability,
+    case_drop_centrality_stability_table = stability$case_drop_centrality_stability
+  ))
+  if (!length(plot_specs) && (!get.table ||
+      (!length(table_specs) && is.null(stability$CS_coefficient)))) {
+    message <- if (length(table_specs) || !is.null(stability$CS_coefficient)) {
+      "No stability plots are available; use get.table = TRUE to export available stability tables."
+    } else "No stability plots or tables are available."
+    stop(message, call. = FALSE)
+  }
   for (plot_name in names(plot_specs)) {
     if (is.null(plot_specs[[plot_name]])) next
     quicknet_plot_to_device(
@@ -52,6 +77,14 @@ get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf
     )
   }
 
+  if (get.table) {
+    for (table_name in names(table_specs)) {
+      write.csv(table_specs[[table_name]],
+                path_join(c(path, paste0(prefix, table_name, ".csv"))),
+                row.names = FALSE)
+    }
+  }
+
   if (get.table && !is.null(stability$CS_coefficient)) {
     stability$CS_coefficient %>%
       as.data.frame() %>%
@@ -63,5 +96,6 @@ get_stability_plot <- function(stability, prefix = '', path = '.', device = 'pdf
                                    'CS_coefficient_table.csv'))),
                 row.names = FALSE)
   }
+  invisible(NULL)
 }
 

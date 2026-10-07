@@ -1,6 +1,7 @@
 #' @title Estimate edge-weight and node stability of a network
 #' @importFrom bootnet bootnet corStability
-#' @param data a data frame or \code{quicknet_fit} object.
+#' @param data A data frame or an exploratory cross-sectional \code{quicknet_fit}
+#'   from EBICglasso, correlation, partial, ordinal, Ising or MGM estimation.
 #' @param nboot number of bootstraps.
 #' @param ncore number of cores to use in computing results. Set to 1 to not use parallel computing.
 #' @param labels use self-specified node labels, typically the \code{labels} parameter you put in the \code{quickNet} function.
@@ -24,7 +25,10 @@
 #' @param ... Named model arguments for raw data, e.g. \code{lambdaSel = "EBIC"}.
 #'   Fitted inputs retain their original settings. Observation-specific
 #'   arguments such as weights cannot be automatically realigned during resampling.
-#' @details The custom edge table uses observation bootstrap percentile intervals
+#' @details Supports the six exploratory cross-sectional models listed above.
+#'   Other fitted models are rejected before resampling. For supported PanelNet
+#'   and LongitudinalNet fits, use \code{LongitudinalStability()}.
+#'   The custom edge table uses observation bootstrap percentile intervals
 #'   (2.5th and 97.5th percentiles), conditional on successful fits. Failed fits
 #'   are not replaced; requested, successful, failed and undefined counts are
 #'   reported. Failure causes are stored in \code{resampling} and the table's
@@ -78,6 +82,18 @@ Stability <- function(data, nboot = 1000, ncore = 1, labels = NULL, model = "EBI
   if (!is.logical(add.bridge) || length(add.bridge) != 1 || is.na(add.bridge)) {
     stop('Error: add.bridge should be logical.')
   }
+  supported_models <- c("EBICglasso", "correlation", "partial", "ordinal", "ising", "mgm")
+  selected_model <- if (inherits(data, "quicknet_fit")) data$model else {
+    tryCatch(match.arg(model, supported_models), error = function(e) NULL)
+  }
+  if (!is.character(selected_model) || length(selected_model) != 1L ||
+      is.na(selected_model) || !selected_model %in% supported_models) {
+    stop("Stability() supports only exploratory cross-sectional models: ",
+         paste(supported_models, collapse = ", "),
+         ". For supported PanelNet() or LongitudinalNet() fits, use LongitudinalStability().",
+         call. = FALSE)
+  }
+  if (!inherits(data, "quicknet_fit")) model <- selected_model
 
   if (inherits(data, "quicknet_fit")) {
     if (!is.null(gamma) && !identical(

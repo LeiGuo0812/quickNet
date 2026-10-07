@@ -121,25 +121,6 @@ test_that("negative MTD coupling uses an absolute two-sided permutation tail", {
   expect_error(MTD.No.Smooth.Test(cbind(1:20, 1), radius = 4), "nonzero")
 })
 
-test_that("power probabilities count failed replications in the denominator", {
-  expect_equal(
-    quicknet_power_achieved_probability(c(NA, 0.9), "mcc", 0.8),
-    0.5
-  )
-  expect_equal(
-    quicknet_power_achieved_probability(c(NA, NA), "mcc", 0.8),
-    0
-  )
-
-  summary <- data.frame(
-    sample_size = c(100, 200),
-    achieved_probability = c(NA_real_, 0.70)
-  )
-  recommendation <- quicknet_power_recommend(summary, target_probability = 0.80)
-  expect_false(recommendation$reached)
-  expect_true(is.na(recommendation$recommended_n))
-})
-
 test_that("selected-variable validation does not subset missing columns prematurely", {
   data <- data.frame(
     id = seq_len(10),

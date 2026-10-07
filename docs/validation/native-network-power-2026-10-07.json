@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-07",
+  "environment": {
+    "platform": "Linux/WSL",
+    "R": "4.5.3",
+    "bootnet": "1.9.1",
+    "powerly": "1.10.0"
+  },
+  "package_check": {
+    "command": "R CMD check --no-manual",
+    "status": "OK",
+    "help_page_examples": "OK",
+    "all_suggested_packages_available": true
+  },
+  "tests": {
+    "passed": 3013,
+    "failed": 0,
+    "warnings": 0,
+    "skipped": 0
+  },
+  "readme": {
+    "independent_english_analysis_blocks": 37,
+    "passed": 37,
+    "matching_bilingual_analysis_blocks": 37,
+    "excluded_installation_blocks": 2,
+    "validation_result_checked_and_saved": true
+  },
+  "graphics": {
+    "pdf_svg_plots_checked": 24,
+    "exported_matrices_and_statistics_checked": true
+  },
+  "interfaces": {
+    "documented_exports": 41,
+    "matching_model_registry_and_input_specifications": 32
+  },
+  "native_parity": {
+    "netSimulator_continuous_rows": 8,
+    "netSimulator_ordinal_rows": 4,
+    "failed_rows": 0,
+    "powerly_stages_recommendation_and_intervals_equal": true
+  },
+  "independent_powerly_validation": {
+    "seed": 88022,
+    "sample": 199,
+    "replications": 300,
+    "achieved": 228,
+    "probability": 0.76,
+    "exact_binomial_95_interval": [
+      0.7075692,
+      0.8072146
+    ],
+    "status": "uncertain",
+    "search_converged": false
+  },
+  "additional_smoke_models": [
+    "ConfirmatoryNet(model = 'covariance')",
+    "LatentNet(model = 'lvm')"
+  ],
+  "limits": "Evidence covers the recorded environment and executed designs; it does not establish universal sample sizes or validation across all model/data/backend combinations.",
+  "source_sha256": {
+    "R/Bridge.R": "1144ea971c695487f473cb462bf8ac400475fc98a03adc3add03c9457674afa7",
+    "R/Centrality.R": "707e693e8176afd48c06cf3aa6e8297a3a9e9e870c5079f96d7d7aabf2a51dc2",
+    "R/EBICglassoNet.R": "6443e3b5322c62ee2b4db4b7b7a8ae8c9e39f17b1cd6de3890c483addce780f7",
+    "R/MTD.No.Smooth.Test.R": "a589031ff1f008a3cc6fd24d6fd34b6a99ebd81dd46c860e4b2e730b8f65ba03",
+    "R/NCT_gl.R": "6421816d1bd2304ab3c62ccd5b8499d00613793ee2fa097aafb2f3041cb8f5f8",
+    "R/NetCompare.R": "cce21b312daed396b1ae89d63b5b1a54bb1f1a0946ad8bc5158a8a776da0ae68",
+    "R/Stability.R": "5153857726080d48c869ec8ffab767e5b73257240d57e3ae31a38f867e33a366",
+    "R/analysis_sample.R": "eab93984b82851469d77e9a50e16ebef5faea2077c3343468326dd713788f817",
+    "R/back_to_matrix.R": "8b3fc90dee84dc66666958c4a83877c094b9d4c516df62cd76924d9889a708ec",
+    "R/backend_parameters.R": "6949e053d964f240cdb45a21303ae052914157acd0033a1284cfd59d5f6a2e60",
+    "R/bridgeGroup.R": "c444631f52c6552940fe5aa25e3b0aa6fbae012242232d80f6d12e11c68ecf8b",
+    "R/comparison_notes.R": "f3188ccc95b4730016688aec1ca8cad102cf876162c7f551a2209e62abd2b970",
+    "R/confirmatory_latent.R": "49e13a89944be2ae988f4db2f28f04460d12fca4544c47e24b9b1dbe5dce0d18",
+    "R/convergence.R": "649d6acff50be25f86d5bf6198ccee2f584ec0ddc62491d96e2696b70d058e09",
+    "R/dynamic_mgm.R": "aa864dea5d4105e8bbb0781cfe7c2fc12ca0c3251d0c5d6204f0a8448ab0c54b",
+    "R/gamma.R": "a5d643246555c8d56167d416c0a7a509d772d0646d46e23f750fc1fde62fd954",
+    "R/get_bridge_plot.R": "28c2743987dfe9fef531acadd5e2a53776c0e9e3b228a865ac50247072533eeb",
+    "R/get_centrality_plot.R": "b76c169c6d70d89e0e57b23331a6d9249183587be4881b3b0cffb4b8cf22e4d9",
+    "R/get_compare_plot.R": "e488753aa86cb65fba9fed37f1c2fc8603d930c01b448fa9aef9136922225603",
+    "R/get_edges.R": "378fd047664c1b35c052a688175c1dd25ef4dc20e7fc931329c7ca2d54530796",
+    "R/get_edges_df.R": "d84397b177c463ab9a713644fa8a529b5e86d9765c17b9ac62de68f126e42699",
+    "R/get_lty_matrix.R": "53aab36ec426c112a11566704479ab677c9880d102e71bece571d5c3c1fe12a6",
+    "R/get_network_plot.R": "2e6cd76500d9af42f38efae9e4831c49032d4c049e4af1dc422f97497b8c749f",
+    "R/get_stability_plot.R": "bcedb73f2be5bf430337ed75f732925e8937a3bc04530c774643304c12702add",
+    "R/get_strength_node_size.R": "787bddc64feb066730d7fe75310afe7edf037b4f95aaab9dc3736bdfefd9d3e6",
+    "R/globalCoeff.R": "662671c991d4bd18c576d610e0e496f9241c94ec0944ec6e2aff997d84f56691",
+    "R/globals.R": "38f67f80b2dd2b73a98e168e6cf7be0b3e520bd6ba82bc983063652228f801b4",
+    "R/imports.R": "7db8d5464d5bcbfc207577b00eb22ebe4b9a2bdc7304637610d709812f67fee3",
+    "R/input_specs.R": "6e0f86427c8a8bca108d3413057df8cbf3734baf4939dd84961fdde3eaf8a60c",
+    "R/internal_utils.R": "2857c45100cf1d7d9db63ebbfc6641aceae8ec821d8fcbfac06dece300c49d0a",
+    "R/longitudinal.R": "63b0dae2e1bc9fcb944255be31aa2068dedfbe80404950ce35b5af1b7e3c452e",
+    "R/meta.R": "c44c9496ee5da199fe8db17da173b434b39f6e25918616e2450758a0c4cb425e",
+    "R/model_registry.R": "d5b2ea892e54ef526f66358dbed432cadcee07a6ed940fd1b8012c0b1d59006c",
+    "R/netCor.R": "9217869f674259fee0fda941ef873f110d23bcec201abc8b539929c20a171585",
+    "R/nira.R": "08e4e57179c6606d1e4ba2a3325dc7f6b6d65192f2398ca32326fc2abd032cf9",
+    "R/nira_moderation.R": "cba01753d76ae12c55e50ed26c7eb8d328341096e7f64a1da8986a8e1f3a12ad",
+    "R/nira_plot.R": "ff0402933977f7c4932eee65e94136d7d48df873a27119ad2d6405b9fdd402d2",
+    "R/nira_simulation.R": "7c58b013e1dbfddc5e3286584d3304ef8924926837067c34c4682e1174ff8bf3",
+    "R/perturbation.R": "b59f0138295b155f97d8131f0d036bc852cb467cc8b793e9faa17a525a6edf20",
+    "R/power.R": "b745c109d3fc66cd6ef7f108b585dfd748c1e8b953384c4d2033eca2162285e6",
+    "R/power_netsimulator.R": "25f23a6382839e0d6a3316bdb789fbb7d2c0e420a2d74abe5a2400c3bb8c3eda",
+    "R/power_validation.R": "919eaca804c04c7b122caa945d38c7158987d4e4fb08d1bf37e383245d633db7",
+    "R/quickNet.R": "ab23fae3e7fc13e8666eb05d957b426cfc2ab7ab35977cdbb0236e2f51611b8f",
+    "R/quicknet_fit.R": "67314713074853168729dac22cef3fb9e0587982ad633391d15ade3061f6b27d",
+    "R/report.R": "fea2f96b24d0af57e1cb147649436f06d128a769bb70d747de2b9f96d353edd1",
+    "R/symperturb.R": "37629c3f789bc2b1dc0dbc6bad34ec7327dc35ef29e0c5f0598637ff95133059",
+    "R/symperturb_analysis.R": "0e5bc303287b8d0639ecbf95ea669ad4637815d280dcd4f7504912b9f3510ee8",
+    "R/symperturb_core.R": "e54047c3771deb99b9e406acd662a5af8c5be243522950ba786530ab2ef8d812"
+  }
+}

@@ -20,6 +20,11 @@ Online documentation may describe a different version. In particular, this
 bootnet version defaults to `corMethod = "cor"`, whereas older versions used
 `"cor_auto"`. Effective backend versions are included in fit metadata.
 
+The sample-size planning entry was updated on 2026-10-07 for the native
+netSimulator and powerly interfaces. The earlier whole-package counts below
+remain dated historical evidence; current planning checks are recorded in
+[native planning and validation](native-network-power.md).
+
 [Source formals](backend-source-formals.csv) list each inspected backend
 parameter. MGM supplies many defaults inside its function body; these are also
 checked against its returned `$call`. Source expressions are documentation,
@@ -58,7 +63,7 @@ not a claim that an unresolved expression is an effective fitted value.
 | meta_gvar | psychonetrics::meta_gvar/meta_var1; chol random effects and FIML | Population temporal and contemporaneous layers |
 | mixedVAR | mgm::mvar; CV, scale TRUE, threshold LW; explicit lags/types/levels required | All requested lag layers retained |
 | time_varying_mvar | mgm::tvmvar; EBIC, lambdaGam 0.25, threshold HW; explicit lags/estpoints/bandwidth | Time-index normalization and local estimation follow mgm; all local/lag layers retained |
-| power | powerly native sensitivity/30 points/30 replications/10000 bootstrap samples; required range and network dimensions | Separate quickNet Monte Carlo method has its own recorded planning design; summary uses effective native metric/targets; internal GGM gamma 0.5 is recorded separately as backend_gamma |
+| power | Native bootnet::netSimulator by default, with an explicit assumed input and native controls; native powerly sensitivity/30 points/30 replications/10000 bootstrap samples with a required range | Native recovery, condition-wise summaries and plots retained; powerly median curve, convergence and independent validation are distinct; internal GGM gamma 0.5 and five ordinal levels cannot be changed through the public powerly API |
 | perturbation | SymPerturb 0.1.0 specification and reference fixtures | Location/scale interventions, clipping, conditional attribution, structural edits and optimization follow documented protocol settings |
 | nira | IsingSampler settings and NIRA workflow | Fixed fitted Ising parameters; moderation deliberately uses EBIC and binarySign TRUE; protocol settings and effect orientation are explicitly documented |
 
@@ -89,7 +94,8 @@ not a claim that an unresolved expression is an effective fitted value.
   standardized display columns are output conventions. MTD uses the Shine
   authors' sample-SD normalization and the Yuan--Shou TTS inference procedure
   with an explicit radius; see [inference validation](mtd-inference-validation.md).
-  The Monte Carlo planner has its own documented design parameters.
+  Native sample-size planning preserves each backend's controls and recovery
+  definitions; see [native planning and validation](native-network-power.md).
 - quiet/progress controls affect presentation. They do not redefine statistical
   estimators. Source warnings are available; MGM does not suppress them by default.
 

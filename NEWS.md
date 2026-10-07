@@ -1,5 +1,38 @@
 # quickNet 0.0.0.9000
 
+## Native network recovery and sample-size planning
+
+- `NetworkPower()` now defaults to `bootnet::netSimulator()` with an explicit
+  assumed network. Native recovery measures, conditions, errors, summaries and
+  plots are retained; this descriptive method does not automatically select N.
+- The `powerly` method preserves the native Monte Carlo, monotone-spline and
+  stratified-bootstrap search, sample-size interval and convergence state.
+  Curve attainment, convergence and independent validation are reported separately.
+- `ValidateNetworkPower()` wraps `powerly::validate()` and adds Monte Carlo
+  standard errors and exact-binomial intervals to the native validation output.
+- Removed the custom `monte_carlo` planning method, its network generator,
+  adaptive grid, recovery metrics and selection rule. Removed the legacy
+  `estimator` and `powerly_args` controls and the custom numerical edge threshold;
+  native netSimulator estimator controls, including `threshold`, pass through `...`.
+  `SampleSize()` forwards directly to the native planning entry point.
+- Missing bootstrap-median curves no longer fall back to a point-curve
+  recommendation. Unsupported powerly generator or estimator controls fail
+  explicitly. Recovery planning remains conditional on the assumed network.
+
+## Stability interfaces and validation
+
+- Fixed powerly input checks that rejected generic missing-data settings or
+  partially matched `measure_value` and `statistic_value` as metric names.
+- `Stability()` rejects unsupported fitted models before resampling.
+  `get_stability_plot()` exports available custom edge and case-drop tables and
+  reports unavailable output explicitly; custom case-drop tables are not CS coefficients.
+- The workflow validator now checks and saves independent powerly validation objects.
+- On 2026-10-07, complete `R CMD check --no-manual`, including help-page examples,
+  passed in Linux/WSL with R 4.5.3. All 3013 test assertions passed without failures,
+  warnings or skips; all 37 independent README analysis blocks and 24 PDF/SVG
+  graphics checks passed. The bilingual executable code matches.
+  See `docs/package-functional-check.md` for scope and evidence.
+
 ## Independent documentation examples
 
 - Every analysis code block in both READMEs constructs its own input data or
@@ -38,16 +71,8 @@
   Workflow and small/medium serial/parallel performance measurements are recorded
   separately from statistical evidence.
 
-## Sample size planning and compatibility
+## Saved models and backend compatibility
 
-- Monte Carlo recovery uses estimator-specific population truth and records the
-  generating graph, actual edge strengths, density and positive-definite scaling.
-  Target domains and unregularized sample-size requirements are validated.
-  Outputs separate failed fits from undefined target metrics and include Monte
-  Carlo uncertainty, boundary flags and the limits of grid-based recommendations.
-- Powerly recommendations follow its bootstrap-median curve, expose source
-  generation settings and accept `model_matrix` directly. Independent validation
-  uses the source package's `validate()` method.
 - Historical EBIC settings are recovered from saved estimator defaults and
   arguments for reports and downstream refits. Reports distinguish CLPN data
   preprocessing from glmnet standardization and omit inapplicable correlations.
@@ -101,7 +126,8 @@
 - `gamma = NULL` selects 0.5 for EBICglasso/graphicalVAR and 0.25 for
   Ising and EBIC-selected MGM/mixed VAR/time-varying mixed VAR. Explicit values in [0,1] are
   validated and retained. Non-EBIC estimation and CV record inactive gamma
-  as NULL; Monte Carlo result rows use NA.
+  as NULL. NetworkPower's netSimulator method accepts gamma as a native tuning
+  alias; powerly's public API cannot change its internal gamma.
 - Stability and network comparison preserve fitted estimation settings.
   `NetCompare()` accepts two exploratory cross-sectional `quicknet_fit`
   objects with matching settings and records its effective gamma.

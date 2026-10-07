@@ -1,35 +1,25 @@
-test_that("NetworkPower returns a quicknet_power object", {
-  set.seed(11)
-  power <- NetworkPower(
-    nodes = 4,
-    density = 0.40,
-    sample_sizes = c(30, 40),
-    replications = 2,
-    target_value = 0.20,
-    target_probability = 0.50,
-    seed = 11
-  )
-
-  expect_s3_class(power, "quicknet_power")
-  expect_true(all(c("results", "summary", "recommendation", "report") %in% names(power)))
-  expect_true(all(c("sample_size", "achieved_probability", "mean_sensitivity") %in% names(power$summary)))
-  expect_s3_class(plot(power), "ggplot")
-  expect_s3_class(plot(power, type = "metric"), "ggplot")
-
-  report <- quicknet_report(power)
-  expect_s3_class(report, "quicknet_report")
-  expect_true(all(c("settings", "summary", "recommendation", "text") %in% names(report)))
+test_that("sample-size APIs expose only the two native workflows", {
+  expect_identical(eval(formals(NetworkPower)$method), c("netSimulator", "powerly"))
+  expect_false(any(c("estimator", "threshold", "powerly_args") %in%
+    names(formals(NetworkPower))))
+  for (api in list(NetworkPower, SampleSize)) {
+    expect_error(api(method = "monte_carlo"))
+  }
+  retired <- check_input(model = "power", method = "monte_carlo", quiet = TRUE)
+  expect_false(retired$ok)
+  expect_match(paste(retired$errors, collapse = " "), "method")
 })
 
-test_that("NetworkPower defaults use balanced adaptive planning", {
-  small <- NetworkPower(nodes = 8, replications = 2, target_value = 0, target_probability = 0, seed = 101)
-  large <- NetworkPower(nodes = 24, replications = 2, target_value = 0, target_probability = 0, seed = 101)
-
-  expect_equal(small$settings$target_metric, "mcc")
-  expect_equal(small$settings$sample_sizes, c(100L, 200L, 400L))
-  expect_true(max(large$settings$sample_sizes) > max(small$settings$sample_sizes))
-  expect_true(all(c("achieved_probability", "at_lower_boundary", "smallest_evaluated_n", "largest_evaluated_n") %in% names(small$recommendation)))
-  expect_match(small$report, "Smallest evaluated N")
+test_that("removed custom controls cannot become native estimator conditions", {
+  graph <- matrix(c(0, .3, .3, 0), 2)
+  for (method in c("netSimulator", "powerly")) {
+    for (name in c("estimator", "powerly_args")) {
+      args <- list(method = method, model_matrix = graph)
+      args[[name]] <- if (name == "estimator") "partial" else list(boots = 10)
+      expect_error(do.call(NetworkPower, args), name)
+      expect_false(do.call(check_input, c(list(model = "power", quiet = TRUE), args))$ok)
+    }
+  }
 })
 
 test_that("ConfirmatoryNet returns a quicknet_fit object", {
